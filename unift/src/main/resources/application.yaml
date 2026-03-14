@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: uniFT
+  datasource:
+    url: jdbc:postgresql://weekend-architect-faizmohd12511251-4e7e.c.aivencloud.com:12746/postgres
+    username: avnadmin
+    password: AVNS_4zS3xT1mgcix5Jb3LYr
+    driver-class-name: org.postgresql.Driver
+
+  kafka:
+    bootstrap-servers: weekend-architect-kafka-faizmohd12511251-4e7e.l.aivencloud.com:12748
+    consumer:
+      group-id: test-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+
+      properties:
+        spring.json.trusted.packages: "*"
+        
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+

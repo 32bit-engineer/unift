@@ -1,0 +1,50 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.0.3'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.weekend.architect'
+version = '0.0.1-SNAPSHOT'
+description = """
+UniFT is a personal command centre for people who live on their own server. 
+Browse, transfer, and stream — all on one screen, all at once, without switching tools or losing your place. 
+Built for the person who has outgrown cloud storage, runs their own hardware, and wants a tool that respects that. 
+Dense by default. Keyboard-first. Nothing hidden behind modals you didn't ask for. 
+On one screen you can see 40 files, watch an active upload at 80 MB/s, and have a video playing in the corner — and none of those three things know the others exist.
+"""
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+	implementation 'org.springframework.kafka:spring-kafka'
+
+	compileOnly 'org.projectlombok:lombok'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	annotationProcessor 'org.projectlombok:lombok'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
