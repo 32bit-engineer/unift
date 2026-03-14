@@ -22,3 +22,9 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
+jwt:
+  # IMPORTANT: Replace with a secure base64-encoded 256-bit+ key in production
+  # Generate with: openssl rand -base64 64
+  secret: T3BlblNlc3NhbWVTZWNyZXRLZXkyMDI2Rm9yVW5pRlRKV1RBdXRoU2VjdXJpdHk=
+  access-token-expiration-ms: 900000      # 15 minutes
+  refresh-token-expiration-ms: 604800000  # 7 days
