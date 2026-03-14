@@ -1,0 +1,7 @@
+package com.weekend.architect.unift.exception;
+
+public class AccountLockedException extends RuntimeException {
+    public AccountLockedException(String message) {
+        super(message);
+    }
+}
