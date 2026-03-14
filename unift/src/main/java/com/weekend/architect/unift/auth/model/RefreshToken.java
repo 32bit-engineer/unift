@@ -1,1 +1,22 @@
-package com.weekend.architect.unift.auth.model;import lombok.AllArgsConstructor;import lombok.Builder;import lombok.Data;import lombok.NoArgsConstructor;import java.time.OffsetDateTime;import java.util.UUID;@Data@Builder@NoArgsConstructor@AllArgsConstructorpublic class RefreshToken {    private UUID id;    private UUID userId;    private String tokenHash;    private String deviceHint;    private OffsetDateTime issuedAt;    private OffsetDateTime expiresAt;    private OffsetDateTime revokedAt;}
+package com.weekend.architect.unift.auth.model;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RefreshToken {
+    private UUID id;
+    private UUID userId;
+    private String tokenHash;
+    private String deviceHint;
+    private OffsetDateTime issuedAt;
+    private OffsetDateTime expiresAt;
+    private OffsetDateTime revokedAt;
+}

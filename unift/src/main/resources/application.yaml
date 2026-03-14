@@ -28,3 +28,13 @@ jwt:
   secret: T3BlblNlc3NhbWVTZWNyZXRLZXkyMDI2Rm9yVW5pRlRKV1RBdXRoU2VjdXJpdHk=
   access-token-expiration-ms: 900000      # 15 minutes
   refresh-token-expiration-ms: 604800000  # 7 days
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    try-it-out-enabled: true   # "Try it out" open by default
+
