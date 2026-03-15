@@ -1,0 +1,241 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+
+/* ─── Design Tokens ────────────────────────────────────────────────── */
+:root {
+  --color-bg-base:      #161923;
+  --color-surface:      #1E2130;
+  --color-recessed:     #11141C;
+  --color-primary:      #4F8EF7;
+  --color-text-warm:    #E2E8F0;
+  --color-status-ok:    #4ade80;
+  --color-status-err:   #f87171;
+  --color-border-muted: #2E3348;
+
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+  --radius: 0.125rem; /* 2px — near-zero by design */
+}
+
+/* ─── Base Reset ───────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  color-scheme: dark;
+  background-color: var(--color-bg-base);
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg-base);
+  color: var(--color-text-warm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ─── Material Symbols ─────────────────────────────────────────────── */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a4556; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #4a5568; }
+
+/* ─── Tailwind Utilities ───────────────────────────────────────────── */
+@layer utilities {
+
+  /* Depth / Surface */
+  .depth-recessed {
+    background-color: var(--color-recessed);
+    border-top: 1px solid #0c0f16;
+    border-left: 1px solid #0c0f16;
+    border-bottom: 1px solid #252b3d;
+    border-right: 1px solid #252b3d;
+  }
+
+  .depth-input {
+    background-color: var(--color-recessed);
+    border: 1px solid var(--color-border-muted);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+    border-radius: var(--radius);
+  }
+
+  .panel-depth {
+    box-shadow:
+      0 4px 6px -1px rgba(0,0,0,0.4),
+      0 2px 4px -1px rgba(0,0,0,0.3),
+      0 0 0 1px var(--color-border-muted);
+  }
+
+  /* Typography */
+  .label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #5a6380;
+  }
+
+  .label-o {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  /* Progress bars */
+  .prog-track {
+    height: 2px;
+    background-color: var(--color-border-muted);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .prog-fill {
+    height: 2px;
+    background-color: var(--color-primary);
+    border-radius: 1px;
+    transition: width 0.3s ease;
+  }
+
+  .prog-done {
+    height: 2px;
+    background-color: var(--color-status-ok);
+    border-radius: 1px;
+    transition: width 0.3s ease;
+  }
+
+  /* Badges */
+  .badge-active {
+    background-color: rgba(79, 142, 247, 0.12);
+    color: var(--color-primary);
+    border: 1px solid rgba(79, 142, 247, 0.28);
+  }
+
+  .badge-done {
+    background-color: rgba(74, 222, 128, 0.12);
+    color: var(--color-status-ok);
+    border: 1px solid rgba(74, 222, 128, 0.28);
+  }
+
+  .badge-fail {
+    background-color: rgba(248, 113, 113, 0.12);
+    color: var(--color-status-err);
+    border: 1px solid rgba(248, 113, 113, 0.28);
+  }
+
+  .badge-queue {
+    background-color: rgba(226, 232, 240, 0.06);
+    color: #5a6380;
+    border: 1px solid var(--color-border-muted);
+  }
+
+  .badge-info {
+    background-color: rgba(79, 142, 247, 0.08);
+    color: #93c5fd;
+    border: 1px solid rgba(79, 142, 247, 0.2);
+  }
+
+  /* Animations */
+  .fade-in {
+    animation: fadeIn 0.25s ease forwards;
+  }
+
+  .slide-up {
+    animation: slideUp 0.3s ease forwards;
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background-color: var(--color-primary);
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+
+  /* Custom scrollbar class */
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #3a4556; border-radius: 2px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #4a5568; }
+
+  /* Checkboxes */
+  .permission-checkbox {
+    width: 20px;
+    height: 20px;
+    appearance: none;
+    background-color: var(--color-recessed);
+    border: 1px solid var(--color-border-muted);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .permission-checkbox:checked {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+
+  /* Auth page shimmer */
+  .auth-shimmer {
+    background: linear-gradient(
+      135deg,
+      rgba(79, 142, 247, 0.04) 0%,
+      transparent 50%,
+      rgba(79, 142, 247, 0.02) 100%
+    );
+  }
+}
+
+/* ─── Keyframes ───────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(79, 142, 247, 0.4); }
+  50%       { border-color: rgba(79, 142, 247, 0.9); }
+}
+
+/* ─── Focus-visible global reset ─────────────────────────────────── */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.45);
+}
