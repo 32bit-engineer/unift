@@ -1,112 +1,144 @@
-/**
- * Sidebar
- * Dense folder-tree style navigation with active indicator,
- * optional badges, and a footer slot (e.g., storage usage bar).
- */
+// ─── Sidebar ───────────────────────────────────────────────────────────────
 
-import type { ReactNode } from 'react';
-import { cn } from '@/utils/helpers';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface SidebarItem {
-  id: string;
+export interface NavItem {
+  id:    string;
   label: string;
-  /** Material Symbols icon name */
-  icon: string;
-  href?: string;
-  active?: boolean;
-  /** Small string badge rendered on the right */
-  badge?: string;
+  icon:  string;
 }
 
-export interface SidebarProps {
-  /** Section header label, e.g. "Navigation" */
-  heading?: string;
-  items: SidebarItem[];
-  onItemClick?: (item: SidebarItem) => void;
-  /** Content rendered at the bottom (e.g., storage bar) */
-  footer?: ReactNode;
-  className?: string;
+export interface SidebarFooterProps {
+  username: string;
+  onLogout: () => void;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+interface SidebarProps {
+  items:        NavItem[];
+  activeItem:   string;
+  onSelectItem: (id: string) => void;
+  footer?:      SidebarFooterProps;
+}
 
-export function Sidebar({ heading = 'Navigation', items, onItemClick, footer, className }: SidebarProps) {
+export function Sidebar({ items, activeItem, onSelectItem, footer }: SidebarProps) {
   return (
     <aside
-      className={cn(
-        'w-60 bg-surface border-r border-border-subtle flex flex-col overflow-y-auto custom-scrollbar shrink-0',
-        className,
-      )}
+      className="w-56 flex flex-col shrink-0"
+      style={{
+        background: 'var(--color-surface)',
+        borderRight: '2px solid var(--color-border-muted)',
+        boxShadow: '2px 0 0 0 var(--color-bg-base)',
+      }}
     >
-      {/* Heading */}
-      <div className="px-3 pt-3 pb-1">
-        <p className="label text-slate-500">{heading}</p>
+      {/* Logo lockup */}
+      <div
+        className="flex items-center gap-2.5 px-4 h-16 shrink-0"
+        style={{ borderBottom: '2px solid #2E3348' }}
+      >
+        <div
+          className="w-6 h-6 rounded flex items-center justify-center shrink-0"
+          style={{ background: 'var(--color-primary)' }}
+        >
+          <span
+            className="material-symbols-outlined text-white"
+            style={{
+              fontSize: '18px',
+              fontVariationSettings: "'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20",
+            }}
+          >
+            terminal
+          </span>
+        </div>
+        <span
+          className="font-mono font-semibold tracking-widest uppercase text-[14px]"
+          style={{ color: 'var(--color-text-warm)' }}
+        >
+          UniFT<span className="opacity-30">//OS</span>
+        </span>
       </div>
 
       {/* Nav items */}
-      <nav className="flex flex-col flex-1">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onItemClick?.(item)}
-            className={cn(
-              'group flex items-center gap-2 px-3 py-2 text-[13px] transition-all text-left w-full',
-              item.active
-                ? 'border-l-[3px] border-primary bg-white/5 text-text-warm pl-[9px]'
-                : 'border-l-[3px] border-transparent text-slate-400 hover:text-text-warm hover:bg-white/[0.03] hover:border-l-primary/30',
-            )}
-          >
-            <span
-              className={cn(
-                'material-symbols-outlined shrink-0 transition-colors',
-                item.active ? 'text-text-warm' : 'text-slate-500 group-hover:text-slate-300',
-              )}
-              style={{ fontSize: 18 }}
+      <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5 overflow-y-auto custom-scrollbar">
+        {items.map((item) => {
+          const isActive = activeItem === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onSelectItem(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded cursor-pointer
+                text-[12px] font-sans transition-all duration-150 text-left
+                ${isActive
+                  ? 'text-white'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
+                }`}
+              style={
+                isActive
+                  ? {
+                      background:   'rgba(79,142,247,0.1)',
+                      color:        'var(--color-text-warm)',
+                      borderLeft:   '2px solid var(--color-primary)',
+                      paddingLeft:  '10px',
+                    }
+                  : {}
+              }
             >
-              {item.icon}
-            </span>
-            <span className="truncate">{item.label}</span>
-            {item.badge && (
-              <span className="ml-auto bg-primary text-bg-base text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
-                {item.badge}
+              <span
+                className="material-symbols-outlined shrink-0"
+                style={{
+                  fontSize: '18px',
+                  lineHeight: 1,
+                  fontVariationSettings: isActive
+                    ? "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24"
+                    : "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24",
+                }}
+              >
+                {item.icon}
               </span>
-            )}
-          </button>
-        ))}
+              <span className="flex-1 truncate">{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       {/* Footer */}
-      {footer && (
-        <div className="mt-auto border-t border-border-subtle">
-          {footer}
-        </div>
-      )}
+      <div
+        className="px-4 py-3 shrink-0 space-y-3"
+        style={{ borderTop: '1px solid var(--color-border-muted)' }}
+      >
+        {footer && (
+          <div className="space-y-2.5">
+            {/* Online indicator + username */}
+            <div className="flex items-center gap-2">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: 'var(--color-status-ok)' }}
+              />
+              <span className="font-mono text-[12px]" style={{ color: '#5a6380' }}>
+                {footer.username}
+              </span>
+            </div>
+
+            {/* Sign out button */}
+            <button
+              onClick={footer.onLogout}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded cursor-pointer
+                font-mono text-[10px] uppercase tracking-widest
+                border transition-all duration-150 hover:bg-white/5"
+              style={{
+                borderColor: 'var(--color-border-muted)',
+                color:       '#5a6380',
+              }}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: '15px', lineHeight: 1 }}
+              >
+                logout
+              </span>
+              Sign out
+            </button>
+          </div>
+        )}
+        <p className="label">v0.0.1-dev</p>
+      </div>
     </aside>
-  );
-}
-
-// ── Storage bar (commonly used in sidebar footer) ─────────────────────────────
-
-export function StorageBar({ usedPercent }: { usedPercent: number }) {
-  const color =
-    usedPercent >= 90 ? 'bg-status-err' :
-    usedPercent >= 75 ? 'bg-primary' :
-    'bg-status-ok';
-
-  return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-1.5">
-        <span className="label text-slate-500">Storage</span>
-        <span className="label text-primary">{usedPercent}%</span>
-      </div>
-      <div className="h-1.5 bg-bg-base rounded-full overflow-hidden depth-input">
-        <div
-          className={cn('h-full rounded-full transition-all duration-300', color)}
-          style={{ width: `${usedPercent}%` }}
-        />
-      </div>
-    </div>
   );
 }

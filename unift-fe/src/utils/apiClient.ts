@@ -1,170 +1,104 @@
-/**
- * API Client Utility
- * Centralized API request handler with error handling
- */
+import { API_BASE_URL, API_ENDPOINTS } from '@/config/api.config';
+import type { ApiError, AuthResponse } from '@/types';
 
-import { API_CONFIG } from '@/config/api.config';
+// ─── Token storage helpers ─────────────────────────────────────────────────
 
-class ApiClient {
-  private baseUrl: string;
+const ACCESS_TOKEN_KEY  = 'unift_access_token';
+const REFRESH_TOKEN_KEY = 'unift_refresh_token';
 
-  constructor(baseUrl: string = API_CONFIG.baseUrl) {
-    this.baseUrl = baseUrl;
-  }
+export const tokenStorage = {
+  getAccess:  ()          => localStorage.getItem(ACCESS_TOKEN_KEY),
+  getRefresh: ()          => localStorage.getItem(REFRESH_TOKEN_KEY),
+  setAccess:  (t: string) => localStorage.setItem(ACCESS_TOKEN_KEY, t),
+  setRefresh: (t: string) => localStorage.setItem(REFRESH_TOKEN_KEY, t),
+  clear:      ()          => {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  },
+};
 
-  /**
-   * Generic GET request
-   */
-  async get<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'GET',
-      ...options,
-    });
-  }
+// ─── Core fetch wrapper ────────────────────────────────────────────────────
 
-  /**
-   * Generic POST request
-   */
-  async post<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-      body: data ? JSON.stringify(data) : undefined,
-      ...options,
-    });
-  }
-
-  /**
-   * Generic PUT request
-   */
-  async put<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-      body: data ? JSON.stringify(data) : undefined,
-      ...options,
-    });
-  }
-
-  /**
-   * Generic DELETE request
-   */
-  async delete<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'DELETE',
-      ...options,
-    });
-  }
-
-  /**
-   * Generic PATCH request
-   */
-  async patch<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-      body: data ? JSON.stringify(data) : undefined,
-      ...options,
-    });
-  }
-
-  /**
-   * Central request handler
-   */
-  private async request<T>(endpoint: string, options: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-    
-    try {
-      // Add auth token if available
-      const token = localStorage.getItem('accessToken');
-      const headers = new Headers(options.headers as HeadersInit);
-      
-      if (token && !headers.has('Authorization')) {
-        headers.set('Authorization', `Bearer ${token}`);
-      }
-      
-      if (!headers.has('Accept')) {
-        headers.set('Accept', 'application/json');
-      }
-
-      const response = await fetch(url, {
-        ...options,
-        headers,
-      });
-
-      // Handle non-200 status codes
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Trigger logout - credentials expired
-          localStorage.removeItem('accessToken');
-          window.location.href = '/login';
-        }
-        
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP ${response.status}`);
-      }
-
-      // Handle empty responses
-      if (response.status === 204) {
-        return undefined as T;
-      }
-
-      return await response.json() as T;
-    } catch (error) {
-      console.error(`API Error [${options.method}] ${endpoint}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Upload file with FormData
-   */
-  async uploadFile<T>(
-    endpoint: string,
-    file: File,
-    additionalData?: Record<string, any>,
-  ): Promise<T> {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    if (additionalData) {
-      Object.entries(additionalData).forEach(([key, value]) => {
-        formData.append(key, String(value));
-      });
-    }
-
-    const token = localStorage.getItem('accessToken');
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      return await response.json() as T;
-    } catch (error) {
-      console.error(`Upload Error [POST] ${endpoint}:`, error);
-      throw error;
-    }
-  }
+interface RequestOptions extends Omit<RequestInit, 'body'> {
+  body?: unknown;
+  skipAuth?: boolean;
+  /** @internal used to prevent infinite refresh loops */
+  _isRetry?: boolean;
 }
 
-export const apiClient = new ApiClient();
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { body, skipAuth = false, _isRetry = false, headers: extraHeaders = {}, ...rest } = options;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(extraHeaders as Record<string, string>),
+  };
+
+  if (!skipAuth) {
+    const token = tokenStorage.getAccess();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...rest,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  // ── 401 handling: attempt token refresh once, then give up ──────────────
+  if (response.status === 401 && !skipAuth && !_isRetry && !path.startsWith('/api/auth')) {
+    const refreshToken = tokenStorage.getRefresh();
+    if (refreshToken) {
+      try {
+        const refreshResponse = await fetch(`${API_BASE_URL}${API_ENDPOINTS.auth.refresh}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (refreshResponse.ok) {
+          const refreshed = (await refreshResponse.json()) as AuthResponse;
+          tokenStorage.setAccess(refreshed.access_token);
+          tokenStorage.setRefresh(refreshed.refresh_token);
+
+          // Retry the original request with the new access token
+          return request<T>(path, { ...options, _isRetry: true });
+        }
+      } catch {
+        // refresh request itself failed — fall through to clear + redirect
+      }
+    }
+
+    // Refresh failed or no refresh token — log out and redirect
+    tokenStorage.clear();
+    window.location.href = '?page=login';
+  }
+
+  if (!response.ok) {
+    let errorMessage = `Request failed with status ${response.status}`;
+    try {
+      const errBody = (await response.json()) as { message?: string };
+      if (errBody.message) errorMessage = errBody.message;
+    } catch {
+      // ignore parse errors
+    }
+
+    const err: ApiError = { status: response.status, message: errorMessage };
+    throw err;
+  }
+
+  // Handle 204 No Content
+  if (response.status === 204) return undefined as unknown as T;
+
+  return response.json() as Promise<T>;
+}
+
+// ─── Convenience methods ───────────────────────────────────────────────────
+
+export const apiClient = {
+  get:    <T>(path: string, opts?: RequestOptions)                          => request<T>(path, { ...opts, method: 'GET' }),
+  post:   <T>(path: string, body?: unknown, opts?: RequestOptions)          => request<T>(path, { ...opts, method: 'POST', body }),
+  put:    <T>(path: string, body?: unknown, opts?: RequestOptions)          => request<T>(path, { ...opts, method: 'PUT', body }),
+  patch:  <T>(path: string, body?: unknown, opts?: RequestOptions)          => request<T>(path, { ...opts, method: 'PATCH', body }),
+  delete: <T>(path: string, opts?: RequestOptions)                          => request<T>(path, { ...opts, method: 'DELETE' }),
+};
