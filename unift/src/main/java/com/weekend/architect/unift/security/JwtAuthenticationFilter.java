@@ -1,6 +1,7 @@
 package com.weekend.architect.unift.security;
 
 import com.weekend.architect.unift.auth.service.JwtService;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -8,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,9 +18,12 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    public static final String JWT_ERROR_ATTRIBUTE = "jwt.error";
 
     private final JwtService jwtService;
     private final UniFtUserDetailsService userDetailsService;
@@ -50,8 +55,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
+        } catch (ExpiredJwtException e) {
+            log.warn("Expired JWT for request {} — {}", request.getRequestURI(), e.getMessage());
+            request.setAttribute(JWT_ERROR_ATTRIBUTE, "Access token has expired. Please refresh or re-login.");
         } catch (JwtException | IllegalArgumentException e) {
-            // Invalid token — simply do not authenticate; Spring Security will return 401
+            log.warn("Invalid JWT for request {} — {}", request.getRequestURI(), e.getMessage());
+            request.setAttribute(JWT_ERROR_ATTRIBUTE, "Invalid access token.");
         }
 
         filterChain.doFilter(request, response);
