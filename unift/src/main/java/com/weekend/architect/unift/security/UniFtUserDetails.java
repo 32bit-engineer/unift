@@ -4,19 +4,15 @@ import com.weekend.architect.unift.auth.model.User;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.NonNull;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-@RequiredArgsConstructor
-public class UniFtUserDetails implements UserDetails {
-
-    @Getter
-    private final User user;
+public record UniFtUserDetails(User user) implements UserDetails {
 
     @Override
+    @NonNull
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()));
     }
@@ -27,6 +23,7 @@ public class UniFtUserDetails implements UserDetails {
     }
 
     @Override
+    @NonNull
     public String getUsername() {
         return user.getUsername();
     }

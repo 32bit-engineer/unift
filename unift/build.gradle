@@ -53,6 +53,9 @@ dependencies {
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
+	// SSH / SFTP — modern maintained JSch fork
+	implementation 'com.github.mwiede:jsch:0.2.21'
+
 	// Swagger / OpenAPI
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2'
 

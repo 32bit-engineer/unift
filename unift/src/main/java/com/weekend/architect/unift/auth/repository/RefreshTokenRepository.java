@@ -18,11 +18,9 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class RefreshTokenRepository {
 
-    private final NamedParameterJdbcTemplate jdbc;
+    private static final String TOKEN_HASH = "tokenHash";
 
-    // -------------------------------------------------------------------------
-    // Row mapper
-    // -------------------------------------------------------------------------
+    private final NamedParameterJdbcTemplate jdbc;
 
     private RefreshToken mapRow(ResultSet rs, int rowNum) throws SQLException {
         return RefreshToken.builder()
@@ -40,19 +38,11 @@ public class RefreshTokenRepository {
         return ts == null ? null : ts.toInstant().atOffset(ZoneOffset.UTC);
     }
 
-    // -------------------------------------------------------------------------
-    // Queries
-    // -------------------------------------------------------------------------
-
     public Optional<RefreshToken> findByTokenHash(String tokenHash) {
         String sql = "SELECT * FROM refresh_tokens WHERE token_hash = :tokenHash";
-        List<RefreshToken> results = jdbc.query(sql, new MapSqlParameterSource("tokenHash", tokenHash), this::mapRow);
+        List<RefreshToken> results = jdbc.query(sql, new MapSqlParameterSource(TOKEN_HASH, tokenHash), this::mapRow);
         return results.stream().findFirst();
     }
-
-    // -------------------------------------------------------------------------
-    // Mutations
-    // -------------------------------------------------------------------------
 
     public void save(RefreshToken token) {
         String sql =
@@ -64,7 +54,7 @@ public class RefreshTokenRepository {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("id", token.getId())
                 .addValue("userId", token.getUserId())
-                .addValue("tokenHash", token.getTokenHash())
+                .addValue(TOKEN_HASH, token.getTokenHash())
                 .addValue("deviceHint", token.getDeviceHint())
                 .addValue("issuedAt", token.getIssuedAt())
                 .addValue("expiresAt", token.getExpiresAt());
@@ -74,7 +64,7 @@ public class RefreshTokenRepository {
 
     public void revokeByTokenHash(String tokenHash) {
         String sql = "UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = :tokenHash";
-        jdbc.update(sql, new MapSqlParameterSource("tokenHash", tokenHash));
+        jdbc.update(sql, new MapSqlParameterSource(TOKEN_HASH, tokenHash));
     }
 
     public void revokeAllByUserId(UUID userId) {

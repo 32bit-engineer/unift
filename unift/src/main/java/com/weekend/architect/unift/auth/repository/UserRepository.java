@@ -94,10 +94,6 @@ public class UserRepository {
         return count != null && count > 0;
     }
 
-    // -------------------------------------------------------------------------
-    // Mutations
-    // -------------------------------------------------------------------------
-
     public void save(User user) {
         String sql =
                 """
