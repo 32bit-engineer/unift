@@ -5,6 +5,8 @@ import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
+import com.jcraft.jsch.UIKeyboardInteractive;
+import com.jcraft.jsch.UserInfo;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.AbstractRemoteConnection;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
@@ -24,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Vector;
 import lombok.extern.slf4j.Slf4j;
@@ -97,6 +100,9 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                                 pw.getUsername());
                         jschSession = jsch.getSession(pw.getUsername(), pw.getHost(), pw.getPort());
                         jschSession.setPassword(pw.getPassword());
+                        // Required for servers that use keyboard-interactive (PAM) instead of
+                        // the plain "password" auth method (common on Ubuntu/Debian with UsePAM yes).
+                        jschSession.setUserInfo(new PasswordUserInfo(pw.getPassword()));
                         yield pw.getUsername();
                     }
                     case SshKeyCredentials key -> {
@@ -131,7 +137,9 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
 
         // TODO: replace "no" with a configurable known-hosts file for production use
         jschSession.setConfig("StrictHostKeyChecking", "no");
-        jschSession.setConfig("PreferredAuthentications", "publickey, password");
+        // Include keyboard-interactive so PAM-based servers (Ubuntu/Debian with UsePAM yes)
+        // work alongside servers that use the plain "password" method.
+        jschSession.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
 
         log.info(
                 "[{}] 🔌 Connecting to SSH server: {}@{}:{}",
@@ -352,5 +360,55 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 .owner(String.valueOf(attrs.getUId()))
                 .hidden(name.startsWith("."))
                 .build();
+    }
+
+    /**
+     * Supplies a known password to JSch for both the {@code password} and
+     * {@code keyboard-interactive} SSH auth methods.
+     *
+     * <p>Many Linux servers (Ubuntu/Debian with {@code UsePAM yes}) disable the raw
+     * {@code password} method and only accept {@code keyboard-interactive} (PAM).
+     * OpenSSH's CLI client handles this transparently; JSch requires an explicit
+     * {@link UserInfo} + {@link UIKeyboardInteractive} implementation to do the same.
+     */
+    private record PasswordUserInfo(String password) implements UserInfo, UIKeyboardInteractive {
+
+        @Override
+        public String[] promptKeyboardInteractive(
+                String destination, String name, String instruction, String[] prompt, boolean[] echo) {
+            // The server may send multiple prompts (e.g. OTP after password).
+            // Fill every slot with the password — for plain PAM there is always exactly one prompt.
+            String[] responses = new String[prompt.length];
+            Arrays.fill(responses, password);
+            return responses;
+        }
+
+        @Override
+        public String getPassword() {
+            return password;
+        }
+
+        @Override
+        public boolean promptPassword(String message) {
+            return true;
+        }
+
+        @Override
+        public String getPassphrase() {
+            return null;
+        }
+
+        @Override
+        public boolean promptPassphrase(String message) {
+            return false;
+        }
+
+        @Override
+        public boolean promptYesNo(String message) {
+            return false;
+        }
+
+        @Override
+        public void showMessage(String message) {}
     }
 }
