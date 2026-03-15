@@ -22,6 +22,14 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
+logging:
+  level:
+    root: INFO
+    com.weekend.architect.unift: DEBUG
+    com.weekend.architect.unift.exception: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%-5level] [%logger{35}] - %msg%n"
+
 jwt:
   # IMPORTANT: Replace with a secure base64-encoded 256-bit+ key in production
   # Generate with: openssl rand -base64 64
@@ -37,4 +45,13 @@ springdoc:
     tags-sorter: alpha
     operations-sorter: alpha
     try-it-out-enabled: true   # "Try it out" open by default
+
+unift:
+  remote:
+    session-ttl-minutes: 30          # default session lifetime
+    max-sessions-per-user: 5         # cap per authenticated user
+    reaper-interval-ms: 60000        # how often the session reaper runs (1 min)
+    connect-timeout-ms: 15000        # SSH connect timeout
+    channel-timeout-ms: 10000        # SFTP channel open timeout
+    sliding-ttl: true                # extend expiresAt on every activity
 
