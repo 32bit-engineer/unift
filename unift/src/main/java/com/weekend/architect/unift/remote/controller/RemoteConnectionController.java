@@ -71,37 +71,6 @@ public class RemoteConnectionController {
             @Valid @RequestBody ConnectRequest request, @AuthenticationPrincipal UniFtUserDetails principal) {
         UUID ownerId = principal.user().getId();
         log.info("Opening session for user {} → {}:{}", ownerId, request.getHost(), request.getPort());
-
-        request.setPrivateKey(
-                """
-        -----BEGIN RSA PRIVATE KEY-----
-        MIIEpAIBAAKCAQEApCteqXpkTkP4yFNpcIaEyDcedkZGCzTURx57E1/8tmmTF74s
-        7sTte0216LM80r98DERinl8Q6ufLcDX1droDffAFaFGziMah6HZhHJeNr0V9k0Wd
-        qgXrcqC32QP0pis889hSlcnwodYfaUGOoZo5ASunp+hT33EOs2GrsHw3hGHCzfP7
-        2xvvIpTI/yus6tklRSIphBl+YX2/I6I12tjIu4sMMNtz9tVS1CjKbZc6jg9cERCE
-        mQCfvVUp+JC/+ba6tImodrMlgamFj/HB1Bvg/XWWZzn/k/JoW0gBc9GpgvcAiQ4P
-        6czx9WIZ9RW+XN+kvPZZ6K7WURmNMOW2VYMCtwIDAQABAoIBAQCJ0SLJscaM8YDj
-        Yyqr3TGRBrya28mnVLUz8wGtNTJoS97A2tTLqSQYFBe2/uj7nuZbQflsLDB+kxJ0
-        48dp4SRXT+yqM5Q9KUr4ZJCHuS6nSfXucU23UvriIsvT8f8qlDe6GQrTVlCc+60o
-        5nD/dwGN2wEG8wGeHUITEtZX9R+CEFsuv9/bl2Z1KuRPR6Bul6BWWl6grv2JPJbg
-        cAg4zjY0Z41BMUIRBmyApy5dbopqJcukMmKTQ68H/bAY6GvrogJK+JXSBiEd8yas
-        o4gkfPR3gxT8tgSP9oeAU4tMa5j6/Oz+pwBAcASb6QjvyA9nyv7y53BqYKZDR/qr
-        Y+Dt7SJpAoGBANbJRkiH2fprCvE8aUIFBsOWOejMf5xQEcxuvhABIXJJyP2Bq6px
-        X795mUNG0C8Ab1mE76qLW4SbuNVgyHfiIRFDm1TKlxpl1LU/sIFjb8lhT68+45dP
-        WXD9k3e+rHcBvnmt0kKpca37/46BkCxz0RFq0qZc8E5C898dZsyvSqIFAoGBAMOr
-        smbmgjhCQVheAYnOrB1gLsQdtL1i9R3SeeCLDal9evgBmtJIJJvspq1TzlsarHeg
-        /1Tz6q2IlKEPLb0fRsrES+4CJU6caMxZm08Y6geqjmGqYL2WYU7smhiXOe8vf6xB
-        X7z311q4CKD5BPiefTC6BK13EfkAHe/8Vt8IJQKLAoGBAI0fKeK1/+6dLk9aVf5e
-        txcDOYFP+/iEU21yxcZWN9eTy09lR5lxbGuuRZkCif6X1pGG2sG/Vp5GgqcQNCcw
-        mHFzbjfD9IwPpDaCZkJdRzGVknmeZIMiS64FrkLbMQ3wQ2pHXwMVue+Kx1qmnkfW
-        wOMkwMs1/V4ud3V9J/IMqojRAoGAAqLmlXJXoNBrtvgVRzkMopywJJ5N2BtkOBGk
-        6LyW44i4Rm0nG9wy+hLXMBCoABw85KO7rPZYXBwx/HWK5ThtqL+6UiufOw7qbo5q
-        hEdOp+nJX1F/Wi6Tgw+3B8vJ0Qovyy9aTd58/VDrdNfGFF92SljHRVsMV/GDdb9N
-        oFWowf8CgYAgAAp+vfK/8WCDQQtftySDx3ESAv+aD8lmbn4DsvAW8bVLTmrJybxb
-        vRQ1Q+jVwFtjV/0qr8N6O+4NptW7kZUXiu6vykH80vt/dS1I9mpsZmhPMtJjkyMi
-        EOxhbbtEEBXdsWU/hCIPrsE/AB0WS0/QR9QWavJYoAFjHncwix4eGQ==
-        -----END RSA PRIVATE KEY-----
-        """);
         ConnectResponse response = service.openSession(ownerId, request);
         log.info("Session {} opened successfully", response.getSessionId());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
