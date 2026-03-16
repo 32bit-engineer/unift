@@ -15,8 +15,15 @@ public final class S3Credentials extends RemoteCredentials {
 
     @Builder
     public S3Credentials(
-            String host, int port, String accessKeyId, String secretAccessKey, String region, String bucket) {
-        super(host, port, ProtocolType.S3);
+            String host,
+            int port,
+            String accessKeyId,
+            String secretAccessKey,
+            String region,
+            String bucket,
+            boolean strictHostKeyChecking,
+            String expectedFingerprint) {
+        super(host, port, ProtocolType.S3, strictHostKeyChecking, expectedFingerprint);
         this.accessKeyId = accessKeyId;
         this.secretAccessKey = secretAccessKey;
         this.region = region;

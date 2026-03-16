@@ -12,6 +12,8 @@ import lombok.Value;
 public class ConnectResponse {
 
     String sessionId;
+    /** The friendly alias provided at connect-time. */
+    String label;
     ProtocolType protocol;
     String host;
     int port;

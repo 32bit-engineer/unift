@@ -1,12 +1,15 @@
 package com.weekend.architect.unift.remote.ssh;
 
 import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.HostKey;
+import com.jcraft.jsch.HostKeyRepository;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
 import com.jcraft.jsch.UIKeyboardInteractive;
 import com.jcraft.jsch.UserInfo;
+import com.weekend.architect.unift.common.utils.StringUtils;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.AbstractRemoteConnection;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
@@ -18,9 +21,12 @@ import com.weekend.architect.unift.remote.enums.FileType;
 import com.weekend.architect.unift.remote.exception.BrowseException;
 import com.weekend.architect.unift.remote.exception.ConnectionException;
 import com.weekend.architect.unift.remote.exception.CredentialValidationException;
+import com.weekend.architect.unift.remote.exception.RemotePermissionDeniedException;
 import com.weekend.architect.unift.remote.exception.TransferException;
 import com.weekend.architect.unift.remote.model.RemoteFile;
 import com.weekend.architect.unift.remote.model.RemoteSession;
+import java.io.FilterInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -135,19 +141,31 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                     default -> throw new ConnectionException("Unsupported SSH credential type");
                 };
 
-        // TODO: replace "no" with a configurable known-hosts file for production use
-        jschSession.setConfig("StrictHostKeyChecking", "no");
+        // Set host key checking based on user preference
+        if (credentials.isStrictHostKeyChecking()) {
+            jschSession.setConfig("StrictHostKeyChecking", "yes");
+            if(!StringUtils.isBlank(credentials.getExpectedFingerprint())) {
+                // If a fingerprint is provided, use a custom repository to validate it
+                jsch.setHostKeyRepository(new FingerprintHostKeyRepository(credentials.getExpectedFingerprint()));
+            }
+        } else {
+            jschSession.setConfig("StrictHostKeyChecking", "no");
+        }
         // Include keyboard-interactive so PAM-based servers (Ubuntu/Debian with UsePAM yes)
         // work alongside servers that use the plain "password" method.
         jschSession.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
 
         log.info(
-                "[{}] 🔌 Connecting to SSH server: {}@{}:{}",
+                "[{}] Connecting to SSH server: {}@{}:{}",
                 session.getSessionId(),
                 username,
                 credentials.getHost(),
                 credentials.getPort());
         try {
+            // Send a keep-alive every 60 seconds
+            jschSession.setServerAliveInterval(60000);
+            // If the server doesn't respond to 3 pings in a row, kill the connection
+            jschSession.setServerAliveCountMax(3);
             jschSession.connect(props.getConnectTimeoutMs());
             log.info("[{}] ✓ SSH session established", session.getSessionId());
         } catch (Exception e) {
@@ -205,6 +223,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 return files;
             }
         } catch (SftpException e) {
+            guardPermission(e, remotePath);
             log.error(
                     "[{}] ❌ Failed to list directory '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new BrowseException("Failed to list directory '" + remotePath + "': " + e.getMessage(), e);
@@ -227,6 +246,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 }
             }
         } catch (SftpException e) {
+            guardPermission(e, remotePath);
             log.error("[{}] ❌ Failed to delete '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new BrowseException("Failed to delete '" + remotePath + "': " + e.getMessage(), e);
         }
@@ -242,6 +262,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 log.info("[{}] ✓ Renamed successfully", session.getSessionId());
             }
         } catch (SftpException e) {
+            guardPermission(e, remotePath);
             log.error(
                     "[{}] ❌ Failed to rename '{}' to '{}': {}",
                     session.getSessionId(),
@@ -264,6 +285,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 log.info("[{}] ✓ Directory created: {}", session.getSessionId(), remotePath);
             }
         } catch (SftpException e) {
+            guardPermission(e, remotePath);
             log.error(
                     "[{}] ❌ Failed to create directory '{}': {}",
                     session.getSessionId(),
@@ -285,6 +307,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 return home;
             }
         } catch (SftpException e) {
+            guardPermission(e, "~");
             log.error("[{}] ❌ Failed to determine home directory: {}", session.getSessionId(), e.getMessage(), e);
             throw new BrowseException("Failed to determine home directory: " + e.getMessage(), e);
         }
@@ -297,14 +320,27 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
             throws TransferException {
         assertActive();
         log.info("[{}] ⬆️  Upload starting → '{}' ({} bytes)", session.getSessionId(), remotePath, fileSize);
+
+        // Opend a *dedicated* ChannelSftp for this upload — same reasoning as download().
+        // sftpChannel.put() is a long-running blocking call; holding channelLock for its
+        // entire duration would block every concurrent metadata operation (list, rename, etc.)
+        // for the whole transfer time. A dedicated channel avoids both the contention and the
+        // risk of concurrent put() calls interfering with each other's internal state.
+        ChannelSftp uploadChannel = null;
         try {
-            synchronized (channelLock) {
-                sftpChannel.put(source, remotePath, new JschSftpProgressMonitor(callback), ChannelSftp.OVERWRITE);
-            }
+            uploadChannel = (ChannelSftp) jschSession.openChannel("sftp");
+            uploadChannel.connect(props.getChannelTimeoutMs());
+            uploadChannel.put(source, remotePath, new JschSftpProgressMonitor(callback), ChannelSftp.OVERWRITE);
             log.info("[{}] ✓ Upload complete → '{}'", session.getSessionId(), remotePath);
         } catch (SftpException e) {
+            guardPermission(e, remotePath);
             log.error("[{}] ❌ Upload failed → '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new TransferException("Upload to '" + remotePath + "' failed: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[{}] ❌ Upload failed → '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            throw new TransferException("Upload to '" + remotePath + "' failed: " + e.getMessage(), e);
+        } finally {
+            disconnectQuietly(uploadChannel);
         }
     }
 
@@ -312,21 +348,71 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
     public InputStream download(String remotePath, TransferProgressCallback callback) throws TransferException {
         assertActive();
         log.info("[{}] ⬇️  Download starting ← '{}'", session.getSessionId(), remotePath);
+
+        // Open a *dedicated* ChannelSftp for this download — never reuse the shared sftpChannel.
+        //
+        // JSch's SFTP InputStream is backed by an internal PipedInputStream tied to the channel.
+        // If two concurrent requests both call sftpChannel.get() on the same ChannelSftp —
+        // even if the get() calls are serialized by channelLock — the second stream's pipe
+        // setup overwrites the first stream's pipe state while it is still being drained.
+        // Whichever stream reads or closes next gets "inputstream is closed".
+        //
+        // A JSch Session multiplexes many Channels over a single TCP/SSH connection, so
+        // opening a fresh ChannelSftp per download is correct and inexpensive.
+        // ChannelClosingInputStream guarantees the dedicated channel is disconnected when
+        // the caller closes the stream (or on error).
+        ChannelSftp downloadChannel = null;
         try {
-            // JSch returns an InputStream backed by the SFTP channel;
-            // the caller MUST close it to release the channel slot.
-            synchronized (channelLock) {
-                InputStream stream = sftpChannel.get(remotePath, new JschSftpProgressMonitor(callback));
-                log.info("[{}] ✓ Download stream opened ← '{}'", session.getSessionId(), remotePath);
-                return stream;
-            }
+            downloadChannel = (ChannelSftp) jschSession.openChannel("sftp");
+            downloadChannel.connect(props.getChannelTimeoutMs());
+
+            // Omit the SftpProgressMonitor overload to skip JSch's internal _stat() call.
+            // get(path, monitor) calls _stat() first, which triggers an IndexOutOfBoundsException
+            // in mwiede/jsch 0.2.x + certain OpenSSH server versions. Progress is tracked via
+            // ProgressTrackingInputStream instead.
+            InputStream raw = downloadChannel.get(remotePath);
+            InputStream tracked = new ProgressTrackingInputStream(raw, callback);
+
+            log.info("[{}] ✓ Download stream opened ← '{}'", session.getSessionId(), remotePath);
+            return new ChannelClosingInputStream(tracked, downloadChannel);
+
         } catch (SftpException e) {
+            disconnectQuietly(downloadChannel);
+            guardPermission(e, remotePath);
+            log.error("[{}] ❌ Download failed ← '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            throw new TransferException("Download from '" + remotePath + "' failed: " + e.getMessage(), e);
+        } catch (Exception e) {
+            disconnectQuietly(downloadChannel);
             log.error("[{}] ❌ Download failed ← '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new TransferException("Download from '" + remotePath + "' failed: " + e.getMessage(), e);
         }
     }
 
-    // Mapping helpers
+    // Helpers
+
+    /**
+     * Checks whether a {@link SftpException} represents a remote permission denial
+     * (SFTP status code {@code SSH_FX_PERMISSION_DENIED = 3}) and, if so, throws
+     * {@link RemotePermissionDeniedException} immediately — before the caller wraps
+     * the error in a generic {@link BrowseException} or {@link TransferException}.
+     *
+     * <p>This ensures the {@code GlobalExceptionHandler} can distinguish a real
+     * Unix filesystem permission denial (→ 403 Forbidden) from a genuine gateway
+     * failure (→ 502 Bad Gateway).
+     */
+    private void guardPermission(SftpException e, String path) {
+        if (e.id == ChannelSftp.SSH_FX_PERMISSION_DENIED) {
+            log.warn("[{}] ⛔ Permission denied on remote host: '{}'", session.getSessionId(), path);
+            throw new RemotePermissionDeniedException(path);
+        }
+    }
+
+    /** Disconnects a {@link ChannelSftp} silently; safe to call with {@code null}. */
+    private static void disconnectQuietly(ChannelSftp channel) {
+        if (channel != null && channel.isConnected()) {
+            channel.disconnect();
+        }
+    }
 
     private RemoteFile mapEntry(String parentPath, ChannelSftp.LsEntry entry) {
         SftpATTRS attrs = entry.getAttrs();
@@ -360,6 +446,48 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
                 .owner(String.valueOf(attrs.getUId()))
                 .hidden(name.startsWith("."))
                 .build();
+    }
+
+    /**
+     * Wraps an {@link InputStream} and fires {@link TransferProgressCallback#onProgress} as bytes
+     * are read, reporting cumulative bytes transferred.
+     *
+     * <p>Used in place of {@link com.jcraft.jsch.SftpProgressMonitor} for downloads to avoid the
+     * internal {@code _stat()} call that {@code ChannelSftp.get(path, monitor)} issues when a
+     * non-null monitor is provided. That stat call triggers an
+     * {@link IndexOutOfBoundsException} in certain mwiede/jsch + OpenSSH server combinations.
+     *
+     * <p>Total bytes are reported as {@code -1} because the file size is unknown without {@code _stat}.
+     * The service layer already initialises download transfers with {@code totalBytes = -1}.
+     */
+    private static final class ProgressTrackingInputStream extends FilterInputStream {
+
+        private final TransferProgressCallback callback;
+        private long transferred = 0L;
+
+        ProgressTrackingInputStream(InputStream in, TransferProgressCallback callback) {
+            super(in);
+            this.callback = callback;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b != -1) {
+                callback.onProgress(++transferred, -1L);
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int n = super.read(b, off, len);
+            if (n > 0) {
+                transferred += n;
+                callback.onProgress(transferred, -1L);
+            }
+            return n;
+        }
     }
 
     /**
@@ -410,5 +538,92 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
 
         @Override
         public void showMessage(String message) {}
+    }
+
+    /**
+     * Custom {@link HostKeyRepository} that validates the server's public key fingerprint
+     * against a single expected value provided by the user.
+     */
+    private static final class FingerprintHostKeyRepository implements HostKeyRepository {
+        private final String expectedFingerprint;
+
+        FingerprintHostKeyRepository(String expectedFingerprint) {
+            this.expectedFingerprint = expectedFingerprint;
+        }
+
+        @Override
+        public int check(String host, byte[] key) {
+            try {
+                // Create a temporary HostKey to calculate the fingerprint
+                HostKey hk = new HostKey(host, key);
+                String actualFingerprint = hk.getFingerPrint(new JSch());
+
+                if (actualFingerprint.equalsIgnoreCase(expectedFingerprint)) {
+                    log.debug("SSH host key fingerprint matches expected value: {}", expectedFingerprint);
+                    return OK;
+                } else {
+                    log.warn(
+                            "SSH host key fingerprint mismatch! Expected: {}, Actual: {}",
+                            expectedFingerprint,
+                            actualFingerprint);
+                    return NOT_INCLUDED;
+                }
+            } catch (Exception e) {
+                log.error("Error verifying SSH host key fingerprint", e);
+                return NOT_INCLUDED;
+            }
+        }
+
+        @Override
+        public void add(HostKey hostkey, UserInfo ui) {}
+
+        @Override
+        public void remove(String host, String type) {}
+
+        @Override
+        public void remove(String host, String type, byte[] key) {}
+
+        @Override
+        public String getKnownHostsRepositoryID() {
+            return "unift-dynamic-repo";
+        }
+
+        @Override
+        public HostKey[] getHostKey() {
+            return new HostKey[0];
+        }
+
+        @Override
+        public HostKey[] getHostKey(String host, String type) {
+            return new HostKey[0];
+        }
+    }
+
+    /**
+     * Wraps an {@link InputStream} and disconnects the dedicated download {@link ChannelSftp}
+     * when the stream is closed.
+     *
+     * <p>Stacked on top of {@link ProgressTrackingInputStream}:
+     * {@code close()} → closes the tracked stream → closes the raw JSch stream → then
+     * disconnects the dedicated channel. This ensures the channel is released whether the
+     * download completes normally, is cancelled, or fails mid-transfer.
+     */
+    private static final class ChannelClosingInputStream extends FilterInputStream {
+
+        private final ChannelSftp channel;
+
+        ChannelClosingInputStream(InputStream in, ChannelSftp channel) {
+            super(in);
+            this.channel = channel;
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                super.close();
+            } finally {
+                disconnectQuietly(channel);
+            }
+        }
     }
 }

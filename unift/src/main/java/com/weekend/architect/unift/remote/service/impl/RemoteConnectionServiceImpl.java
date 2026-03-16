@@ -71,6 +71,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         RemoteSession session = RemoteSession.builder()
                 .sessionId(sessionId)
                 .ownerId(ownerId)
+                .label(request.getLabel())
                 .protocol(request.getProtocol())
                 .host(request.getHost())
                 .port(request.getPort())
@@ -246,6 +247,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                             .port(req.getPort())
                             .username(req.getUsername())
                             .password(req.getPassword())
+                            .strictHostKeyChecking(req.isStrictHostKeyChecking())
+                            .expectedFingerprint(req.getExpectedFingerprint())
                             .build();
                 }
                 case PRIVATE_KEY -> {
@@ -257,6 +260,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                             .port(req.getPort())
                             .username(req.getUsername())
                             .privateKeyPem(req.getPrivateKey())
+                            .strictHostKeyChecking(req.isStrictHostKeyChecking())
+                            .expectedFingerprint(req.getExpectedFingerprint())
                             .build();
                 }
                 case PRIVATE_KEY_PASSPHRASE -> {
@@ -274,6 +279,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                             .username(req.getUsername())
                             .privateKeyPem(req.getPrivateKey())
                             .passphrase(req.getPassphrase())
+                            .strictHostKeyChecking(req.isStrictHostKeyChecking())
+                            .expectedFingerprint(req.getExpectedFingerprint())
                             .build();
                 }
             };
@@ -325,6 +332,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         RemoteSession s = conn.getSession();
         return ConnectResponse.builder()
                 .sessionId(s.getSessionId())
+                .label(s.getLabel())
                 .protocol(s.getProtocol())
                 .host(s.getHost())
                 .port(s.getPort())

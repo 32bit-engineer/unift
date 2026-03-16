@@ -3,6 +3,7 @@ package com.weekend.architect.unift.exception;
 import com.weekend.architect.unift.remote.exception.CredentialValidationException;
 import com.weekend.architect.unift.remote.exception.MaxSessionsExceededException;
 import com.weekend.architect.unift.remote.exception.RemoteConnectionException;
+import com.weekend.architect.unift.remote.exception.RemotePermissionDeniedException;
 import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
@@ -63,6 +64,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("Bad request: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
         log.error("UNEXPECTED ERROR - Stack trace follows:", ex);
@@ -102,6 +109,12 @@ public class GlobalExceptionHandler {
         log.warn("Credential validation error: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
                 .body(errorBody(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage()));
+    }
+
+    @ExceptionHandler(RemotePermissionDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleRemotePermissionDenied(RemotePermissionDeniedException ex) {
+        log.warn("Remote permission denied: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody(HttpStatus.FORBIDDEN, ex.getMessage()));
     }
 
     /** Catch-all for any other remote-connection failure (connect errors, transfer errors, browse errors). */

@@ -17,6 +17,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
@@ -195,7 +196,12 @@ public class RemoteConnectionController {
             @AuthenticationPrincipal UniFtUserDetails principal) {
 
         String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
-        String filename = Paths.get(decodedPath).getFileName().toString();
+        Path filePath = Paths.get(decodedPath);
+        Path fileNamePath = filePath.getFileName();
+        if (fileNamePath == null) {
+            throw new IllegalArgumentException("Cannot download a root or directory path: " + decodedPath);
+        }
+        String filename = fileNamePath.toString();
 
         log.info("Starting download in session {} → {}", sessionId, decodedPath);
         StreamingResponseBody stream =
