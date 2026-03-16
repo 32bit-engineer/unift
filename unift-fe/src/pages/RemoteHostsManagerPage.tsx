@@ -7,6 +7,8 @@ import {
   type DirectoryListingResponse,
   type TransferStatusResponse,
 } from '@/utils/remoteConnectionAPI';
+import { getErrorMessage } from '@/utils/apiClient';
+import { RemoteEditor } from '@/components/ui';
 
 /* ─── Types ────────────────────────────────────────────────────────── */
 type ProtocolType = 'SSH_SFTP' | 'FTP' | 'SMB';
@@ -14,7 +16,7 @@ type StatusFilter = 'all' | 'online' | 'offline' | 'warning';
 
 type FileEntry = DirectoryListingResponse['entries'][number];
 
-interface UIHost {
+export interface UIHost {
   sessionId: string;
   name: string;
   status: 'online' | 'offline' | 'warning';
@@ -44,19 +46,6 @@ function Icon({ name, className = 'text-base', filled = false }: IconProps) {
   );
 }
 
-interface StatusDotProps {
-  status: 'online' | 'offline' | 'warning';
-}
-
-function StatusDot({ status }: StatusDotProps) {
-  const colorMap = {
-    online: 'bg-[#4ade80]',
-    offline: 'bg-slate-500',
-    warning: 'bg-[#E07B39]',
-  };
-  return <div className={`w-2 h-2 rounded-full ${colorMap[status]}`} />;
-}
-
 interface BadgeProps {
   variant: 'active' | 'warning';
   children: React.ReactNode;
@@ -81,7 +70,8 @@ type ModalState =
   | { type: 'none' }
   | { type: 'delete'; entries: FileEntry[] }
   | { type: 'rename'; entry: FileEntry }
-  | { type: 'newFolder' };
+  | { type: 'newFolder' }
+  | { type: 'newFile' };
 
 function FileBrowser({ host, onClose }: FileBrowserProps) {
   const [pathStack, setPathStack]     = useState<string[]>(['/']);
@@ -92,10 +82,20 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
   const [modal, setModal]             = useState<ModalState>({ type: 'none' });
   const [renameValue, setRenameValue] = useState('');
   const [folderName, setFolderName]   = useState('');
+  const [newFileName, setNewFileName] = useState('');
   const [opLoading, setOpLoading]     = useState(false);
   const [transfers, setTransfers]     = useState<TransferStatusResponse[]>([]);
   const [showTransfers, setShowTransfers] = useState(false);
+  const [successMsg, setSuccessMsg]   = useState<string | null>(null);
+  const [editorState, setEditorState] = useState<
+    | { mode: 'folder'; folderPath: string }
+    | { mode: 'files'; paths: string[] }
+    | null
+  >(null);
   const uploadInputRef                = useRef<HTMLInputElement>(null);
+  // When navigateInto() pre-loads a directory, this flag tells the path-change
+  // useEffect to skip the redundant second fetch for that path.
+  const skipNextLoadRef               = useRef(false);
 
   const currentPath = pathStack[pathStack.length - 1];
 
@@ -112,18 +112,44 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
       });
       setEntries(sorted);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load directory');
+      setError(getErrorMessage(err, 'Failed to load directory'));
     } finally {
       setLoading(false);
     }
   }, [host.sessionId]);
 
-  useEffect(() => { loadDirectory(currentPath); }, [currentPath, loadDirectory]);
+  useEffect(() => {
+    if (skipNextLoadRef.current) {
+      skipNextLoadRef.current = false;
+      return;
+    }
+    loadDirectory(currentPath);
+  }, [currentPath, loadDirectory]);
 
   // ── Navigation ─────────────────────────────────────────────────────
-  const navigateInto = (dirName: string) => {
+  const navigateInto = async (dirName: string) => {
     const next = currentPath === '/' ? `/${dirName}` : `${currentPath}/${dirName}`;
-    setPathStack(prev => [...prev, next]);
+    // Probe the directory first — only commit navigation if the load succeeds
+    try {
+      setLoading(true);
+      setError(null);
+      setSelected(new Set());
+      const res = await remoteConnectionAPI.listDirectory(host.sessionId, next);
+      const sorted = [...res.entries].sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === 'DIRECTORY' ? -1 : 1;
+      });
+      // Success — mark that the next path-change effect should skip its fetch
+      // (entries are already populated), then commit the path.
+      skipNextLoadRef.current = true;
+      setPathStack(prev => [...prev, next]);
+      setEntries(sorted);
+    } catch (err) {
+      // Failed (e.g. 403) — do NOT change the path stack, stay where we are
+      setError(getErrorMessage(err, 'Failed to load directory'));
+    } finally {
+      setLoading(false);
+    }
   };
   const navigateBack = () => {
     if (pathStack.length > 1) setPathStack(prev => prev.slice(0, -1));
@@ -160,7 +186,7 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
       setModal({ type: 'none' });
       await loadDirectory(currentPath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      setError(getErrorMessage(err, 'Delete failed'));
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -177,8 +203,10 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
       setModal({ type: 'none' });
       setRenameValue('');
       await loadDirectory(currentPath);
+      setSuccessMsg(`Renamed to "${renameValue.trim()}"`);
+      setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Rename failed');
+      setError(getErrorMessage(err, 'Rename failed'));
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -194,8 +222,29 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
       setModal({ type: 'none' });
       setFolderName('');
       await loadDirectory(currentPath);
+      setSuccessMsg(`Folder "${folderName.trim()}" created`);
+      setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Create folder failed');
+      setError(getErrorMessage(err, 'Create folder failed'));
+      setModal({ type: 'none' });
+    } finally {
+      setOpLoading(false);
+    }
+  };
+
+  const handleCreateFile = async () => {
+    if (!newFileName.trim()) return;
+    const newPath = currentPath === '/' ? `/${newFileName.trim()}` : `${currentPath}/${newFileName.trim()}`;
+    try {
+      setOpLoading(true);
+      await remoteConnectionAPI.writeFile(host.sessionId, newPath, '');
+      setModal({ type: 'none' });
+      setNewFileName('');
+      await loadDirectory(currentPath);
+      setSuccessMsg(`File "${newFileName.trim()}" created`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Create file failed'));
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -206,7 +255,7 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
     try {
       await remoteConnectionAPI.downloadFile(host.sessionId, absPath(entry.name), entry.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed');
+      setError(getErrorMessage(err, 'Download failed'));
     }
   };
 
@@ -224,7 +273,7 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
       setTransfers(updated);
       setShowTransfers(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(getErrorMessage(err, 'Upload failed'));
     } finally {
       setOpLoading(false);
       if (uploadInputRef.current) uploadInputRef.current.value = '';
@@ -328,6 +377,16 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
           New Folder
         </button>
 
+        {/* New file */}
+        <button
+          onClick={() => { setNewFileName(''); setModal({ type: 'newFile' }); }}
+          disabled={opLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-[#2E3348] rounded text-[10px] font-mono uppercase tracking-widest text-slate-300 hover:bg-white/5 transition-colors disabled:opacity-40 cursor-pointer"
+        >
+          <Icon name="note_add" className="text-sm" />
+          New File
+        </button>
+
         {/* Separator */}
         <div className="w-px h-5 bg-[#2E3348]" />
 
@@ -382,6 +441,35 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
             </span>
           )}
         </button>
+
+        {/* Open in Editor */}
+        {(() => {
+          const selectedFiles = selectedEntries.filter(e => e.type === 'FILE');
+          // If specific files are selected, open them; otherwise open the current folder
+          const hasFiles = entries.some(e => e.type === 'FILE') || selectedFiles.length > 0;
+          const canOpen = hasFiles || entries.length > 0;
+          return (
+            <button
+              onClick={() => {
+                if (selectedFiles.length > 0) {
+                  setEditorState({ mode: 'files', paths: selectedFiles.map(e => absPath(e.name)) });
+                } else {
+                  setEditorState({ mode: 'folder', folderPath: currentPath });
+                }
+              }}
+              title={
+                selectedFiles.length > 0
+                  ? `Open ${selectedFiles.length} selected file${selectedFiles.length > 1 ? 's' : ''} in editor`
+                  : `Open folder "${currentPath}" in editor`
+              }
+              className="flex items-center gap-1.5 px-3 py-1.5 border rounded text-[10px] font-mono uppercase tracking-widest transition-colors border-[#4F8EF7]/40 text-[#4F8EF7] hover:bg-[#4F8EF7]/10 cursor-pointer"
+            >
+              <Icon name="code" className="text-sm" />
+              Open in Editor
+            </button>
+          );
+          void canOpen;
+        })()}
       </div>
 
       {/* ── Error banner ── */}
@@ -393,6 +481,19 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
           </div>
           <button onClick={() => setError(null)} className="cursor-pointer">
             <Icon name="close" className="text-red-400 text-sm" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Success banner ── */}
+      {successMsg && (
+        <div className="mx-4 mt-3 bg-green-900/30 border border-green-700/50 rounded p-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Icon name="check_circle" className="text-green-400 text-base" />
+            <span className="text-xs text-green-200">{successMsg}</span>
+          </div>
+          <button onClick={() => setSuccessMsg(null)} className="cursor-pointer">
+            <Icon name="close" className="text-green-400 text-sm" />
           </button>
         </div>
       )}
@@ -694,6 +795,58 @@ function FileBrowser({ host, onClose }: FileBrowserProps) {
           </div>
         </div>
       )}
+
+      {/* ── New File Modal ── */}
+      {modal.type === 'newFile' && (
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#1E2130] border border-[#2E3348] rounded w-96 p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <Icon name="note_add" className="text-[#4F8EF7] text-2xl" />
+              <h3 className="text-sm font-bold text-[#E2E8F0] uppercase tracking-wider">New File</h3>
+            </div>
+            <label className="label block mb-1">File Name</label>
+            <input
+              autoFocus
+              value={newFileName}
+              onChange={e => setNewFileName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateFile(); if (e.key === 'Escape') setModal({ type: 'none' }); }}
+              placeholder="e.g. index.ts"
+              className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-slate-300 placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all mb-4"
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setModal({ type: 'none' })}
+                disabled={opLoading}
+                className="px-4 py-2 border border-[#2E3348] rounded text-[10px] font-mono uppercase tracking-widest text-slate-300 hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateFile}
+                disabled={opLoading || !newFileName.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-[#4F8EF7] rounded text-[10px] font-mono uppercase tracking-widest text-white hover:brightness-110 transition-all cursor-pointer disabled:opacity-40"
+              >
+                {opLoading && <Icon name="hourglass_bottom" className="text-sm animate-spin" />}
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Remote Editor overlay ── */}
+      {editorState !== null && (
+        <div className="absolute inset-0 z-50 flex flex-col" style={{ background: '#0f1117' }}>
+          <RemoteEditor
+            sessionId={host.sessionId}
+            {...(editorState.mode === 'folder'
+              ? { folderPath: editorState.folderPath }
+              : { initialPaths: editorState.paths }
+            )}
+            onClose={() => setEditorState(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -718,11 +871,29 @@ function getFileIcon(name: string): string {
 
 /* ─── Main Component ───────────────────────────────────────────────── */
 
-export function RemoteHostsManagerPage() {
+interface RemoteHostsManagerPageProps {
+  sessions:          UIHost[];
+  onSessionsChange:  (hosts: UIHost[]) => void;
+  openNewConnection?: boolean;
+  onNewConnectionClose?: () => void;
+}
+
+export function RemoteHostsManagerPage({ sessions, onSessionsChange, openNewConnection = false, onNewConnectionClose }: RemoteHostsManagerPageProps) {
   const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType>('SSH_SFTP');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [authType, setAuthType] = useState<SshAuthType>('PASSWORD');
+  const [showModal, setShowModal] = useState(false);
+
+  // Sync external open trigger (e.g. header button in HomePage)
+  useEffect(() => {
+    if (openNewConnection) setShowModal(true);
+  }, [openNewConnection]);
+
+  const closeModal = () => {
+    setShowModal(false);
+    onNewConnectionClose?.();
+  };
 
   // File browser: which session (if any) is open
   const [browserHost, setBrowserHost] = useState<UIHost | null>(null);
@@ -737,37 +908,35 @@ export function RemoteHostsManagerPage() {
     passphrase: '',
     remotePath: '',
     sessionTtlMinutes: '',
+    strictHostKeyChecking: false,
+    expectedFingerprint: '',
     saveConnection: false,
     autoReconnect: false,
   });
 
-  const [sessions, setSessions] = useState<UIHost[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
-  // Load active sessions on mount
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  const loadSessions = async () => {
+  // Reload sessions from the server and push the result up to the parent
+  const reloadSessions = async () => {
     try {
       setLoading(true);
       const activeSessions = await remoteConnectionAPI.listSessions();
-      const uiHosts = activeSessions.map((session: SessionState) => ({
-        sessionId: session.sessionId,
-        name: `${session.host}:${session.port}`,
-        status: session.state === 'ACTIVE' ? ('online' as const) : ('offline' as const),
-        userAtIp: `${session.username}@${session.host}`,
-        protocol: session.protocol,
-        port: session.port,
-        lastConnected: new Date(session.createdAt).toLocaleTimeString(),
-        latency: 0,
-      }));
-      setSessions(uiHosts);
+      onSessionsChange(
+        activeSessions.map((s: SessionState) => ({
+          sessionId:     s.sessionId,
+          name:          `${s.host}:${s.port}`,
+          status:        s.state === 'ACTIVE' ? ('online' as const) : ('offline' as const),
+          userAtIp:      `${s.username}@${s.host}`,
+          protocol:      s.protocol,
+          port:          s.port,
+          lastConnected: new Date(s.createdAt).toLocaleTimeString(),
+          latency:       0,
+        }))
+      );
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sessions');
+      setError(getErrorMessage(err, 'Failed to load sessions'));
     } finally {
       setLoading(false);
     }
@@ -817,6 +986,10 @@ export function RemoteHostsManagerPage() {
         username: formData.username,
         sshAuthType: authType,
         sessionTtlMinutes: formData.sessionTtlMinutes ? parseInt(formData.sessionTtlMinutes) : 30,
+        strictHostKeyChecking: formData.strictHostKeyChecking,
+        ...(formData.strictHostKeyChecking && formData.expectedFingerprint.trim() && {
+          expectedFingerprint: formData.expectedFingerprint.trim(),
+        }),
         ...(authType === 'PASSWORD' && { password: formData.password }),
         ...(authType === 'PRIVATE_KEY' && { privateKey: formData.privateKey }),
         ...(authType === 'PRIVATE_KEY_PASSPHRASE' && { 
@@ -827,8 +1000,8 @@ export function RemoteHostsManagerPage() {
 
       await remoteConnectionAPI.connect(connectRequest);
       
-      // Reload sessions
-      await loadSessions();
+      // Reload sessions — result pushed to parent via onSessionsChange
+      await reloadSessions();
       
       // Clear form
       setFormData({
@@ -841,13 +1014,16 @@ export function RemoteHostsManagerPage() {
         passphrase: '',
         remotePath: '',
         sessionTtlMinutes: '',
+        strictHostKeyChecking: false,
+        expectedFingerprint: '',
         saveConnection: false,
         autoReconnect: false,
       });
       
       setError(null);
+      closeModal();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection failed');
+      setError(getErrorMessage(err, 'Connection failed'));
     } finally {
       setLoading(false);
     }
@@ -857,10 +1033,10 @@ export function RemoteHostsManagerPage() {
     try {
       setLoading(true);
       await remoteConnectionAPI.closeSession(sessionId);
-      setSessions(prev => prev.filter(h => h.sessionId !== sessionId));
+      onSessionsChange(sessions.filter(h => h.sessionId !== sessionId));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect');
+      setError(getErrorMessage(err, 'Failed to disconnect'));
     } finally {
       setLoading(false);
     }
@@ -876,295 +1052,90 @@ export function RemoteHostsManagerPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-[#161923]">
-      {/* ─── Header ───────────────────────────────────────────────────────── */}
-      <header className="border-b-2 border-[#2E3348] bg-[#1E2130] px-6 h-16 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="text-sm font-mono text-slate-400">
-            <span className="text-[#E2E8F0]">Home</span>
-            <span className="mx-2 text-slate-600">/</span>
-            <span className="text-[#E2E8F0]">Remote Host</span>
-            <span className="mx-2 text-slate-600">/</span>
-            <span className="text-slate-500">Connections</span>
-          </div>
+    <>
+    <div className="h-full flex flex-col bg-[#161923]">
+      {/* ─── Page Title Bar ───────────────────────────────────────────────── */}
+      <div className="px-6 pt-6 pb-2 flex items-start justify-between shrink-0">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight uppercase text-slate-100">Remote Hosts</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Manage SFTP, FTP, and SMB connections to remote servers.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search hosts..."
-              className="bg-[#11141C] min-w-80 border border-[#2E3348] rounded px-3 py-2 text-xs text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none"
-            />
-            <Icon name="search" className="text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 text-sm" />
-          </div>
-          <button className="p-2 hover:bg-white/5 rounded transition-colors relative cursor-pointer">
-            <Icon name="notifications" className="text-slate-400" />
-            <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-[#E07B39] rounded-full" />
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#4F8EF7] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono shadow-lg shadow-[#4F8EF7]/15 hover:brightness-110 transition-all cursor-pointer">
-            <Icon name="add" className="text-base" />
-            New Connection
-          </button>
+        {/* Summary badges */}
+        <div className="flex items-center gap-2 mt-1">
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono badge-done">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80]" />
+            {statusCounts.online} Online
+          </span>
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono badge-queue">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+            {statusCounts.offline} Offline
+          </span>
+          {statusCounts.warning > 0 && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono badge-active" style={{ color: '#E07B39', background: 'rgba(224,123,57,0.12)', borderColor: 'rgba(224,123,57,0.28)' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-[#E07B39]" />
+              {statusCounts.warning} Warning
+            </span>
+          )}
         </div>
-      </header>
+      </div>
 
       {/* ─── Main Content ───────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-hidden flex gap-6 p-6">
-        {/* ─── Left Panel: New Connection Form ────────────────────────────────── */}
-        <div className="w-80 flex flex-col gap-4 overflow-y-auto">
-          {/* Error Alert */}
-          {error && (
-            <div className="bg-red-900/30 border border-red-700/50 rounded p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Icon name="error" className="text-red-400 text-base" />
-                <span className="text-xs text-red-200">{error}</span>
-              </div>
-              <button onClick={() => setError(null)} className="cursor-pointer">
-                <Icon name="close" className="text-red-400 text-sm" />
-              </button>
-            </div>
-          )}
+      <div className="flex-1 overflow-hidden flex gap-6 p-6 pt-4">
 
-          <div className="bg-[#1E2130] border border-[#2E3348] rounded p-4 space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-[#E2E8F0]">New Connection</h3>
-
-            {/* Protocol Tabs */}
-            <div className="flex gap-2 border-b border-[#2E3348]">
-              {(['SSH_SFTP', 'FTP', 'SMB'] as const).map(proto => (
-                <button
-                  key={proto}
-                  onClick={() => setSelectedProtocol(proto)}
-                  className={`px-3 py-2 text-xs font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px cursor-pointer ${
-                    selectedProtocol === proto
-                      ? 'text-[#4F8EF7] border-[#4F8EF7]'
-                      : 'text-slate-500 border-transparent hover:text-slate-300'
-                  }`}
-                >
-                  {proto === 'SSH_SFTP' ? 'SFTP' : proto}
-                </button>
-              ))}
-            </div>
-
-            {/* Form Fields */}
-            <div className="space-y-2">
-              {/* Connection Name */}
-              <div>
-                <label className="label block mb-1.5">Connection Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Production Server"
-                  value={formData.name}
-                  onChange={e => handleFormChange('name', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                />
-              </div>
-
-              {/* Host/IP */}
-              <div>
-                <label className="label block mb-1.5">Host / IP Address</label>
-                <input
-                  type="text"
-                  placeholder="e.g., 192.168.1.100"
-                  value={formData.host}
-                  onChange={e => handleFormChange('host', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                />
-              </div>
-
-              {/* Port & Username */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="label block mb-1.5">Port</label>
-                  <input
-                    type="number"
-                    value={formData.port}
-                    onChange={e => handleFormChange('port', e.target.value)}
-                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="label block mb-1.5">Username</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., ubuntu"
-                    value={formData.username}
-                    onChange={e => handleFormChange('username', e.target.value)}
-                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Auth Type Toggle */}
-              <div className="flex gap-3 bg-[#11141C] rounded p-2">
-                {(['PASSWORD', 'PRIVATE_KEY'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setAuthType(type)}
-                    className={`flex-1 px-2 py-1.5 text-xs font-mono uppercase tracking-wider rounded transition-all cursor-pointer ${
-                      authType === type
-                        ? 'bg-[#4F8EF7] text-white'
-                        : 'text-slate-400 hover:text-slate-300'
-                    }`}
-                  >
-                    {type === 'PASSWORD' ? 'Password' : 'SSH Key'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Password / SSH Key */}
-              {authType === 'PASSWORD' ? (
-                <div>
-                  <label className="label block mb-1.5">Password</label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={e => handleFormChange('password', e.target.value)}
-                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                  />
-                </div>
-              ) : (
-                <div>
-                  <label className="label block mb-1.5">SSH Key (PEM)</label>
-                  <textarea
-                    placeholder="-----BEGIN PRIVATE KEY-----"
-                    value={formData.privateKey}
-                    onChange={e => handleFormChange('privateKey', e.target.value)}
-                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all h-20 resize-none"
-                  />
-                </div>
-              )}
-
-              {/* Remote Path */}
-              <div>
-                <label className="label block mb-1.5">Remote Path (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="/home/user/data"
-                  value={formData.remotePath}
-                  onChange={e => handleFormChange('remotePath', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                />
-              </div>
-
-              {/* Session TTL */}
-              <div>
-                <label className="label block mb-1.5">
-                  Session TTL
-                  <span className="ml-2 text-slate-600 normal-case font-sans">(minutes, default 30)</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="1440"
-                  placeholder="30"
-                  value={formData.sessionTtlMinutes}
-                  onChange={e => handleFormChange('sessionTtlMinutes', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
-                />
-              </div>
-
-              {/* Checkboxes */}
-              <div className="space-y-2 pt-2">
-                <label className="flex items-center gap-3 w-fit cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.saveConnection}
-                    onChange={e => handleFormChange('saveConnection', e.target.checked)}
-                    className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
-                  />
-                  <span className="text-xs text-slate-300">Save this connection</span>
-                </label>
-                <label className="flex items-center gap-3 w-fit cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.autoReconnect}
-                    onChange={e => handleFormChange('autoReconnect', e.target.checked)}
-                    className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
-                  />
-                  <span className="text-xs text-slate-300">Auto-reconnect</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleConnect}
-                disabled={loading}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#4F8EF7] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
-              >
-                <Icon name={loading ? 'hourglass_bottom' : 'play_arrow'} className="text-sm" />
-                {loading ? 'Connecting...' : 'Connect'}
-              </button>
-              <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-[#2E3348] rounded text-[10px] font-bold uppercase tracking-widest text-slate-300 font-mono hover:bg-white/5 transition-colors cursor-pointer">
-                <Icon name="check_circle" className="text-sm" />
-                Test
-              </button>
-            </div>
-          </div>
-
-          {/* Saved Hosts Section */}
-          <div className="bg-[#1E2130] border border-[#2E3348] rounded p-4">
-            <h3 className="label block mb-3">Recent Connections</h3>
-            <div className="space-y-2">
-              {sessions.slice(0, 3).map(host => (
-                <div key={host.sessionId} className="flex items-center gap-2 p-2 rounded hover:bg-white/5 transition-colors cursor-pointer">
-                  <StatusDot status={host.status} />
-                  <span className="text-xs text-slate-300 flex-1 truncate">{host.name}</span>
-                  <Icon name="more_vert" className="text-slate-600 hover:text-slate-400 text-sm" />
-                </div>
-              ))}
-              {sessions.length === 0 && (
-                <div className="text-xs text-slate-500 text-center py-4">No connections yet</div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ─── Right Panel: File Browser OR Session List ─────────────────────── */}
+        {/* ─── Full-width: File Browser OR Session List ──────────────────────── */}
         {browserHost ? (
           <FileBrowser host={browserHost} onClose={() => setBrowserHost(null)} />
         ) : (
           <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-            {/* Status Tabs */}
-            <div className="flex gap-1 items-center bg-[#1E2130] rounded p-1 w-fit">
-              {(['all', 'online', 'offline', 'warning'] as const).map(status => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`px-4 py-2 rounded text-xs font-mono uppercase tracking-wider transition-all cursor-pointer ${
-                    statusFilter === status
-                      ? 'bg-[#4F8EF7] text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {status === 'all' ? 'All' : status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Warning'}
-                  {' '}
-                  <span className="font-bold">({statusCounts[status]})</span>
-                </button>
-              ))}
-            </div>
-
-            {/* View Toggle & Sort */}
+            {/* Toolbar row */}
             <div className="flex items-center justify-between">
-              <div className="flex gap-2">
-                {(['list', 'grid'] as const).map(mode => (
+              {/* Status Tabs */}
+              <div className="flex gap-1 items-center bg-[#1E2130] rounded p-1 w-fit">
+                {(['all', 'online', 'offline', 'warning'] as const).map(status => (
                   <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className={`p-2 rounded transition-colors cursor-pointer ${
-                      viewMode === mode ? 'bg-[#4F8EF7] text-white' : 'bg-[#1E2130] text-slate-400 hover:text-slate-200'
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`px-4 py-2 rounded text-xs font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                      statusFilter === status
+                        ? 'bg-[#4F8EF7] text-white'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <Icon name={mode === 'list' ? 'list' : 'grid_on'} className="text-base" />
+                    {status === 'all' ? 'All' : status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Warning'}
+                    {' '}
+                    <span className="font-bold">({statusCounts[status]})</span>
                   </button>
                 ))}
               </div>
-              <button className="flex items-center gap-2 px-3 py-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer">
-                <Icon name="sort" className="text-sm" />
-                Sort
-              </button>
+
+              {/* Right side: view toggle + sort + new connection */}
+              <div className="flex items-center gap-3">
+                <div className="flex gap-2">
+                  {(['list', 'grid'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      className={`p-2 rounded transition-colors cursor-pointer ${
+                        viewMode === mode ? 'bg-[#4F8EF7] text-white' : 'bg-[#1E2130] text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Icon name={mode === 'list' ? 'list' : 'grid_on'} className="text-base" />
+                    </button>
+                  ))}
+                </div>
+                <button className="flex items-center gap-2 px-3 py-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer">
+                  <Icon name="sort" className="text-sm" />
+                  Sort
+                </button>
+                <div className="w-px h-5 bg-[#2E3348]" />
+                <button
+                  onClick={() => setShowModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#4F8EF7] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#4F8EF7]/15"
+                >
+                  <Icon name="add" className="text-sm" />
+                  New Connection
+                </button>
+              </div>
             </div>
 
             {/* Host List / Grid */}
@@ -1175,8 +1146,12 @@ export function RemoteHostsManagerPage() {
                 </div>
               )}
               {!loading && filteredHosts.length === 0 && (
-                <div className={`text-center text-slate-400 py-8 ${viewMode === 'grid' ? 'col-span-full' : ''}`}>
-                  No connections found
+                <div className={`flex flex-col items-center justify-center py-20 gap-4 opacity-50 ${viewMode === 'grid' ? 'col-span-full' : ''}`}>
+                  <Icon name="lan" className="text-5xl text-slate-500" />
+                  <div className="text-center">
+                    <p className="text-sm font-bold uppercase tracking-wider text-slate-400">No connections</p>
+                    <p className="text-xs text-slate-600 mt-1">Click &ldquo;New Connection&rdquo; to get started</p>
+                  </div>
                 </div>
               )}
 
@@ -1258,91 +1233,162 @@ export function RemoteHostsManagerPage() {
 
               {/* ── Grid view ── */}
               {viewMode === 'grid' && filteredHosts.map(host => {
-                const statusInfo = getStatusBadgeInfo(host.status);
-                const isOnline = host.status === 'online';
-                const protocolIcon = host.protocol === 'SSH_SFTP' ? 'terminal' : host.protocol === 'FTP' ? 'cloud_upload' : 'storage';
+                const isOnline  = host.status === 'online';
+                const isWarning = host.status === 'warning';
+                const accentColor = isOnline ? '#4F8EF7' : isWarning ? '#E07B39' : '#3a4556';
+                const protocolLabel = host.protocol === 'SSH_SFTP' ? 'SFTP' : host.protocol;
+                const protocolIcon  = host.protocol === 'SSH_SFTP' ? 'dns' : host.protocol === 'FTP' ? 'cloud_upload' : 'storage';
+
                 return (
                   <div
                     key={host.sessionId}
                     onClick={() => isOnline && setBrowserHost(host)}
-                    className={`bg-[#1E2130] border rounded flex flex-col transition-all ${
+                    className={`group relative flex flex-col rounded overflow-hidden transition-all duration-200 ${
                       isOnline
-                        ? 'border-[#2E3348] hover:border-[#4F8EF7]/50 hover:bg-[#232a3a] cursor-pointer'
-                        : 'border-[#2E3348] opacity-60 cursor-default'
+                        ? 'cursor-pointer hover:-translate-y-px'
+                        : 'opacity-55 cursor-default'
                     }`}
+                    style={{
+                      background:   'var(--color-surface)',
+                      border:       `1px solid var(--color-border-muted)`,
+                      boxShadow:    isOnline
+                        ? '0 2px 12px rgba(0,0,0,0.35)'
+                        : '0 1px 4px rgba(0,0,0,0.2)',
+                      ...(isOnline && {
+                        '--tw-shadow-color': 'rgba(79,142,247,0.08)',
+                      } as React.CSSProperties),
+                    }}
                   >
-                    {/* Card Header — colored band */}
-                    <div className={`h-1.5 rounded-t ${isOnline ? 'bg-[#4F8EF7]' : host.status === 'warning' ? 'bg-[#E07B39]' : 'bg-slate-600'}`} />
+                    {/* Accent top bar */}
+                    <div
+                      className="h-0.5 w-full shrink-0"
+                      style={{ background: accentColor }}
+                    />
 
-                    {/* Card Body */}
-                    <div className="p-4 flex flex-col gap-3 flex-1">
-                      {/* Icon + name + badge */}
-                      <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded flex items-center justify-center shrink-0 ${
-                          isOnline ? 'bg-[#4F8EF7]/15' : 'bg-white/5'
-                        }`}>
-                          <Icon
-                            name={protocolIcon}
-                            className={`text-xl ${isOnline ? 'text-[#4F8EF7]' : 'text-slate-500'}`}
-                            filled={isOnline}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-bold text-[#E2E8F0] truncate mb-1">{host.name}</h4>
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                        </div>
-                      </div>
+                    {/* Card body */}
+                    <div className="p-4 flex flex-col gap-4 flex-1">
 
-                      {/* user@host */}
-                      <div className="flex items-center gap-1.5">
-                        <Icon name="person" className="text-slate-600 text-sm" />
-                        <span className="text-[11px] font-mono text-slate-500 truncate">{host.userAtIp}</span>
-                      </div>
-
-                      {/* Meta grid */}
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-[#2E3348] pt-3 mt-auto">
-                        <div>
-                          <span className="label block mb-0.5">Protocol</span>
-                          <span className="text-[11px] font-mono text-slate-300">{host.protocol}</span>
-                        </div>
-                        <div>
-                          <span className="label block mb-0.5">Port</span>
-                          <span className="text-[11px] font-mono text-slate-300">{host.port}</span>
-                        </div>
-                        <div>
-                          <span className="label block mb-0.5">Latency</span>
-                          <span className={`text-[11px] font-mono ${host.latency > 100 ? 'text-[#E07B39]' : 'text-[#4ade80]'}`}>
-                            {host.latency > 0 ? `${host.latency}ms` : '—'}
+                      {/* Row 1 — icon + identity */}
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-9 h-9 rounded flex items-center justify-center shrink-0"
+                          style={{
+                            background: isOnline
+                              ? 'rgba(79,142,247,0.1)'
+                              : 'rgba(255,255,255,0.04)',
+                          }}
+                        >
+                          <span
+                            className="material-symbols-outlined"
+                            style={{
+                              fontSize: '18px',
+                              color: isOnline ? '#4F8EF7' : '#5a6380',
+                              fontVariationSettings: isOnline
+                                ? "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24"
+                                : "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24",
+                            }}
+                          >
+                            {protocolIcon}
                           </span>
                         </div>
-                        <div>
-                          <span className="label block mb-0.5">Since</span>
-                          <span className="text-[11px] font-mono text-slate-400">{host.lastConnected}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-semibold text-[#E2E8F0] truncate leading-tight">
+                            {host.name.split(':')[0]}
+                          </p>
+                          <p className="text-[11px] font-mono text-slate-500 mt-0.5 truncate">
+                            {host.userAtIp}
+                          </p>
                         </div>
+                        {/* Status dot */}
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: accentColor }}
+                          title={host.status}
+                        />
+                      </div>
+
+                      {/* Row 2 — meta chips */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider"
+                          style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            color: '#93a3b8',
+                          }}
+                        >
+                          {protocolLabel}
+                        </span>
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider"
+                          style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            color: '#93a3b8',
+                          }}
+                        >
+                          :{host.port}
+                        </span>
+                        {host.latency > 0 && (
+                          <span
+                            className="px-2 py-0.5 rounded text-[10px] font-mono"
+                            style={{
+                              background: host.latency > 100
+                                ? 'rgba(224,123,57,0.12)'
+                                : 'rgba(74,222,128,0.1)',
+                              color: host.latency > 100 ? '#E07B39' : '#4ade80',
+                            }}
+                          >
+                            {host.latency}ms
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Row 3 — last connected */}
+                      <div className="flex items-center gap-1.5 mt-auto">
+                        <span
+                          className="material-symbols-outlined"
+                          style={{ fontSize: '13px', color: '#5a6380' }}
+                        >
+                          schedule
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-600">
+                          {host.lastConnected}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Card Footer — actions */}
+                    {/* Card footer — actions */}
                     <div
-                      className="px-4 py-2.5 border-t border-[#2E3348] flex items-center justify-end gap-1"
+                      className="flex items-center justify-between px-4 py-2.5 shrink-0"
+                      style={{ borderTop: '1px solid var(--color-border-muted)' }}
                       onClick={e => e.stopPropagation()}
                     >
-                      {isOnline && (
+                      {isOnline ? (
                         <button
                           onClick={() => setBrowserHost(host)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-[#4F8EF7] hover:bg-[#4F8EF7]/10 rounded transition-colors cursor-pointer"
-                          title="Browse files"
+                          className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest transition-colors cursor-pointer"
+                          style={{ color: '#4F8EF7' }}
                         >
-                          <Icon name="folder_open" className="text-sm" />
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                            folder_open
+                          </span>
                           Browse
                         </button>
+                      ) : (
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-600">
+                          {host.status}
+                        </span>
                       )}
                       <button
                         onClick={() => handleDisconnect(host.sessionId)}
-                        className="p-1.5 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                        className="p-1 rounded transition-colors cursor-pointer hover:bg-red-900/20"
                         title="Disconnect"
                       >
-                        <Icon name="close" className="text-slate-500 hover:text-red-400 text-base" />
+                        <span
+                          className="material-symbols-outlined"
+                          style={{ fontSize: '14px', color: '#5a6380' }}
+                        >
+                          close
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1369,5 +1415,254 @@ export function RemoteHostsManagerPage() {
         )}
       </div>
     </div>
+
+      {/* ─── New Connection Modal ─────────────────────────────────────────────── */}
+      {showModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.65)' }}
+          onMouseDown={e => { if (e.target === e.currentTarget) closeModal(); }}
+        >
+          <div className="bg-[#1E2130] border border-[#2E3348] rounded w-md max-h-[90vh] flex flex-col shadow-2xl panel-depth">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#2E3348] shrink-0">
+              <div className="flex items-center gap-3">
+                <Icon name="lan" className="text-[#4F8EF7] text-xl" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-[#E2E8F0]">New Connection</h2>
+              </div>
+              <button onClick={closeModal} className="p-1 rounded hover:bg-white/5 transition-colors cursor-pointer">
+                <Icon name="close" className="text-slate-400 text-base" />
+              </button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto custom-scrollbar flex-1 px-5 py-4 space-y-4">
+              {/* Error Alert */}
+              {error && (
+                <div className="bg-red-900/30 border border-red-700/50 rounded p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon name="error" className="text-red-400 text-base" />
+                    <span className="text-xs text-red-200">{error}</span>
+                  </div>
+                  <button onClick={() => setError(null)} className="cursor-pointer">
+                    <Icon name="close" className="text-red-400 text-sm" />
+                  </button>
+                </div>
+              )}
+
+              {/* Protocol Tabs */}
+              <div className="flex gap-2 border-b border-[#2E3348]">
+                {(['SSH_SFTP', 'FTP', 'SMB'] as const).map(proto => (
+                  <button
+                    key={proto}
+                    onClick={() => setSelectedProtocol(proto)}
+                    className={`px-3 py-2 text-xs font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px cursor-pointer ${
+                      selectedProtocol === proto
+                        ? 'text-[#4F8EF7] border-[#4F8EF7]'
+                        : 'text-slate-500 border-transparent hover:text-slate-300'
+                    }`}
+                  >
+                    {proto === 'SSH_SFTP' ? 'SFTP' : proto}
+                  </button>
+                ))}
+              </div>
+
+              {/* Form Fields */}
+              <div className="space-y-3">
+                {/* Connection Name */}
+                <div>
+                  <label className="label block mb-1.5">Connection Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Production Server"
+                    value={formData.name}
+                    onChange={e => handleFormChange('name', e.target.value)}
+                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  />
+                </div>
+
+                {/* Host/IP */}
+                <div>
+                  <label className="label block mb-1.5">Host / IP Address</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., 192.168.1.100"
+                    value={formData.host}
+                    onChange={e => handleFormChange('host', e.target.value)}
+                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  />
+                </div>
+
+                {/* Port & Username */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label block mb-1.5">Port</label>
+                    <input
+                      type="number"
+                      value={formData.port}
+                      onChange={e => handleFormChange('port', e.target.value)}
+                      className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="label block mb-1.5">Username</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., ubuntu"
+                      value={formData.username}
+                      onChange={e => handleFormChange('username', e.target.value)}
+                      className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Auth Type Toggle */}
+                <div className="flex gap-3 bg-[#11141C] rounded p-2">
+                  {(['PASSWORD', 'PRIVATE_KEY'] as const).map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setAuthType(type)}
+                      className={`flex-1 px-2 py-1.5 text-xs font-mono uppercase tracking-wider rounded transition-all cursor-pointer ${
+                        authType === type
+                          ? 'bg-[#4F8EF7] text-white'
+                          : 'text-slate-400 hover:text-slate-300'
+                      }`}
+                    >
+                      {type === 'PASSWORD' ? 'Password' : 'SSH Key'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Password / SSH Key */}
+                {authType === 'PASSWORD' ? (
+                  <div>
+                    <label className="label block mb-1.5">Password</label>
+                    <input
+                      type="password"
+                      placeholder="••••••••"
+                      value={formData.password}
+                      onChange={e => handleFormChange('password', e.target.value)}
+                      className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="label block mb-1.5">SSH Key (PEM)</label>
+                    <textarea
+                      placeholder="-----BEGIN PRIVATE KEY-----"
+                      value={formData.privateKey}
+                      onChange={e => handleFormChange('privateKey', e.target.value)}
+                      className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all h-24 resize-none"
+                    />
+                  </div>
+                )}
+
+                {/* Remote Path */}
+                <div>
+                  <label className="label block mb-1.5">Remote Path (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="/home/user/data"
+                    value={formData.remotePath}
+                    onChange={e => handleFormChange('remotePath', e.target.value)}
+                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  />
+                </div>
+
+                {/* Session TTL */}
+                <div>
+                  <label className="label block mb-1.5">
+                    Session TTL
+                    <span className="ml-2 text-slate-600 normal-case font-sans">(minutes, default 30)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    placeholder="30"
+                    value={formData.sessionTtlMinutes}
+                    onChange={e => handleFormChange('sessionTtlMinutes', e.target.value)}
+                    className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  />
+                </div>
+
+                {/* Security options */}
+                <div className="space-y-2 pt-1">
+                  {/* Strict Host Key Checking — SSH only */}
+                  {selectedProtocol === 'SSH_SFTP' && (
+                    <div className="space-y-2 border border-[#2E3348] rounded p-3 bg-[#11141C]/50">
+                      <label className="flex items-center gap-3 w-fit cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.strictHostKeyChecking}
+                          onChange={e => handleFormChange('strictHostKeyChecking', e.target.checked)}
+                          className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
+                        />
+                        <span className="text-xs text-slate-300">Strict host key checking</span>
+                      </label>
+                      {formData.strictHostKeyChecking && (
+                        <div>
+                          <label className="label block mb-1.5">
+                            Expected Fingerprint
+                            <span className="ml-2 text-slate-600 normal-case font-sans">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="SHA256:abc123... or MD5:ab:cd:ef..."
+                            value={formData.expectedFingerprint}
+                            onChange={e => handleFormChange('expectedFingerprint', e.target.value)}
+                            className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                          />
+                          <p className="mt-1.5 text-[10px] text-slate-600 leading-snug">
+                            If provided, the server's key fingerprint must match exactly. Leave blank to verify against known_hosts only.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <label className="flex items-center gap-3 w-fit cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.saveConnection}
+                      onChange={e => handleFormChange('saveConnection', e.target.checked)}
+                      className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-300">Save this connection</span>
+                  </label>
+                  <label className="flex items-center gap-3 w-fit cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.autoReconnect}
+                      onChange={e => handleFormChange('autoReconnect', e.target.checked)}
+                      className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-300">Auto-reconnect</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal footer — action buttons */}
+            <div className="px-5 py-4 border-t border-[#2E3348] flex gap-3 shrink-0">
+              <button
+                onClick={closeModal}
+                disabled={loading}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-[#2E3348] rounded text-[10px] font-bold uppercase tracking-widest text-slate-300 font-mono hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConnect}
+                disabled={loading}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-[#4F8EF7] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-[#4F8EF7]/15"
+              >
+                <Icon name={loading ? 'hourglass_bottom' : 'play_arrow'} className="text-sm" />
+                {loading ? 'Connecting...' : 'Connect'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
