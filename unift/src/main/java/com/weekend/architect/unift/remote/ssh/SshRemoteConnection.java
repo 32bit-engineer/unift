@@ -144,7 +144,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
         // Set host key checking based on user preference
         if (credentials.isStrictHostKeyChecking()) {
             jschSession.setConfig("StrictHostKeyChecking", "yes");
-            if(!StringUtils.isBlank(credentials.getExpectedFingerprint())) {
+            if (!StringUtils.isBlank(credentials.getExpectedFingerprint())) {
                 // If a fingerprint is provided, use a custom repository to validate it
                 jsch.setHostKeyRepository(new FingerprintHostKeyRepository(credentials.getExpectedFingerprint()));
             }
