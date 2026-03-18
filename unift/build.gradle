@@ -33,6 +33,7 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
 	// jackson dependency for afterburner and object mapping
 	implementation 'com.fasterxml.jackson.core:jackson-databind'

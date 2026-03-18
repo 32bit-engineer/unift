@@ -1,6 +1,7 @@
 package com.weekend.architect.unift.remote.ssh;
 
 import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.HostKey;
 import com.jcraft.jsch.HostKeyRepository;
 import com.jcraft.jsch.JSch;
@@ -12,6 +13,7 @@ import com.jcraft.jsch.UserInfo;
 import com.weekend.architect.unift.common.utils.StringUtils;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.AbstractRemoteConnection;
+import com.weekend.architect.unift.remote.core.RemoteShell;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
 import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
 import com.weekend.architect.unift.remote.credentials.SshKeyCredentials;
@@ -28,6 +30,7 @@ import com.weekend.architect.unift.remote.model.RemoteSession;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -55,7 +58,7 @@ import lombok.extern.slf4j.Slf4j;
  * </pre>
  */
 @Slf4j
-public class SshRemoteConnection extends AbstractRemoteConnection {
+public class SshRemoteConnection extends AbstractRemoteConnection implements RemoteShell {
 
     /** POSIX path separator — remote hosts are always Unix-like. */
     private static final String PATH_SEP = "/";
@@ -203,6 +206,58 @@ public class SshRemoteConnection extends AbstractRemoteConnection {
     @Override
     protected void preClose() {
         log.debug("[{}] Preparing to close SSH connection", session.getSessionId());
+    }
+
+    @Override
+    public ShellSession openShell(String termType, int cols, int rows) throws Exception {
+        assertActive();
+        log.info("[{}] Opening interactive shell (term={}, cols={}, rows={})", session.getSessionId(), termType, cols, rows);
+
+        ChannelShell shell = (ChannelShell) jschSession.openChannel("shell");
+        shell.setPtyType(termType);
+        shell.setPtySize(cols, rows, cols * 8, rows * 16); // Approximate pixel sizes
+
+        return new JSchShellSession(shell);
+    }
+
+    /**
+     * Internal implementation of {@link ShellSession} for JSch.
+     */
+    private static class JSchShellSession implements ShellSession {
+        private final ChannelShell channel;
+        private final InputStream stdout;
+        private final OutputStream stdin;
+
+        JSchShellSession(ChannelShell channel) throws Exception {
+            this.channel = channel;
+            this.stdout = channel.getInputStream();
+            this.stdin = channel.getOutputStream();
+            this.channel.connect();
+        }
+
+        @Override
+        public InputStream getStdout() {
+            return stdout;
+        }
+
+        @Override
+        public OutputStream getStdin() {
+            return stdin;
+        }
+
+        @Override
+        public void resize(int cols, int rows) {
+            if (channel.isConnected()) {
+                channel.setPtySize(cols, rows, cols * 8, rows * 16);
+            }
+        }
+
+        @Override
+        public void close() {
+            if (channel.isConnected()) {
+                channel.disconnect();
+            }
+        }
     }
 
     // DirectoryBrowsable

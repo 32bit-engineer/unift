@@ -3,6 +3,7 @@ package com.weekend.architect.unift.remote.service;
 import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
+import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
 import java.util.List;
 import java.util.UUID;
@@ -99,4 +100,12 @@ public interface RemoteConnectionService {
      * Returns the status of a single transfer.
      */
     TransferStatusResponse getTransfer(String sessionId, UUID ownerId, String transferId);
+
+    /**
+     * Tests if the given connection credentials are valid without creating a session.
+     *
+     * @param request connection parameters and credentials to test
+     * @return result indicating whether the connection was successful
+     */
+    TestConnectionResponse testConnection(ConnectRequest request);
 }
