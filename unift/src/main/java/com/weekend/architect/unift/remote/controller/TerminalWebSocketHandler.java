@@ -113,7 +113,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
                 new ThreadPoolExecutor.AbortPolicy());
     }
 
-    // ── Connection lifecycle ──────────────────────────────────────────────────
+    // Connection lifecycle ─
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession rawWsSession) throws Exception {
@@ -121,7 +121,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         String path = Objects.requireNonNull(rawWsSession.getUri()).getPath();
         String sshSessionId = path.substring(path.lastIndexOf('/') + 1);
 
-        // ── 1. Retrieve authenticated principal from handshake attributes ────
+        // 1. Retrieve authenticated principal from handshake attributes ────
         UniFtUserDetails principal =
                 (UniFtUserDetails) rawWsSession.getAttributes().get("userDetails");
         if (principal == null) {
@@ -134,7 +134,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
 
         log.info("[ws-terminal] Connection attempt — user={}, sshSession={}", ownerId, sshSessionId);
 
-        // ── 2. Look up the SSH session ────────────────────────────────────────
+        // 2. Look up the SSH session ────────────────────────────────────────
         RemoteConnection conn;
         try {
             conn = sessionRegistry.require(sshSessionId);
@@ -148,14 +148,14 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // ── 3. Verify shell capability ────────────────────────────────────────
+        // 3. Verify shell capability ────────────────────────────────────────
         if (!(conn instanceof RemoteShell shellCapable)) {
             log.warn("[ws-terminal] Connection {} does not support terminal access", sshSessionId);
             rawWsSession.close(new CloseStatus(4003, "Remote connection does not support terminal access"));
             return;
         }
 
-        // ── 4. SECURITY: ownership validation ────────────────────────────────
+        // 4. SECURITY: ownership validation ────────────────────────────────
         UUID sessionOwner = conn.getSession().getOwnerId();
         if (!sessionOwner.equals(ownerId)) {
             log.warn(
@@ -167,7 +167,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // ── 5. Open PTY shell ─────────────────────────────────────────────────
+        // 5. Open PTY shell 
         RemoteShell.ShellSession shell;
         try {
             shell = shellCapable.openShell("xterm-256color", 80, 24);
@@ -177,17 +177,18 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // ── 6. Wrap WS session for thread-safe concurrent sends ───────────────
+        // 6. Wrap WS session for thread-safe concurrent sends
+
         // Both the pipe thread (stdout→WS) and the registry's ping task write to this
         // session concurrently. ConcurrentWebSocketSessionDecorator serialises those sends.
         ConcurrentWebSocketSessionDecorator concurrentWsSession = new ConcurrentWebSocketSessionDecorator(
                 rawWsSession, props.getSendTimeoutMs(), props.getSendBufferSizeLimitBytes());
 
-        // ── 7. Create the terminal session record ─────────────────────────────
+        // 7. Create the terminal session record
         TerminalSession terminalSession =
                 TerminalSession.create(rawWsSession.getId(), sshSessionId, ownerId, shell, concurrentWsSession);
 
-        // ── 8. Atomic per-user cap check + registration ───────────────────────
+        // 8. Atomic per-user cap check + registration
         if (!terminalRegistry.registerIfUnderCap(terminalSession)) {
             shell.close();
             rawWsSession.close(new CloseStatus(
@@ -197,7 +198,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // ── 9. Submit pipe thread (bounded pool) ──────────────────────────────
+        // 9. Submit pipe thread (bounded pool)
         try {
             outputExecutor.submit(() -> pipeShellToWebSocket(rawWsSession, shell));
         } catch (RejectedExecutionException e) {
@@ -207,7 +208,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // ── 10. Publish opened event (non-critical) ───────────────────────────
+        // 10. Publish opened event (non-critical)
         eventPublisher.publishOpened(terminalSession, conn.getSession().getHost());
         log.info(
                 "[ws-terminal] ✓ Terminal session established — ws={}, ssh={}, user={}",
@@ -270,7 +271,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         terminalRegistry.remove(wsSession.getId(), "transport-error");
     }
 
-    // ── Shell pipe ────────────────────────────────────────────────────────────
+    // Shell pipe ───────────
 
     /**
      * Reads continuously from the shell's stdout and forwards each chunk as a UTF-8
@@ -326,7 +327,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // Lifecycle ────────────
 
     @PreDestroy
     public void shutdown() {
