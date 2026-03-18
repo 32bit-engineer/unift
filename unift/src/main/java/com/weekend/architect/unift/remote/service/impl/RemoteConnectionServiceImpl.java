@@ -11,6 +11,7 @@ import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
 import com.weekend.architect.unift.remote.dto.RemoteFileDto;
+import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
 import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.enums.SessionState;
@@ -44,10 +45,10 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @RequiredArgsConstructor
 public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
-    private final ConnectionFactory connectionFactory;
     private final SessionRegistry sessionRegistry;
-    private final TransferRegistry transferRegistry;
     private final RemoteConnectionProperties props;
+    private final TransferRegistry transferRegistry;
+    private final ConnectionFactory connectionFactory;
 
     @Override
     public ConnectResponse openSession(UUID ownerId, ConnectRequest request) {
@@ -230,6 +231,68 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         assertOwnership(conn, ownerId);
         RemoteTransfer transfer = transferRegistry.require(transferId);
         return toTransferResponse(transfer);
+    }
+
+    @Override
+    public TestConnectionResponse testConnection(ConnectRequest request) {
+        log.info("Testing connection for user {} → {}:{} ({})",
+                request.getUsername(), request.getHost(), request.getPort(), request.getProtocol());
+
+        try {
+            // Build typed credentials from request
+            RemoteCredentials credentials = buildCredentials(request);
+
+            // Create a temporary session for connection testing
+            String sessionId = UuidUtils.uuidVersion7().toString();
+            OffsetDateTime now = OffsetDateTime.now();
+            RemoteSession session = RemoteSession.builder()
+                    .sessionId(sessionId)
+                    .ownerId(UUID.randomUUID()) // temporary owner for test
+                    .label(request.getLabel())
+                    .protocol(request.getProtocol())
+                    .host(request.getHost())
+                    .port(request.getPort())
+                    .username(request.getUsername())
+                    .createdAt(now)
+                    .expiresAt(now.plusMinutes(1)) // minimal TTL for test
+                    .ttlMinutes(1L)
+                    .slidingTtl(props.isSlidingTtl())
+                    .state(SessionState.INITIALIZING)
+                    .build();
+
+            // Create & connect
+            RemoteConnection connection = connectionFactory.create(credentials, session);
+            connection.connect(credentials); // throws ConnectionException on failure
+
+            // Test succeeded - extract result before closing
+            String protocolName = request.getProtocol().toString();
+            TestConnectionResponse successResponse = TestConnectionResponse.builder()
+                    .success(true)
+                    .message("Connection successful to " + request.getHost() + ":" + request.getPort())
+                    .protocol(protocolName)
+                    .host(request.getHost())
+                    .port(request.getPort())
+                    .build();
+
+            // Clean up: close the connection immediately
+            connection.close();
+
+            log.info("Connection test successful for {}:{} ({})",
+                    request.getHost(), request.getPort(), protocolName);
+            return successResponse;
+
+        } catch (Exception e) {
+            log.warn("Connection test failed for {}:{} ({}) - {}",
+                    request.getHost(), request.getPort(), request.getProtocol(), e.getMessage());
+
+            return TestConnectionResponse.builder()
+                    .success(false)
+                    .message("Connection failed: " + e.getMessage())
+                    .protocol(request.getProtocol().toString())
+                    .host(request.getHost())
+                    .port(request.getPort())
+                    .build();
+        }
     }
 
     private RemoteCredentials buildCredentials(ConnectRequest req) {
