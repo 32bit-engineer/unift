@@ -12,8 +12,14 @@ public final class SshPasswordCredentials extends RemoteCredentials {
     private final String password;
 
     @Builder
-    public SshPasswordCredentials(String host, int port, String username, String password) {
-        super(host, port, ProtocolType.SSH_SFTP);
+    public SshPasswordCredentials(
+            String host,
+            int port,
+            String username,
+            String password,
+            boolean strictHostKeyChecking,
+            String expectedFingerprint) {
+        super(host, port, ProtocolType.SSH_SFTP, strictHostKeyChecking, expectedFingerprint);
         this.username = username;
         this.password = password;
     }

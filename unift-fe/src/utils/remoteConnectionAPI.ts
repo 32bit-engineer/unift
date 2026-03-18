@@ -17,6 +17,8 @@ export interface ConnectRequest {
   privateKey?: string;
   passphrase?: string;
   sessionTtlMinutes?: number;
+  strictHostKeyChecking?: boolean;
+  expectedFingerprint?: string;
 }
 
 export type SessionStateType = 'INITIALIZING' | 'ACTIVE' | 'CLOSED' | 'EXPIRED' | 'ERROR';
@@ -71,6 +73,7 @@ export interface TransferStatusResponse {
 // ─── API ───────────────────────────────────────────────────────────────────
 
 const BASE = '/api/remote';
+const STREAM_BASE = '/api/stream';
 
 export const remoteConnectionAPI = {
   connect: (request: ConnectRequest) =>
@@ -142,4 +145,28 @@ export const remoteConnectionAPI = {
 
   getTransfer: (sessionId: string, transferId: string) =>
     apiClient.get<TransferStatusResponse>(`${BASE}/sessions/${sessionId}/transfers/${transferId}`),
+
+  /**
+   * Reads a remote text file and returns its content as a string.
+   * Uses the dedicated /flux endpoint — Flux<DataBuffer> streaming on the server,
+   * chunk-by-chunk, no async dispatch, no full in-memory buffer.
+   */
+  readFile: async (sessionId: string, remotePath: string): Promise<string> => {
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${STREAM_BASE}/sessions/${sessionId}/files?path=${encodeURIComponent(remotePath)}`;
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error(`Read failed: ${response.status}`);
+    return response.text();
+  },
+
+  /**
+   * Writes content back to a remote file by uploading it as a Blob.
+   */
+  writeFile: async (sessionId: string, remotePath: string, content: string): Promise<void> => {
+    const filename = remotePath.split('/').pop() ?? 'file';
+    const file = new File([content], filename, { type: 'text/plain' });
+    await remoteConnectionAPI.uploadFile(sessionId, remotePath, file);
+  },
 };

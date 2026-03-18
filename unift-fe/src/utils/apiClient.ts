@@ -87,10 +87,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     throw err;
   }
 
-  // Handle 204 No Content
+  // Handle empty bodies: 204 No Content, or 200 with empty body (e.g. ResponseEntity<Void>)
   if (response.status === 204) return undefined as unknown as T;
-
-  return response.json() as Promise<T>;
+  const text = await response.text();
+  if (!text) return undefined as unknown as T;
+  return JSON.parse(text) as T;
 }
 
 // ─── Convenience methods ───────────────────────────────────────────────────
@@ -102,3 +103,17 @@ export const apiClient = {
   patch:  <T>(path: string, body?: unknown, opts?: RequestOptions)          => request<T>(path, { ...opts, method: 'PATCH', body }),
   delete: <T>(path: string, opts?: RequestOptions)                          => request<T>(path, { ...opts, method: 'DELETE' }),
 };
+
+/**
+ * Extracts a human-readable message from anything thrown in a catch block.
+ * Handles:
+ *  - ApiError plain objects  { status, message }  thrown by apiClient
+ *  - native Error instances
+ *  - anything else → falls back to the provided fallback string
+ */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return fallback;
+}

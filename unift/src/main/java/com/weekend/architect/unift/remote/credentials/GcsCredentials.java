@@ -12,8 +12,14 @@ public final class GcsCredentials extends RemoteCredentials {
     private final String bucketName;
 
     @Builder
-    public GcsCredentials(String host, int port, String serviceAccountKeyJson, String bucketName) {
-        super(host, port, ProtocolType.GCS);
+    public GcsCredentials(
+            String host,
+            int port,
+            String serviceAccountKeyJson,
+            String bucketName,
+            boolean strictHostKeyChecking,
+            String expectedFingerprint) {
+        super(host, port, ProtocolType.GCS, strictHostKeyChecking, expectedFingerprint);
         this.serviceAccountKeyJson = serviceAccountKeyJson;
         this.bucketName = bucketName;
     }

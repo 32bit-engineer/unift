@@ -26,6 +26,12 @@ public class ConnectRequest {
     @NotNull(message = "protocol is required")
     private ProtocolType protocol;
 
+    /**
+     * Optional: Friendly alias for this connection (e.g. "Production Server", "Staging").
+     * Returned back in the ConnectResponse.
+     */
+    private String label;
+
     @NotBlank(message = "host is required")
     private String host;
 
@@ -56,4 +62,17 @@ public class ConnectRequest {
     @Min(value = 0, message = "sessionTtlMinutes must be ≥ 0")
     @Builder.Default
     private long sessionTtlMinutes = 0;
+
+    /**
+     * If true, the SSH client will verify the server's host key against known_hosts.
+     * If false (default), it will skip verification (StrictHostKeyChecking=no).
+     */
+    @Builder.Default
+    private boolean strictHostKeyChecking = false;
+
+    /**
+     * Optional: The expected SSH host key fingerprint (e.g. "SHA256:...", "MD5:...").
+     * Required if strictHostKeyChecking is true and no known_hosts file is configured.
+     */
+    private String expectedFingerprint;
 }

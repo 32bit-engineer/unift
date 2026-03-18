@@ -12,8 +12,14 @@ public final class AzureBlobCredentials extends RemoteCredentials {
     private final String containerName;
 
     @Builder
-    public AzureBlobCredentials(String host, int port, String connectionString, String containerName) {
-        super(host, port, ProtocolType.AZURE_BLOB);
+    public AzureBlobCredentials(
+            String host,
+            int port,
+            String connectionString,
+            String containerName,
+            boolean strictHostKeyChecking,
+            String expectedFingerprint) {
+        super(host, port, ProtocolType.AZURE_BLOB, strictHostKeyChecking, expectedFingerprint);
         this.connectionString = connectionString;
         this.containerName = containerName;
     }

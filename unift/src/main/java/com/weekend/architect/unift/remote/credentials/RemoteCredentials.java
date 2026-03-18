@@ -37,4 +37,6 @@ public abstract sealed class RemoteCredentials
     private final String host;
     private final int port;
     private final ProtocolType protocol;
+    private final boolean strictHostKeyChecking;
+    private final String expectedFingerprint;
 }

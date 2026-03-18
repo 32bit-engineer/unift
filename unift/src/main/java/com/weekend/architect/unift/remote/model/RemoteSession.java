@@ -27,6 +27,9 @@ public class RemoteSession {
     /** The authenticated UniFT user who owns this session. */
     private final UUID ownerId;
 
+    /** Friendly alias for this connection. */
+    private final String label;
+
     private final ProtocolType protocol;
     private final String host;
     private final int port;

@@ -1,2 +1,2 @@
 export { Sidebar } from './Sidebar';
-export type { NavItem, SidebarFooterProps } from './Sidebar';
+export type { NavItem, SavedHost } from './Sidebar';
