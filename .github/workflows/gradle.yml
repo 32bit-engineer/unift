@@ -1,0 +1,44 @@
+name: manual-backend-deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'unift/**'
+  workflow_dispatch:   
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH & Deploy
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+
+            mkdir -p ~/app
+            cd ~/app
+
+            if [ ! -d "unift" ]; then
+              git clone git@github.com:32bit-engineer/unift.git
+            fi
+
+            cd unift
+            git pull origin main
+            cd backend
+
+            docker stop backend || true
+            docker rm backend || true
+
+            docker build -t backend .
+
+            docker run -d -p 8080:8080 \
+              --memory="512m" \
+              --cpus="0.5" \
+              --restart unless-stopped \
+              --name backend backend
