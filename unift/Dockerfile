@@ -1,1 +1,25 @@
-# ---------- Build stage ----------FROM eclipse-temurin:24-jdk-alpine AS builderWORKDIR /appCOPY gradlew .COPY gradle gradleCOPY build.gradle settings.gradle ./RUN chmod +x gradlewRUN ./gradlew dependencies --no-daemon || trueCOPY . .RUN ./gradlew clean bootJar -x test --no-daemon# ---------- Runtime stage ----------FROM eclipse-temurin:24-jre-alpineWORKDIR /appCOPY --from=builder /app/build/libs/app.jar app.jarEXPOSE 8080ENTRYPOINT ["java", "-jar", "app.jar"]
+FROM openjdk:24-ea-jdk-slim AS builder
+
+# Install Gradle manually
+ENV GRADLE_VERSION=8.7
+
+RUN apt-get update && apt-get install -y curl unzip \
+  && curl -sLO https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
+  && unzip gradle-${GRADLE_VERSION}-bin.zip -d /opt \
+  && ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/bin/gradle
+
+WORKDIR /app
+
+# Copy everything needed for the wrapper to work
+COPY gradlew .
+COPY gradle/wrapper gradle/wrapper
+COPY . .
+
+RUN chmod +x gradlew
+RUN ./gradlew clean build -x test
+
+# Runtime image
+FROM openjdk:24-ea-jdk-slim
+WORKDIR /app
+COPY --from=builder /app/build/libs/*.jar app.jar
+CMD ["java", "-jar", "app.jar"]
