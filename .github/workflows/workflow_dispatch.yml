@@ -30,7 +30,7 @@ jobs:
 
             cd unift
             git pull origin main
-            cd backend
+            cd unift
 
             docker stop backend || true
             docker rm backend || true
