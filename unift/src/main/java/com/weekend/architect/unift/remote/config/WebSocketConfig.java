@@ -25,7 +25,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(terminalWebSocketHandler, "/ws/terminal/*")
-                .setAllowedOrigins("*"); // CORS logic is handled by security/cors config
+                .addInterceptors(terminalHandshakeInterceptor)
                 // Restrict to configured origins — never use "*" for WebSocket
                 .setAllowedOrigins(terminalProperties.getAllowedOrigins().toArray(String[]::new));
     }
