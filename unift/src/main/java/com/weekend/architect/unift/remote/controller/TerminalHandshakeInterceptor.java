@@ -59,8 +59,8 @@ public class TerminalHandshakeInterceptor implements HandshakeInterceptor {
                         attributes.put("userDetails", userDetails);
 
                         // Set the security context for this thread (the handshake request)
-                        UsernamePasswordAuthenticationToken authToken =
-                                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                                userDetails, null, userDetails.getAuthorities());
                         SecurityContextHolder.getContext().setAuthentication(authToken);
 
                         return true;

@@ -3,8 +3,8 @@ package com.weekend.architect.unift.remote.controller;
 import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
-import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.RenameRequest;
+import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
 import com.weekend.architect.unift.remote.service.RemoteConnectionService;
 import com.weekend.architect.unift.security.UniFtUserDetails;
@@ -59,7 +59,8 @@ public class RemoteConnectionController {
     @PostMapping("/test-connection")
     @Operation(
             summary = "Test connection credentials",
-            description = "Validates if the provided credentials can establish a connection without creating a session.",
+            description =
+                    "Validates if the provided credentials can establish a connection without creating a session.",
             responses = {
                 @ApiResponse(
                         responseCode = "200",
@@ -70,7 +71,11 @@ public class RemoteConnectionController {
     public ResponseEntity<TestConnectionResponse> testConnection(@Valid @RequestBody ConnectRequest request) {
         log.info("Testing connection for {}:{} ({})", request.getHost(), request.getPort(), request.getProtocol());
         TestConnectionResponse response = service.testConnection(request);
-        log.info("Connection test {} for {}:{}", response.isSuccess() ? "successful" : "failed", request.getHost(), request.getPort());
+        log.info(
+                "Connection test {} for {}:{}",
+                response.isSuccess() ? "successful" : "failed",
+                request.getHost(),
+                request.getPort());
         return ResponseEntity.ok(response);
     }
 

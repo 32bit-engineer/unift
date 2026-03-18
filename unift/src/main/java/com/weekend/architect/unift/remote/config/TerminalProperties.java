@@ -1,1 +1,73 @@
-package com.weekend.architect.unift.remote.config;import java.util.List;import lombok.Data;import org.springframework.boot.context.properties.ConfigurationProperties;import org.springframework.stereotype.Component;/** * Externalized configuration for the WebSocket terminal feature. * * <p>All properties live under the {@code unift.terminal.*} prefix in {@code application.yaml}. * * <h2>Security knobs</h2> * <ul> *   <li>{@code maxSessionsPerUser} — limits blast radius of a compromised JWT</li> *   <li>{@code allowedOrigins} — WebSocket upgrade CORS; mirrors the HTTP CORS list</li> * </ul> * * <h2>Resource knobs</h2> * <ul> *   <li>{@code maxConcurrentSessions} — global JVM cap; also sizes the bounded thread pool</li> *   <li>{@code idleTimeoutMinutes} — auto-close shells abandoned by users</li> *   <li>{@code sendTimeoutMs} — max time a single WS {@code sendMessage} may block</li> *   <li>{@code sendBufferSizeLimitBytes} — max bytes queued for a single slow client</li> * </ul> */@Data@Component@ConfigurationProperties(prefix = "unift.terminal")public class TerminalProperties {    /** Maximum concurrent terminal sessions per authenticated user. Default: 3. */    private int maxSessionsPerUser = 1;    /** Auto-close shells idle longer than this many minutes. Default: 15 min. */    private int idleTimeoutMinutes = 15;    /**     * Global cap on concurrent terminal sessions across all users.     * Also used to size the bounded pipe-thread pool. Default: 50.     */    private int maxConcurrentSessions = 5;    /** How often the idle reaper and ping task runs (milliseconds). Default: 30 s. */    private long reaperIntervalMs = 30_000L;    /**     * Maximum time (ms) a single {@code WebSocketSession.sendMessage()} call may block     * before the session is force-closed. Prevents slow/stuck clients from tying up     * pipe threads indefinitely. Default: 10 s.     */    private int sendTimeoutMs = 10_000;    /**     * Maximum bytes buffered for a single slow WebSocket client before the session     * is force-closed. Default: 64 KB.     */    private int sendBufferSizeLimitBytes = 64 * 1024;    /**     * Allowed origins for WebSocket upgrade requests (CORS).     * Mirrors the HTTP CORS list in {@link SecurityConfig}.     * Default covers common local-dev ports.     */    private List<String> allowedOrigins = List.of(            "http://localhost:3000",            "http://localhost:5173",            "http://localhost:8080",            "http://localhost:4200",            "http://127.0.0.1:3000",            "http://127.0.0.1:5173");}
+package com.weekend.architect.unift.remote.config;
+
+import java.util.List;
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+/**
+ * Externalized configuration for the WebSocket terminal feature.
+ *
+ * <p>All properties live under the {@code unift.terminal.*} prefix in {@code application.yaml}.
+ *
+ * <h2>Security knobs</h2>
+ * <ul>
+ *   <li>{@code maxSessionsPerUser} — limits blast radius of a compromised JWT</li>
+ *   <li>{@code allowedOrigins} — WebSocket upgrade CORS; mirrors the HTTP CORS list</li>
+ * </ul>
+ *
+ * <h2>Resource knobs</h2>
+ * <ul>
+ *   <li>{@code maxConcurrentSessions} — global JVM cap; also sizes the bounded thread pool</li>
+ *   <li>{@code idleTimeoutMinutes} — auto-close shells abandoned by users</li>
+ *   <li>{@code sendTimeoutMs} — max time a single WS {@code sendMessage} may block</li>
+ *   <li>{@code sendBufferSizeLimitBytes} — max bytes queued for a single slow client</li>
+ * </ul>
+ */
+@Data
+@Component
+@ConfigurationProperties(prefix = "unift.terminal")
+public class TerminalProperties {
+
+    /** Maximum concurrent terminal sessions per authenticated user. Default: 3. */
+    private int maxSessionsPerUser = 1;
+
+    /** Auto-close shells idle longer than this many minutes. Default: 15 min. */
+    private int idleTimeoutMinutes = 15;
+
+    /**
+     * Global cap on concurrent terminal sessions across all users.
+     * Also used to size the bounded pipe-thread pool. Default: 50.
+     */
+    private int maxConcurrentSessions = 5;
+
+    /** How often the idle reaper and ping task runs (milliseconds). Default: 30 s. */
+    private long reaperIntervalMs = 30_000L;
+
+    /**
+     * Maximum time (ms) a single {@code WebSocketSession.sendMessage()} call may block
+     * before the session is force-closed. Prevents slow/stuck clients from tying up
+     * pipe threads indefinitely. Default: 10 s.
+     */
+    private int sendTimeoutMs = 10_000;
+
+    /**
+     * Maximum bytes buffered for a single slow WebSocket client before the session
+     * is force-closed. Default: 64 KB.
+     */
+    private int sendBufferSizeLimitBytes = 64 * 1024;
+
+    /**
+     * Allowed origins for WebSocket upgrade requests (CORS).
+     * Mirrors the HTTP CORS list in {@link SecurityConfig}.
+     * Default covers common local-dev ports.
+     */
+    private List<String> allowedOrigins = List.of(
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:8080",
+            "http://localhost:4200",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173");
+}
+

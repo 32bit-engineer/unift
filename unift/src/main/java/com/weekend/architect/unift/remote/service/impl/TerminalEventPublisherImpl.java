@@ -1,1 +1,58 @@
-package com.weekend.architect.unift.remote.service.impl;import com.weekend.architect.unift.remote.model.TerminalSession;import com.weekend.architect.unift.remote.service.TerminalEventPublisher;import com.weekend.architect.unift.remote.service.event.TerminalEvent;import java.time.Instant;import lombok.RequiredArgsConstructor;import lombok.extern.slf4j.Slf4j;import org.springframework.kafka.core.KafkaTemplate;import org.springframework.stereotype.Service;/** * Kafka-backed implementation of {@link TerminalEventPublisher}. * * <p>Topic: {@code unift.terminal.events} * Partition key: {@code ownerId.toString()} — ensures all events for a given user * land on the same partition, preserving chronological order for audit replay. * * <p>All Kafka exceptions are caught and logged. They <strong>never propagate</strong> * into the WebSocket data path — a Kafka outage does not impact terminal functionality. */@Slf4j@Service@RequiredArgsConstructorpublic class TerminalEventPublisherImpl implements TerminalEventPublisher {    static final String TOPIC = "unift.terminal.events";//    private final KafkaTemplate<String, TerminalEvent> kafkaTemplate;    @Override    public void publishOpened(TerminalSession session, String host) {        publish(                new TerminalEvent.SessionOpened(                        session.wsSessionId(), session.sshSessionId(), session.ownerId(), host, Instant.now()),                session.ownerId().toString());    }    @Override    public void publishClosed(TerminalSession session, String reason) {        publish(                new TerminalEvent.SessionClosed(                        session.wsSessionId(), session.sshSessionId(), session.ownerId(), reason, Instant.now()),                session.ownerId().toString());    }    private void publish(TerminalEvent event, String partitionKey) {        try {//            kafkaTemplate.send(TOPIC, partitionKey, event);            log.debug(                    "[terminal-events] Published {} for owner {}",                    event.getClass().getSimpleName(),                    partitionKey);        } catch (Exception e) {            // Never propagate — audit failures must not disrupt terminal I/O            log.warn("[terminal-events] Failed to publish event to Kafka (non-critical): {}", e.getMessage());        }    }}
+package com.weekend.architect.unift.remote.service.impl;
+
+import com.weekend.architect.unift.remote.model.TerminalSession;
+import com.weekend.architect.unift.remote.service.TerminalEventPublisher;
+import com.weekend.architect.unift.remote.service.event.TerminalEvent;
+import java.time.Instant;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+/**
+ * Kafka-backed implementation of {@link TerminalEventPublisher}.
+ *
+ * <p>Topic: {@code unift.terminal.events}
+ * Partition key: {@code ownerId.toString()} — ensures all events for a given user
+ * land on the same partition, preserving chronological order for audit replay.
+ *
+ * <p>All Kafka exceptions are caught and logged. They <strong>never propagate</strong>
+ * into the WebSocket data path — a Kafka outage does not impact terminal functionality.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class TerminalEventPublisherImpl implements TerminalEventPublisher {
+
+    static final String TOPIC = "unift.terminal.events";
+
+    //    private final KafkaTemplate<String, TerminalEvent> kafkaTemplate;
+
+    @Override
+    public void publishOpened(TerminalSession session, String host) {
+        publish(
+                new TerminalEvent.SessionOpened(
+                        session.wsSessionId(), session.sshSessionId(), session.ownerId(), host, Instant.now()),
+                session.ownerId().toString());
+    }
+
+    @Override
+    public void publishClosed(TerminalSession session, String reason) {
+        publish(
+                new TerminalEvent.SessionClosed(
+                        session.wsSessionId(), session.sshSessionId(), session.ownerId(), reason, Instant.now()),
+                session.ownerId().toString());
+    }
+
+    private void publish(TerminalEvent event, String partitionKey) {
+        try {
+            //            kafkaTemplate.send(TOPIC, partitionKey, event);
+            log.debug(
+                    "[terminal-events] Published {} for owner {}",
+                    event.getClass().getSimpleName(),
+                    partitionKey);
+        } catch (Exception e) {
+            // Never propagate — audit failures must not disrupt terminal I/O
+            log.warn("[terminal-events] Failed to publish event to Kafka (non-critical): {}", e.getMessage());
+        }
+    }
+}

@@ -122,7 +122,8 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         String sshSessionId = path.substring(path.lastIndexOf('/') + 1);
 
         // ── 1. Retrieve authenticated principal from handshake attributes ────
-        UniFtUserDetails principal = (UniFtUserDetails) rawWsSession.getAttributes().get("userDetails");
+        UniFtUserDetails principal =
+                (UniFtUserDetails) rawWsSession.getAttributes().get("userDetails");
         if (principal == null) {
             // Should never happen if TerminalHandshakeInterceptor is wired correctly
             log.error("[ws-terminal] No principal in WS attributes for session path {}", path);

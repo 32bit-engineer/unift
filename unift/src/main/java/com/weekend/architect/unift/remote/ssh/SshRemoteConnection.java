@@ -211,7 +211,12 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     @Override
     public ShellSession openShell(String termType, int cols, int rows) throws Exception {
         assertActive();
-        log.info("[{}] Opening interactive shell (term={}, cols={}, rows={})", session.getSessionId(), termType, cols, rows);
+        log.info(
+                "[{}] Opening interactive shell (term={}, cols={}, rows={})",
+                session.getSessionId(),
+                termType,
+                cols,
+                rows);
 
         ChannelShell shell = (ChannelShell) jschSession.openChannel("shell");
         shell.setPtyType(termType);

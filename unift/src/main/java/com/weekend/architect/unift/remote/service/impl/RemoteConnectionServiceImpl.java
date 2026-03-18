@@ -235,8 +235,12 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
     @Override
     public TestConnectionResponse testConnection(ConnectRequest request) {
-        log.info("Testing connection for user {} → {}:{} ({})",
-                request.getUsername(), request.getHost(), request.getPort(), request.getProtocol());
+        log.info(
+                "Testing connection for user {} → {}:{} ({})",
+                request.getUsername(),
+                request.getHost(),
+                request.getPort(),
+                request.getProtocol());
 
         try {
             // Build typed credentials from request
@@ -277,13 +281,16 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
             // Clean up: close the connection immediately
             connection.close();
 
-            log.info("Connection test successful for {}:{} ({})",
-                    request.getHost(), request.getPort(), protocolName);
+            log.info("Connection test successful for {}:{} ({})", request.getHost(), request.getPort(), protocolName);
             return successResponse;
 
         } catch (Exception e) {
-            log.warn("Connection test failed for {}:{} ({}) - {}",
-                    request.getHost(), request.getPort(), request.getProtocol(), e.getMessage());
+            log.warn(
+                    "Connection test failed for {}:{} ({}) - {}",
+                    request.getHost(),
+                    request.getPort(),
+                    request.getProtocol(),
+                    e.getMessage());
 
             return TestConnectionResponse.builder()
                     .success(false)
