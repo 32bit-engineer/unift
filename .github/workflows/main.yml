@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'unift/**'   # ONLY trigger on backend changes
+      - 'backend/**'   # ✅ ONLY backend changes trigger this
 
 jobs:
   deploy:
@@ -18,22 +18,35 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            set -e
+
+            # Ensure app directory exists
+            mkdir -p ~/app
             cd ~/app
 
-            if [ ! -d ".git" ]; then
-              git clone https://github.com/32bit-engineer/unift.git .
-            else
-              git pull
+            # Clone repo if not exists
+            if [ ! -d "unift" ]; then
+              git clone https://github.com/32bit-engineer/unift.git
             fi
 
             cd unift
 
+            # Pull latest changes
+            git pull origin main
+
+            # Go to backend directory
+            cd backend
+
+            # Stop and remove existing container
             docker stop backend || true
             docker rm backend || true
 
+            # Build new image
             docker build -t backend .
 
+            # Run container with limits + restart policy
             docker run -d -p 8080:8080 \
               --memory="512m" \
               --cpus="0.5" \
+              --restart unless-stopped \
               --name backend backend
