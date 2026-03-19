@@ -70,6 +70,14 @@ export interface TransferStatusResponse {
   errorMessage?: string;
 }
 
+export interface TestConnectionResponse {
+  success: boolean;
+  message: string;
+  protocol: string;
+  host: string;
+  port: number;
+}
+
 // ─── API ───────────────────────────────────────────────────────────────────
 
 const BASE = '/api/remote';
@@ -169,4 +177,11 @@ export const remoteConnectionAPI = {
     const file = new File([content], filename, { type: 'text/plain' });
     await remoteConnectionAPI.uploadFile(sessionId, remotePath, file);
   },
+
+  /**
+   * Tests connection credentials without creating a session.
+   * Returns success status and message.
+   */
+  testConnection: (request: ConnectRequest) =>
+    apiClient.post<TestConnectionResponse>(`${BASE}/test-connection`, request),
 };

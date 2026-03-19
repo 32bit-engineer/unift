@@ -95,10 +95,10 @@ const MAIN_NAV: NavItem[] = [
 ];
 
 const QUICK_ACCESS_NAV: NavItem[] = [
-  { id: 'recent',  label: 'Recent',  icon: 'history' },
-  { id: 'starred', label: 'Starred', icon: 'star',   badge: 3 },
-  { id: 'shared',  label: 'Shared',  icon: 'share' },
-  { id: 'trash',   label: 'Trash',   icon: 'delete' },
+  { id: 'recent',   label: 'Recent',   icon: 'history' },
+  { id: 'starred',  label: 'Starred',  icon: 'star',   badge: 3 },
+  { id: 'shared',   label: 'Shared',   icon: 'share' },
+  { id: 'trash',    label: 'Trash',    icon: 'delete' },
 ];
 
 export function Sidebar({ activeItem, onSelectItem, savedHosts = [] }: SidebarProps) {

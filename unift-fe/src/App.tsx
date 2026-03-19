@@ -1,10 +1,10 @@
 
 import './App.css';
-import { AuthPage, HomePage } from '@/pages';
+import { AuthPage, HomePage, TerminalPage } from '@/pages';
 import { useAuthStore } from '@/store/authStore';
 
 // ─── Page union — extend as features are added ─────────────────────────────
-type Page = 'login' | 'home';
+type Page = 'login' | 'home' | 'terminal';
 
 function getPage(): Page {
   const param = new URLSearchParams(window.location.search).get('page');
@@ -20,8 +20,9 @@ function renderPage(page: Page, isAuthenticated: boolean): React.ReactNode {
   }
 
   switch (page) {
-    case 'login': return <AuthPage />;
-    case 'home':  return <HomePage />;
+    case 'login':    return <AuthPage />;
+    case 'home':     return <HomePage />;
+    case 'terminal': return <TerminalPage />;
   }
 }
 
