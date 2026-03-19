@@ -1,5 +1,6 @@
 package com.weekend.architect.unift.remote.config;
 
+import com.weekend.architect.unift.remote.controller.BearerProtocolHandshakeHandler;
 import com.weekend.architect.unift.remote.controller.TerminalHandshakeInterceptor;
 import com.weekend.architect.unift.remote.controller.TerminalWebSocketHandler;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final TerminalWebSocketHandler terminalWebSocketHandler;
     private final TerminalHandshakeInterceptor terminalHandshakeInterceptor;
+    private final BearerProtocolHandshakeHandler bearerProtocolHandshakeHandler;
     private final TerminalProperties terminalProperties;
 
     @Override
@@ -28,11 +30,13 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         // - API-prefixed (e.g. behind reverse proxies): /api/ws/terminal/{sshSessionId}
         registry.addHandler(terminalWebSocketHandler, "/api/ws/*")
+                .setHandshakeHandler(bearerProtocolHandshakeHandler)
                 .addInterceptors(terminalHandshakeInterceptor)
                 // Restrict to configured origins — never use "*" for WebSocket
                 .setAllowedOrigins(allowedOrigins);
 
         registry.addHandler(terminalWebSocketHandler, "/api/ws/terminal/*")
+                .setHandshakeHandler(bearerProtocolHandshakeHandler)
                 .addInterceptors(terminalHandshakeInterceptor)
                 .setAllowedOrigins(allowedOrigins);
     }

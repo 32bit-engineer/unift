@@ -12,18 +12,16 @@ import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.registry.TerminalSessionRegistry;
 import com.weekend.architect.unift.remote.service.TerminalEventPublisher;
 import com.weekend.architect.unift.security.UniFtUserDetails;
-import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.PongMessage;
@@ -71,49 +69,41 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 @Component
 public class TerminalWebSocketHandler extends TextWebSocketHandler {
 
-    private final SessionRegistry sessionRegistry;
-    private final TerminalSessionRegistry terminalRegistry;
-    private final TerminalEventPublisher eventPublisher;
-    private final ObjectMapper objectMapper;
     private final TerminalProperties props;
+    private final ObjectMapper objectMapper;
+    private final SessionRegistry sessionRegistry;
+    private final TerminalEventPublisher eventPublisher;
+    private final TerminalSessionRegistry terminalRegistry;
 
     /**
-     * Bounded thread pool — one thread per active terminal session reading shell stdout.
-     * Sized to {@code maxConcurrentSessions} so the thread count is always predictable.
-     * Uses {@code AbortPolicy}: overflow triggers a {@link RejectedExecutionException}
-     * caught in {@link #afterConnectionEstablished}, which closes the WS gracefully.
+     * Shared virtual-thread executor injected from {@link com.weekend.architect.unift.common.CommonBeans}.
+     *
+     * <p>Each pipe task blocks on {@code stdout.read()} for the lifetime of the session.
+     * Virtual threads unmount from their carrier thread while blocked on I/O, so hundreds
+     * of concurrent terminal sessions cost almost no OS resources.
+     *
+     * <p>Lifecycle (shutdown) is managed centrally by
+     * {@link com.weekend.architect.unift.common.PreTermination} — do NOT call
+     * {@code shutdown()} here.
      */
-    private final ThreadPoolExecutor outputExecutor;
+    private final ExecutorService outputExecutor;
 
     public TerminalWebSocketHandler(
             SessionRegistry sessionRegistry,
             TerminalSessionRegistry terminalRegistry,
             TerminalEventPublisher eventPublisher,
             ObjectMapper objectMapper,
-            TerminalProperties props) {
+            TerminalProperties props,
+            @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
         this.sessionRegistry = sessionRegistry;
         this.terminalRegistry = terminalRegistry;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
         this.props = props;
-
-        int cap = props.getMaxConcurrentSessions();
-        this.outputExecutor = new ThreadPoolExecutor(
-                Math.max(4, cap / 4),
-                cap,
-                60L,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(cap),
-                r -> {
-                    Thread t = new Thread(r);
-                    t.setName("terminal-pipe-" + t.threadId());
-                    t.setDaemon(true);
-                    return t;
-                },
-                new ThreadPoolExecutor.AbortPolicy());
+        this.outputExecutor = virtualThreadExecutor;
     }
 
-    // Connection lifecycle ─
+    // Connection lifecycle
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession rawWsSession) throws Exception {
@@ -134,7 +124,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
 
         log.info("[ws-terminal] Connection attempt — user={}, sshSession={}", ownerId, sshSessionId);
 
-        // 2. Look up the SSH session ────────────────────────────────────────
+        // 2. Look up the SSH session
         RemoteConnection conn;
         try {
             conn = sessionRegistry.require(sshSessionId);
@@ -148,14 +138,14 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 3. Verify shell capability ────────────────────────────────────────
+        // 3. Verify shell capability
         if (!(conn instanceof RemoteShell shellCapable)) {
             log.warn("[ws-terminal] Connection {} does not support terminal access", sshSessionId);
             rawWsSession.close(new CloseStatus(4003, "Remote connection does not support terminal access"));
             return;
         }
 
-        // 4. SECURITY: ownership validation ────────────────────────────────
+        // 4. SECURITY: ownership validation
         UUID sessionOwner = conn.getSession().getOwnerId();
         if (!sessionOwner.equals(ownerId)) {
             log.warn(
@@ -167,7 +157,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 5. Open PTY shell 
+        // 5. Open PTY shell
         RemoteShell.ShellSession shell;
         try {
             shell = shellCapable.openShell("xterm-256color", 80, 24);
@@ -198,13 +188,14 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 9. Submit pipe thread (bounded pool)
+        // 9. Submit pipe virtual thread
         try {
             outputExecutor.submit(() -> pipeShellToWebSocket(rawWsSession, shell));
         } catch (RejectedExecutionException e) {
-            log.warn("[ws-terminal] Global thread pool capacity exceeded, rejecting terminal for {}", sshSessionId);
-            terminalRegistry.remove(rawWsSession.getId(), "server-capacity-exceeded");
-            rawWsSession.close(new CloseStatus(4029, "Server terminal capacity reached. Try again later."));
+            // Only reachable if the application is shutting down (executor already closed).
+            log.warn("[ws-terminal] Executor shut down, rejecting terminal for {}", sshSessionId);
+            terminalRegistry.remove(rawWsSession.getId(), "server-shutting-down");
+            rawWsSession.close(new CloseStatus(4029, "Server is shutting down. Try again later."));
             return;
         }
 
@@ -271,7 +262,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         terminalRegistry.remove(wsSession.getId(), "transport-error");
     }
 
-    // Shell pipe ───────────
+    // Shell pipe
 
     /**
      * Reads continuously from the shell's stdout and forwards each chunk as a UTF-8
@@ -325,13 +316,5 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
                 // Best-effort — session may already be closing
             }
         }
-    }
-
-    // Lifecycle ────────────
-
-    @PreDestroy
-    public void shutdown() {
-        log.info("[ws-terminal] Shutting down pipe executor");
-        outputExecutor.shutdownNow();
     }
 }

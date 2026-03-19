@@ -17,15 +17,16 @@ import com.weekend.architect.unift.exception.TokenInvalidException;
 import com.weekend.architect.unift.exception.UserAlreadyExistsException;
 import com.weekend.architect.unift.utils.UuidUtils;
 import java.time.OffsetDateTime;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
@@ -37,23 +38,48 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
 
+    /**
+     * CPU-bound work executor — BCrypt hashing is computationally expensive.
+     * Using a pool bounded to {@code availableProcessors()} ensures concurrent
+     * login/register requests cannot saturate all CPU cores simultaneously.
+     * Lifecycle managed by {@link com.weekend.architect.unift.common.PreTermination}.
+     */
+    private final ExecutorService platformThreadExecutor;
+
+    public AuthServiceImpl(
+            JwtConfig jwtConfig,
+            JwtService jwtService,
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            RefreshTokenRepository refreshTokenRepository,
+            @Qualifier("platformThreadExecutor") ExecutorService platformThreadExecutor) {
+        this.jwtConfig = jwtConfig;
+        this.jwtService = jwtService;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.platformThreadExecutor = platformThreadExecutor;
+    }
+
     public AuthResponse register(RegisterRequest request) {
         log.info("New user registration attempt: {}", request.getUsername());
         if (userRepository.existsByUsername(request.getUsername())) {
-            log.warn("⚠️  Registration failed - username already exists: {}", request.getUsername());
+            log.warn("Registration failed - username already exists: {}", request.getUsername());
             throw new UserAlreadyExistsException("Username '" + request.getUsername() + "' is already taken");
         }
         if (request.getEmail() != null
                 && !request.getEmail().isBlank()
                 && userRepository.existsByEmail(request.getEmail())) {
-            log.warn("⚠️  Registration failed - email already exists: {}", request.getEmail());
+            log.warn("Registration failed - email already exists: {}", request.getEmail());
             throw new UserAlreadyExistsException("Email '" + request.getEmail() + "' is already registered");
         }
 
         User user = User.builder()
                 .id(UuidUtils.uuidVersion7())
                 .username(request.getUsername())
-                .password(passwordEncoder.encode(request.getPassword()))
+                .password(CompletableFuture.supplyAsync(
+                                () -> passwordEncoder.encode(request.getPassword()), platformThreadExecutor)
+                        .join())
                 .role("USER")
                 .email(request.getEmail())
                 .firstName(request.getFirstName())
@@ -70,23 +96,28 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse login(LoginRequest request, String deviceHint) {
         log.info("Login attempt: {} (device: {})", request.getUsername(), deviceHint);
         User user = userRepository.findByUsernameOrEmail(request.getUsername()).orElseThrow(() -> {
-            log.warn("⚠️  Login failed - user not found: {}", request.getUsername());
+            log.warn("Login failed - user not found: {}", request.getUsername());
             return new InvalidCredentialsException("Invalid username or password");
         });
 
         if (!user.isActive()) {
-            log.warn("⚠️  Login failed - account disabled: {}", request.getUsername());
+            log.warn("Login failed - account disabled: {}", request.getUsername());
             throw new InvalidCredentialsException("Account is disabled. Please contact support.");
         }
 
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(OffsetDateTime.now())) {
-            log.warn("⚠️  Login failed - account locked until {}: {}", user.getLockedUntil(), request.getUsername());
+            log.warn("Login failed - account locked until {}: {}", user.getLockedUntil(), request.getUsername());
             throw new AccountLockedException(
                     "Account is locked until " + user.getLockedUntil() + ". Too many failed login attempts.");
         }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            log.warn("⚠️  Login failed - invalid password for user: {}", request.getUsername());
+        boolean passwordMatches = CompletableFuture.supplyAsync(
+                        () -> passwordEncoder.matches(request.getPassword(), user.getPassword()),
+                        platformThreadExecutor)
+                .join();
+
+        if (!passwordMatches) {
+            log.warn("Login failed - invalid password for user: {}", request.getUsername());
             handleFailedAttempt(user);
             throw new InvalidCredentialsException("Invalid username or password");
         }
@@ -100,20 +131,20 @@ public class AuthServiceImpl implements AuthService {
     }
 
     public AuthResponse refresh(RefreshTokenRequest request) {
-        log.debug("🔄 Token refresh attempt");
+        log.debug("Token refresh attempt");
         String hash = jwtService.hashToken(request.getRefreshToken());
 
         RefreshToken stored = refreshTokenRepository.findByTokenHash(hash).orElseThrow(() -> {
-            log.warn("⚠️  Refresh failed - token not found");
+            log.warn("Refresh failed - token not found");
             return new TokenInvalidException("Refresh token not found");
         });
 
         if (stored.getRevokedAt() != null) {
-            log.warn("⚠️  Refresh failed - token has been revoked");
+            log.warn("Refresh failed - token has been revoked");
             throw new TokenInvalidException("Refresh token has been revoked");
         }
         if (stored.getExpiresAt().isBefore(OffsetDateTime.now())) {
-            log.warn("⚠️  Refresh failed - token has expired");
+            log.warn("Refresh failed - token has expired");
             throw new TokenInvalidException("Refresh token has expired");
         }
 
@@ -121,7 +152,7 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenRepository.revokeByTokenHash(hash);
 
         User user = userRepository.findById(stored.getUserId()).orElseThrow(() -> {
-            log.warn("⚠️  Refresh failed - user not found");
+            log.warn("Refresh failed - user not found");
             return new TokenInvalidException("Associated user not found");
         });
 
@@ -139,7 +170,7 @@ public class AuthServiceImpl implements AuthService {
     private void handleFailedAttempt(User user) {
         userRepository.incrementFailedLoginAttempts(user.getId());
         int newCount = user.getFailedLoginAttempts() + 1;
-        log.warn("⚠️  Failed login attempt for user: {} (attempt {})", user.getUsername(), newCount);
+        log.warn("Failed login attempt for user: {} (attempt {})", user.getUsername(), newCount);
         if (newCount >= MAX_FAILED_ATTEMPTS) {
             OffsetDateTime lockUntil = OffsetDateTime.now().plusMinutes(LOCK_DURATION_MINUTES);
             userRepository.lockAccount(user.getId(), lockUntil);

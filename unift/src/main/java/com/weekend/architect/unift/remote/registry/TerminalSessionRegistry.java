@@ -50,8 +50,6 @@ public class TerminalSessionRegistry {
     private final TerminalProperties props;
     private final TerminalEventPublisher eventPublisher;
 
-    // ── Registration ───────────────────────────────────────────────────────────
-
     /**
      * Atomically checks the per-user session cap and, if under the limit, registers
      * the given terminal session.
@@ -83,8 +81,6 @@ public class TerminalSessionRegistry {
         return true;
     }
 
-    // ── Lookup ─────────────────────────────────────────────────────────────────
-
     /**
      * Returns the terminal session for the given WebSocket session ID.
      *
@@ -93,8 +89,6 @@ public class TerminalSessionRegistry {
     public Optional<TerminalSession> get(String wsSessionId) {
         return Optional.ofNullable(store.get(wsSessionId));
     }
-
-    // ── Removal ────────────────────────────────────────────────────────────────
 
     /**
      * Removes the terminal session from the registry, closes the underlying shell,
@@ -130,8 +124,6 @@ public class TerminalSessionRegistry {
                 reason);
     }
 
-    // ── Activity ───────────────────────────────────────────────────────────────
-
     /**
      * Resets the idle timer for the given WebSocket session.
      * Called on every inbound input message and on every pong frame received.
@@ -144,8 +136,6 @@ public class TerminalSessionRegistry {
             session.touch();
         }
     }
-
-    // ── Queries ────────────────────────────────────────────────────────────────
 
     /**
      * Returns the number of active terminal sessions owned by the given user.
@@ -164,7 +154,46 @@ public class TerminalSessionRegistry {
         return store.size();
     }
 
-    // ── Scheduled tasks ────────────────────────────────────────────────────────
+    /**
+     * Closes every terminal WebSocket session whose parent SSH session matches
+     * {@code sshSessionId}. Called by {@link SessionRegistry} whenever an SSH
+     * session is torn down so that terminal sub-sessions are never left dangling.
+     *
+     * <p>The matching sessions are collected into a snapshot list first to avoid
+     * mutating the {@link ConcurrentHashMap} while iterating over its values.
+     *
+     * @param sshSessionId the SSH session that was closed
+     * @param reason       human-readable reason forwarded to the WS close frame and audit log
+     */
+    public void closeAllBySshSession(String sshSessionId, String reason) {
+        List<TerminalSession> affected = store.values().stream()
+                .filter(s -> sshSessionId.equals(s.sshSessionId()))
+                .toList();
+
+        if (affected.isEmpty()) {
+            return;
+        }
+
+        log.info(
+                "[terminal-registry] Closing {} terminal session(s) because SSH session {} was closed (reason: {})",
+                affected.size(),
+                sshSessionId,
+                reason);
+
+        for (TerminalSession session : affected) {
+            // Notify the browser so it can show a "connection lost" message instead of hanging.
+            try {
+                session.wsSession().close(new CloseStatus(4000, "SSH session closed: " + reason));
+            } catch (IOException e) {
+                log.debug(
+                        "[terminal-registry] Could not send close frame to terminal {} (already gone): {}",
+                        session.wsSessionId(),
+                        e.getMessage());
+            }
+            // Clean up shell + publish Kafka event
+            remove(session.wsSessionId(), "ssh-session-closed");
+        }
+    }
 
     /**
      * Runs every {@code unift.terminal.reaper-interval-ms} (default: 30 s).
