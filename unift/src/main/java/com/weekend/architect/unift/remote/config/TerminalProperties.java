@@ -59,7 +59,7 @@ public class TerminalProperties {
 
     /**
      * Allowed origins for WebSocket upgrade requests (CORS).
-     * Mirrors the HTTP CORS list in {@link SecurityConfig}.
+     * Mirrors the HTTP CORS list in SecurityConfig.
      * Default covers common local-dev ports.
      */
     private List<String> allowedOrigins = List.of(

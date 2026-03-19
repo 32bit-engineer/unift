@@ -2,15 +2,15 @@ spring:
   application:
     name: uniFT
   datasource:
-    url: jdbc:postgresql://weekend-architect-faizmohd12511251-4e7e.c.aivencloud.com:12746/postgres
-    username: avnadmin
-    password: AVNS_4zS3xT1mgcix5Jb3LYr
+    url: ${DB_URL:jdbc:postgresql://weekend-architect-faizmohd12511251-4e7e.c.aivencloud.com:12746/postgres}
+    username: ${DB_USERNAME:avnadmin}
+    password: ${DB_PASSWORD:AVNS_4zS3xT1mgcix5Jb3LYr}
     driver-class-name: org.postgresql.Driver
 
   kafka:
-    bootstrap-servers: weekend-architect-kafka-faizmohd12511251-4e7e.l.aivencloud.com:12748
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:weekend-architect-kafka-faizmohd12511251-4e7e.l.aivencloud.com:12748}
     consumer:
-      group-id: test-group
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:unift-group}
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
@@ -24,18 +24,17 @@ spring:
 
 logging:
   level:
-    root: INFO
-    com.weekend.architect.unift: DEBUG
-    com.weekend.architect.unift.exception: DEBUG
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.weekend.architect.unift: ${LOG_LEVEL_APP:DEBUG}
+    com.weekend.architect.unift.exception: ${LOG_LEVEL_EXCEPTION:DEBUG}
   pattern:
     console: "%d{HH:mm:ss.SSS} [%-5level] [%logger{35}] - %msg%n"
 
 jwt:
-  # IMPORTANT: Replace with a secure base64-encoded 256-bit+ key in production
-  # Generate with: openssl rand -base64 64
-  secret: T3BlblNlc3NhbWVTZWNyZXRLZXkyMDI2Rm9yVW5pRlRKV1RBdXRoU2VjdXJpdHk=
-  access-token-expiration-ms: 900000      # 15 minutes
-  refresh-token-expiration-ms: 604800000  # 7 days
+  # Generate a secure key with: openssl rand -base64 64
+  secret: ${JWT_SECRET}
+  access-token-expiration-ms: ${JWT_ACCESS_TOKEN_EXPIRATION_MS:900000}      # 15 minutes
+  refresh-token-expiration-ms: ${JWT_REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
 
 springdoc:
   api-docs:
@@ -44,14 +43,21 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
-    try-it-out-enabled: true   # "Try it out" open by default
+    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:true}
 
 unift:
   remote:
-    session-ttl-minutes: 30          # default session lifetime
-    max-sessions-per-user: 5         # cap per authenticated user
-    reaper-interval-ms: 60000        # how often the session reaper runs (1 min)
-    connect-timeout-ms: 15000        # SSH connect timeout
-    channel-timeout-ms: 10000        # SFTP channel open timeout
-    sliding-ttl: true                # extend expiresAt on every activity
+    session-ttl-minutes: ${UNIFT_SESSION_TTL_MINUTES:30}
+    max-sessions-per-user: ${UNIFT_MAX_SESSIONS_PER_USER:5}
+    reaper-interval-ms: ${UNIFT_REAPER_INTERVAL_MS:60000}
+    connect-timeout-ms: ${UNIFT_CONNECT_TIMEOUT_MS:15000}
+    channel-timeout-ms: ${UNIFT_CHANNEL_TIMEOUT_MS:10000}
+    sliding-ttl: ${UNIFT_SLIDING_TTL:true}
 
+  terminal:
+    # Lines in remote shell output that match any of these regex patterns are
+    # silently dropped before being forwarded to the WebSocket / Xterm.js client.
+    # Use this to hide noisy startup messages from .bashrc / .bash_profile on
+    # the remote host (e.g. Homebrew path errors on non-Mac servers).
+    suppressed-output-patterns:
+      - ".*: .*brew.*: No such file or directory.*"
