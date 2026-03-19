@@ -24,9 +24,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(terminalWebSocketHandler, "/ws/terminal/*")
+        String[] allowedOrigins = terminalProperties.getAllowedOrigins().toArray(String[]::new);
+
+        // - API-prefixed (e.g. behind reverse proxies): /api/ws/terminal/{sshSessionId}
+        registry.addHandler(terminalWebSocketHandler, "/api/ws/*")
                 .addInterceptors(terminalHandshakeInterceptor)
                 // Restrict to configured origins — never use "*" for WebSocket
-                .setAllowedOrigins(terminalProperties.getAllowedOrigins().toArray(String[]::new));
+                .setAllowedOrigins(allowedOrigins);
+
+        registry.addHandler(terminalWebSocketHandler, "/api/ws/terminal/*")
+                .addInterceptors(terminalHandshakeInterceptor)
+                .setAllowedOrigins(allowedOrigins);
     }
 }
