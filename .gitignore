@@ -61,3 +61,17 @@ out/
 
 ### VS Code ###
 .vscode/
+
+agents/
+commands/
+hooks/
+skills/
+AGENTS.md
+
+unift_process_doc.docx
+
+.github/
+
+unift/unift/docs
+unift/unift/LICENSE
+unift/unift/product-info

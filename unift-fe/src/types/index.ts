@@ -40,3 +40,7 @@ export interface ApiError {
 export interface AuthUser {
   username: string;
 }
+
+// ─── Terminal ──────────────────────────────────────────────────────────────
+
+export type { TerminalState, TerminalSession, TerminalProps, TerminalClientMessage, TerminalCloseReason } from './terminal';

@@ -19,13 +19,19 @@ import org.springframework.stereotype.Component;
  * <h2>Thread-safety</h2>
  * <p>The backing map is a {@link ConcurrentHashMap}, making all public
  * methods safe to call from concurrent request threads without explicit
- * locking.  The {@link #reapExpiredSessions()} method runs on a separate
+ * locking. The {@link #reapExpiredSessions()} method runs on a separate
  * scheduler thread and uses the same map.
  *
  * <h2>Session reaper</h2>
  * <p>The {@code @Scheduled} method runs every
  * {@code unift.remote.reaper-interval-ms} milliseconds (default: 60 s),
  * identifies sessions whose TTL has elapsed, and closes + removes them.
+ *
+ * <h2>Terminal cascade</h2>
+ * <p>Every removal path ({@link #remove}, {@link #reapExpiredSessions},
+ * {@link #clearAllSessions}) automatically closes all terminal WebSocket
+ * sub-sessions linked to the departing SSH session via
+ * {@link TerminalSessionRegistry#closeAllBySshSession}.
  */
 @Slf4j
 @Component
@@ -34,6 +40,8 @@ public class SessionRegistry {
 
     /** sessionId → live connection */
     private final ConcurrentHashMap<String, RemoteConnection> store = new ConcurrentHashMap<>();
+
+    private final TerminalSessionRegistry terminalSessionRegistry;
 
     /**
      * Registers a new (already-connected) session.
@@ -65,11 +73,16 @@ public class SessionRegistry {
 
     /**
      * Closes the connection and removes it from the registry.
+     * Also closes all terminal WebSocket sub-sessions linked to this SSH session.
      * Safe to call multiple times (idempotent).
      */
     public void remove(String sessionId) {
         RemoteConnection conn = store.remove(sessionId);
         if (conn != null) {
+            // Cascade first — close terminal sub-sessions before the SSH transport drops.
+            // This lets the browser receive a clean WS close frame (4000) rather than
+            // a raw TCP disconnect.
+            terminalSessionRegistry.closeAllBySshSession(sessionId, "ssh-session-removed");
             try {
                 conn.close();
             } catch (Exception e) {
@@ -112,5 +125,10 @@ public class SessionRegistry {
         if (count > 0) {
             log.info("[reaper] Reaped {} expired session(s)", count);
         }
+    }
+
+    public void clearAllSessions() {
+        // Snapshot the keys — remove() mutates the map and cascades to terminal sessions.
+        List.copyOf(store.keySet()).forEach(this::remove);
     }
 }

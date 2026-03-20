@@ -50,7 +50,7 @@ public class UserRepository {
     }
 
     public Optional<User> findById(UUID id) {
-        String sql = "SELECT * FROM users WHERE id = :id";
+        String sql = "SELECT * FROM users WHERE id = :id and deleted_at IS null";
         List<User> results = jdbc.query(sql, new MapSqlParameterSource("id", id), this::mapRow);
         return results.stream().findFirst();
     }

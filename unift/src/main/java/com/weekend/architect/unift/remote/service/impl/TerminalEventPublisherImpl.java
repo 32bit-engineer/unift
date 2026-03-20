@@ -4,8 +4,9 @@ import com.weekend.architect.unift.remote.model.TerminalSession;
 import com.weekend.architect.unift.remote.service.TerminalEventPublisher;
 import com.weekend.architect.unift.remote.service.event.TerminalEvent;
 import java.time.Instant;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.ExecutorService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,17 +16,27 @@ import org.springframework.stereotype.Service;
  * Partition key: {@code ownerId.toString()} — ensures all events for a given user
  * land on the same partition, preserving chronological order for audit replay.
  *
- * <p>All Kafka exceptions are caught and logged. They <strong>never propagate</strong>
- * into the WebSocket data path — a Kafka outage does not impact terminal functionality.
+ * <p>Kafka sends are dispatched on the shared {@code virtualThreadExecutor}. They are
+ * fully fire-and-forget: a Kafka outage must never propagate into the WebSocket data path.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TerminalEventPublisherImpl implements TerminalEventPublisher {
 
     static final String TOPIC = "unift.terminal.events";
 
     //    private final KafkaTemplate<String, TerminalEvent> kafkaTemplate;
+
+    /**
+     * I/O-bound — Kafka send is a network call. Virtual threads unmount while waiting
+     * for broker acknowledgement, so the carrier thread is never parked.
+     * Lifecycle is managed by {@link com.weekend.architect.unift.common.PreTermination}.
+     */
+    private final ExecutorService virtualThreadExecutor;
+
+    public TerminalEventPublisherImpl(@Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
+        this.virtualThreadExecutor = virtualThreadExecutor;
+    }
 
     @Override
     public void publishOpened(TerminalSession session, String host) {
@@ -44,15 +55,18 @@ public class TerminalEventPublisherImpl implements TerminalEventPublisher {
     }
 
     private void publish(TerminalEvent event, String partitionKey) {
-        try {
-            //            kafkaTemplate.send(TOPIC, partitionKey, event);
-            log.debug(
-                    "[terminal-events] Published {} for owner {}",
-                    event.getClass().getSimpleName(),
-                    partitionKey);
-        } catch (Exception e) {
-            // Never propagate — audit failures must not disrupt terminal I/O
-            log.warn("[terminal-events] Failed to publish event to Kafka (non-critical): {}", e.getMessage());
-        }
+        // Dispatch on a virtual thread — never block the WebSocket event thread on network I/O.
+        virtualThreadExecutor.submit(() -> {
+            try {
+                //            kafkaTemplate.send(TOPIC, partitionKey, event);
+                log.debug(
+                        "[terminal-events] Published {} for owner {}",
+                        event.getClass().getSimpleName(),
+                        partitionKey);
+            } catch (Exception e) {
+                // Never propagate — audit failures must not disrupt terminal I/O
+                log.warn("[terminal-events] Failed to publish event to Kafka (non-critical): {}", e.getMessage());
+            }
+        });
     }
 }

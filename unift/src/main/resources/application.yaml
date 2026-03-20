@@ -1,14 +1,17 @@
 spring:
   application:
     name: uniFT
+  threads:
+    virtual:
+      enabled: true   # Tomcat request threads + Spring MVC async executor use virtual threads
   datasource:
-    url: ${DB_URL:jdbc:postgresql://weekend-architect-faizmohd12511251-4e7e.c.aivencloud.com:12746/postgres}
-    username: ${DB_USERNAME:avnadmin}
-    password: ${DB_PASSWORD:AVNS_4zS3xT1mgcix5Jb3LYr}
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:weekend-architect-kafka-faizmohd12511251-4e7e.l.aivencloud.com:12748}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:unift-group}
       auto-offset-reset: earliest
@@ -46,6 +49,12 @@ springdoc:
     try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:true}
 
 unift:
+  # AES-256-GCM key for encrypting SSH credentials at rest.
+  # REQUIRED — generate with: openssl rand -base64 32
+  # Set via UNIFT_ENCRYPTION_KEY environment variable in production.
+  encryption:
+    key: ${UNIFT_ENCRYPTION_KEY}
+
   remote:
     session-ttl-minutes: ${UNIFT_SESSION_TTL_MINUTES:30}
     max-sessions-per-user: ${UNIFT_MAX_SESSIONS_PER_USER:5}

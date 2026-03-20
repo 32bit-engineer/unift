@@ -35,3 +35,14 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Environment / Secrets ###
+.env
+*.env
+!.env.example
+
+docs/
+
+product-info/
+.dockerignore
+LICENSE
