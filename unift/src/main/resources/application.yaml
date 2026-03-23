@@ -3,7 +3,7 @@ spring:
     name: uniFT
   threads:
     virtual:
-      enabled: true   # Tomcat request threads + Spring MVC async executor use virtual threads
+      enabled: true 
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -19,7 +19,7 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
 
       properties:
-        spring.json.trusted.packages: "*"
+        spring.json.trusted.packages: "com.weekend.architect.unift"
         
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -28,8 +28,8 @@ spring:
 logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
-    com.weekend.architect.unift: ${LOG_LEVEL_APP:DEBUG}
-    com.weekend.architect.unift.exception: ${LOG_LEVEL_EXCEPTION:DEBUG}
+    com.weekend.architect.unift: ${LOG_LEVEL_APP:INFO}
+    com.weekend.architect.unift.exception: ${LOG_LEVEL_EXCEPTION:INFO}
   pattern:
     console: "%d{HH:mm:ss.SSS} [%-5level] [%logger{35}] - %msg%n"
 
@@ -46,7 +46,7 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
-    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:true}
+    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:false}
 
 unift:
   # AES-256-GCM key for encrypting SSH credentials at rest.
@@ -64,6 +64,10 @@ unift:
     sliding-ttl: ${UNIFT_SLIDING_TTL:true}
 
   terminal:
+    # Allowed WebSocket upgrade origins — mirrors the HTTP CORS list.
+    # Override with UNIFT_TERMINAL_ALLOWED_ORIGINS (comma-separated) in production.
+    allowed-origins: ${UNIFT_TERMINAL_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173}
+
     # Lines in remote shell output that match any of these regex patterns are
     # silently dropped before being forwarded to the WebSocket / Xterm.js client.
     # Use this to hide noisy startup messages from .bashrc / .bash_profile on
