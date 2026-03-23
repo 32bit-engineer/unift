@@ -27,6 +27,7 @@ import com.weekend.architect.unift.remote.model.RemoteSession;
 import com.weekend.architect.unift.remote.model.RemoteTransfer;
 import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.registry.TransferRegistry;
+import com.weekend.architect.unift.remote.repository.SessionLogRepository;
 import com.weekend.architect.unift.remote.service.RemoteConnectionService;
 import com.weekend.architect.unift.utils.UuidUtils;
 import java.io.IOException;
@@ -49,6 +50,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     private final RemoteConnectionProperties props;
     private final TransferRegistry transferRegistry;
     private final ConnectionFactory connectionFactory;
+    private final SessionLogRepository sessionLogRepository;
 
     @Override
     public ConnectResponse openSession(UUID ownerId, ConnectRequest request) {
@@ -94,7 +96,15 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         // 7. Fetch home directory (best-effort)
         String homeDir = resolveHomeDirectory(connection);
 
-        log.info("Session {} opened for user {} → {}:{}", sessionId, ownerId, request.getHost(), request.getPort());
+        // 8. Detect remote OS / service name (best-effort)
+        String remoteOs = resolveRemoteOs(connection);
+        session.setRemoteOs(remoteOs);
+
+        // 9. Persist session metadata to DB (best-effort — never rolls back the session)
+        sessionLogRepository.save(session);
+
+        log.info("Session {} opened for user {} → {}:{} [{}]",
+                sessionId, ownerId, request.getHost(), request.getPort(), remoteOs);
         return toConnectResponse(connection, homeDir);
     }
 
@@ -111,6 +121,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         assertOwnership(conn, ownerId);
         transferRegistry.removeBySession(sessionId);
         sessionRegistry.remove(sessionId);
+        sessionLogRepository.markClosed(sessionId);
         log.info("Session {} closed by user {}", sessionId, ownerId);
     }
 
@@ -373,6 +384,19 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         }
     }
 
+    /**
+     * Calls {@link RemoteConnection#detectRemoteOs()} and returns the result.
+     * Never throws — any error is logged as a warning and {@code null} is returned.
+     */
+    private String resolveRemoteOs(RemoteConnection conn) {
+        try {
+            return conn.detectRemoteOs();
+        } catch (Exception e) {
+            log.warn("[{}] Could not detect remote OS: {}", conn.getSessionId(), e.getMessage());
+            return null;
+        }
+    }
+
     private RemoteTransfer createTransfer(
             String sessionId, String remotePath, TransferDirection direction, long totalBytes) {
         String transferId = UuidUtils.uuidVersion7().toString();
@@ -411,6 +435,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 .createdAt(s.getCreatedAt())
                 .expiresAt(s.getExpiresAt())
                 .homeDirectory(homeDir)
+                .remoteOs(s.getRemoteOs())
                 .build();
     }
 

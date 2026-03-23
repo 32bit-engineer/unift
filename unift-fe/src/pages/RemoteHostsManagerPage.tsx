@@ -4,6 +4,7 @@ import {
   type SessionState,
   type ConnectRequest,
   type TestConnectionResponse,
+  type SavedHostResponse,
 } from '@/utils/remoteConnectionAPI';
 import { getErrorMessage } from '@/utils/apiClient';
 import { Icon } from './RemoteHostsManager/shared';
@@ -12,6 +13,7 @@ import { NewConnectionModal } from './RemoteHostsManager/NewConnectionModal';
 import { HostListView } from './RemoteHostsManager/HostListView';
 import { HostGridView } from './RemoteHostsManager/HostGridView';
 import { TerminalPanel } from './RemoteHostsManager/TerminalPanel';
+import { SavedHostsSection } from './RemoteHostsManager/SavedHostsSection';
 import type { UIHost, ProtocolType, StatusFilter, ConnectionFormData } from './RemoteHostsManager/types';
 import type { SshAuthType } from '@/utils/remoteConnectionAPI';
 
@@ -76,6 +78,11 @@ export function RemoteHostsManagerPage({
   const [error, setError]               = useState<string | null>(null);
   const [testResult, setTestResult]     = useState<TestConnectionResponse | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
+
+  // Saved hosts
+  const [savedHosts, setSavedHosts]       = useState<SavedHostResponse[]>([]);
+  const [connectingId, setConnectingId]   = useState<string | null>(null);
+  const [deletingId, setDeletingId]       = useState<string | null>(null);
 
   // Terminal session sync
   useEffect(() => {
@@ -144,6 +151,21 @@ export function RemoteHostsManagerPage({
       setLoading(false);
     }
   };
+
+  // Load saved host configurations from the server
+  const reloadSavedHosts = async () => {
+    try {
+      const hosts = await remoteConnectionAPI.listSavedHosts();
+      setSavedHosts(hosts);
+    } catch {
+      // Non-fatal — saved hosts are a convenience feature
+    }
+  };
+
+  // Load saved hosts on mount
+  useEffect(() => {
+    reloadSavedHosts();
+  }, []);
 
   // Filter and count helpers
   const filteredHosts = useMemo(() => {
@@ -255,6 +277,35 @@ export function RemoteHostsManagerPage({
       };
 
       await remoteConnectionAPI.connect(connectRequest);
+
+      // Save the host config if the user opted in
+      if (formData.saveConnection) {
+        try {
+          await remoteConnectionAPI.saveSavedHost({
+            label:                 formData.name.trim() || undefined,
+            protocol:              selectedProtocol,
+            hostname:              formData.host,
+            port:                  parseInt(formData.port),
+            username:              formData.username,
+            authType:              authType,
+            strictHostKeyChecking: formData.strictHostKeyChecking,
+            ...(formData.strictHostKeyChecking && formData.expectedFingerprint.trim() && {
+              expectedFingerprint: formData.expectedFingerprint.trim(),
+            }),
+            ...(authType === 'PASSWORD'              && { password: formData.password }),
+            ...(authType === 'PRIVATE_KEY'           && { privateKey: formData.privateKey }),
+            ...(authType === 'PRIVATE_KEY_PASSPHRASE' && {
+              privateKey: formData.privateKey,
+              passphrase: formData.passphrase,
+            }),
+          });
+          await reloadSavedHosts();
+        } catch {
+          // Non-fatal — the session opened successfully, saving the config is best-effort
+          console.warn('Failed to save host configuration');
+        }
+      }
+
       await reloadSessions();
       setFormData(EMPTY_FORM);
       setError(null);
@@ -276,6 +327,46 @@ export function RemoteHostsManagerPage({
       setError(getErrorMessage(err, 'Failed to disconnect'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Connect using stored (encrypted) credentials for a saved host
+  const handleConnectSaved = async (id: string) => {
+    try {
+      setConnectingId(id);
+      const response = await remoteConnectionAPI.connectSavedHost(id);
+      onSessionsChange([
+        ...sessions,
+        {
+          sessionId:     response.sessionId,
+          name:          response.label ?? `${response.host}:${response.port}`,
+          status:        'online' as const,
+          userAtIp:      `${response.username}@${response.host}`,
+          protocol:      response.protocol,
+          port:          response.port,
+          lastConnected: new Date(response.createdAt).toLocaleTimeString(),
+          latency:       0,
+        },
+      ]);
+      // Refresh saved hosts to update lastUsed timestamp
+      await reloadSavedHosts();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to connect to saved host'));
+    } finally {
+      setConnectingId(null);
+    }
+  };
+
+  // Remove a saved host configuration (does not affect active sessions)
+  const handleDeleteSaved = async (id: string) => {
+    try {
+      setDeletingId(id);
+      await remoteConnectionAPI.deleteSavedHost(id);
+      setSavedHosts(prev => prev.filter(h => h.id !== id));
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to delete saved host'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -318,7 +409,14 @@ export function RemoteHostsManagerPage({
 
           {/* Full-width: File Browser OR Session List */}
           {browserHost ? (
-            <FileBrowser host={browserHost} onClose={() => setBrowserHost(null)} />
+            <FileBrowser
+              host={browserHost}
+              onClose={() => setBrowserHost(null)}
+              onSessionExpired={() => {
+                onSessionsChange(sessions.filter(h => h.sessionId !== browserHost.sessionId));
+                setBrowserHost(null);
+              }}
+            />
           ) : (
             <div className="flex-1 flex flex-col gap-4 overflow-hidden">
 
@@ -397,6 +495,19 @@ export function RemoteHostsManagerPage({
                     onBrowse={setBrowserHost}
                     onDisconnect={handleDisconnect}
                   />
+                )}
+
+                {/* Saved hosts — rendered below active sessions in list mode */}
+                {viewMode === 'list' && (
+                  <div className="mt-4">
+                    <SavedHostsSection
+                      savedHosts={savedHosts}
+                      connectingId={connectingId}
+                      deletingId={deletingId}
+                      onConnect={handleConnectSaved}
+                      onDelete={handleDeleteSaved}
+                    />
+                  </div>
                 )}
               </div>
 

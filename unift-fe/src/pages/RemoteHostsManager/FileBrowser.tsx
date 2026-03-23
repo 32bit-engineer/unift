@@ -11,9 +11,10 @@ import type { UIHost, FileEntry, ModalState, EditorState } from './types';
 interface FileBrowserProps {
   host: UIHost;
   onClose: () => void;
+  onSessionExpired?: () => void;
 }
 
-export function FileBrowser({ host, onClose }: FileBrowserProps) {
+export function FileBrowser({ host, onClose, onSessionExpired }: FileBrowserProps) {
   const [pathStack, setPathStack]         = useState<string[]>(['/']);
   const [entries, setEntries]             = useState<FileEntry[]>([]);
   const [loading, setLoading]             = useState(false);
@@ -33,6 +34,16 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
   // When navigateInto() pre-loads a directory, this flag tells the path-change
   // useEffect to skip the redundant second fetch for that path.
   const skipNextLoadRef = useRef(false);
+
+  // Sets the error state and, if the server reports the session is gone,
+  // notifies the parent so it can clean up the stale connection.
+  const handleApiError = useCallback((err: unknown, fallback: string) => {
+    const msg = getErrorMessage(err, fallback);
+    setError(msg);
+    if (msg.toLowerCase().includes('session not found')) {
+      onSessionExpired?.();
+    }
+  }, [onSessionExpired]);
 
   const currentPath = pathStack[pathStack.length - 1];
 
@@ -54,11 +65,11 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       });
       setEntries(sorted);
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to load directory'));
+      handleApiError(err, 'Failed to load directory');
     } finally {
       setLoading(false);
     }
-  }, [host.sessionId]);
+  }, [host.sessionId, handleApiError]);
 
   useEffect(() => {
     if (skipNextLoadRef.current) {
@@ -84,7 +95,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setPathStack(prev => [...prev, next]);
       setEntries(sorted);
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to load directory'));
+      handleApiError(err, 'Failed to load directory');
     } finally {
       setLoading(false);
     }
@@ -120,7 +131,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setPathStack(stack);
       setEntries(sorted);
     } catch (err) {
-      setError(getErrorMessage(err, `Cannot navigate to "${normalized}"`));
+      handleApiError(err, `Cannot navigate to "${normalized}"`);
       setPathInputValue(currentPath);
     } finally {
       setLoading(false);
@@ -160,7 +171,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setModal({ type: 'none' });
       await loadDirectory(currentPath);
     } catch (err) {
-      setError(getErrorMessage(err, 'Delete failed'));
+      handleApiError(err, 'Delete failed');
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -181,7 +192,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setSuccessMsg(`Renamed to "${renameValue.trim()}"`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
-      setError(getErrorMessage(err, 'Rename failed'));
+      handleApiError(err, 'Rename failed');
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -201,7 +212,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setSuccessMsg(`Folder "${folderName.trim()}" created`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
-      setError(getErrorMessage(err, 'Create folder failed'));
+      handleApiError(err, 'Create folder failed');
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -221,7 +232,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setSuccessMsg(`File "${newFileName.trim()}" created`);
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
-      setError(getErrorMessage(err, 'Create file failed'));
+      handleApiError(err, 'Create file failed');
       setModal({ type: 'none' });
     } finally {
       setOpLoading(false);
@@ -232,7 +243,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
     try {
       await remoteConnectionAPI.downloadFile(host.sessionId, absPath(entry.name), entry.name);
     } catch (err) {
-      setError(getErrorMessage(err, 'Download failed'));
+      handleApiError(err, 'Download failed');
     }
   };
 
@@ -249,7 +260,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       setTransfers(updated);
       setShowTransfers(true);
     } catch (err) {
-      setError(getErrorMessage(err, 'Upload failed'));
+      handleApiError(err, 'Upload failed');
     } finally {
       setOpLoading(false);
     }
@@ -390,7 +401,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
       )}
 
       {/* Column Headers */}
-      <div className="grid grid-cols-[24px_auto_1fr_auto_auto_auto] items-center gap-x-4 gap-y-0 px-4 py-2 border-b border-[#2E3348] shrink-0">
+      <div className="grid grid-cols-[24px_auto_1fr_auto_auto_auto_auto] items-center gap-x-4 gap-y-0 px-4 py-2 border-b border-[#2E3348] shrink-0">
         <input
           type="checkbox"
           checked={entries.length > 0 && selected.size === entries.length}
@@ -402,18 +413,19 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
         <span className="label w-20 text-right">Size</span>
         <span className="label w-28 text-right">Modified</span>
         <span className="label w-20 text-right">Perms</span>
+        <span className="label w-28 text-right">Actions</span>
       </div>
 
       {/* Back row (when not at root) */}
       {pathStack.length > 1 && (
         <button
           onClick={navigateBack}
-          className="grid grid-cols-[24px_auto_1fr_auto_auto_auto] items-center gap-x-4 gap-y-0 px-4 py-2 hover:bg-white/5 transition-colors cursor-pointer border-b border-[#2E3348] text-left shrink-0"
+          className="grid grid-cols-[24px_auto_1fr_auto_auto_auto_auto] items-center gap-x-4 gap-y-0 px-4 py-2 hover:bg-white/5 transition-colors cursor-pointer border-b border-[#2E3348] text-left shrink-0"
         >
           <div className="w-3.5" />
           <Icon name="arrow_upward" className="text-slate-500 text-base" />
           <span className="text-xs font-mono text-slate-500">..</span>
-          <span className="w-20" /><span className="w-28" /><span className="w-20" />
+          <span className="w-20" /><span className="w-28" /><span className="w-20" /><span className="w-28" />
         </button>
       )}
 
@@ -441,7 +453,7 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
           return (
             <div
               key={i}
-              className={`group grid grid-cols-[24px_auto_1fr_auto_auto_auto] items-center gap-x-4 gap-y-0 px-4 py-2 border-b border-[#2E3348]/50 transition-colors ${
+              className={`group grid grid-cols-[24px_auto_1fr_auto_auto_auto_auto] items-center gap-x-4 gap-y-0 px-4 py-2 border-b border-[#2E3348]/50 transition-colors ${
                 isSelected ? 'bg-[#4F8EF7]/10' : 'hover:bg-white/5'
               }`}
             >
@@ -471,9 +483,9 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
                 {isDir && <span className="text-slate-600">/</span>}
               </span>
 
-              {/* Size */}
+              {/* Size — directories don't have a meaningful flat size, show — */}
               <span className="text-xs font-mono text-slate-500 w-20 text-right">
-                {formatSize(entry.sizeBytes)}
+                {isDir ? '—' : formatSize(entry.sizeBytes)}
               </span>
 
               {/* Modified */}
@@ -481,18 +493,18 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
                 {formatDate(entry.lastModified)}
               </span>
 
-              {/* Perms + row actions (shown on hover or selection) */}
-              <div className="w-20 flex items-center justify-end gap-1">
-                {!isSelected && (
-                  <span className="text-[10px] font-mono text-slate-600 group-hover:hidden">
-                    {entry.permissions ?? '—'}
-                  </span>
-                )}
-                <div className={`items-center gap-0.5 ${isSelected ? 'flex' : 'hidden group-hover:flex'}`}>
+              {/* Perms */}
+              <span className="text-xs font-mono text-slate-500 w-20 text-right">
+                {entry.permissions ?? '—'}
+              </span>
+
+              {/* Row actions (shown on hover or selection) */}
+              <div className="w-28 flex items-center justify-end gap-1">
+                <div className={`items-center gap-1 ${isSelected ? 'flex' : 'hidden group-hover:flex'}`}>
                   {entry.type === 'FILE' && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDownload(entry); }}
-                      className="p-1 hover:bg-white/10 rounded cursor-pointer"
+                      className="pl-3 pr-2 py-1 hover:bg-white/10 rounded cursor-pointer"
                       title="Download"
                     >
                       <Icon name="download" className="text-slate-400 hover:text-[#4ade80] text-sm" />
@@ -504,14 +516,14 @@ export function FileBrowser({ host, onClose }: FileBrowserProps) {
                       setRenameValue(entry.name);
                       setModal({ type: 'rename', entry });
                     }}
-                    className="p-1 hover:bg-white/10 rounded cursor-pointer"
+                    className="px-2 py-1 hover:bg-white/10 rounded cursor-pointer"
                     title="Rename"
                   >
                     <Icon name="drive_file_rename_outline" className="text-slate-400 hover:text-[#4F8EF7] text-sm" />
                   </button>
                   <button
                     onClick={e => { e.stopPropagation(); setModal({ type: 'delete', entries: [entry] }); }}
-                    className="p-1 hover:bg-white/10 rounded cursor-pointer"
+                    className="px-2 py-1 hover:bg-white/10 rounded cursor-pointer"
                     title="Delete"
                   >
                     <Icon name="delete" className="text-slate-400 hover:text-red-400 text-sm" />
