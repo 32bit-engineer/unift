@@ -229,8 +229,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         }
         try {
             // /etc/os-release is present on virtually all systemd-based Linux distros
-            String os = runCommand(
-                    "grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '\"'");
+            String os = runCommand("grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '\"'");
             if (!os.isBlank()) {
                 log.debug("[{}] Detected remote OS via /etc/os-release: {}", session.getSessionId(), os);
                 return os;
@@ -242,8 +241,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 return os;
             }
         } catch (Exception e) {
-            log.warn("[{}] Remote OS detection failed (non-critical): {}",
-                    session.getSessionId(), e.getMessage());
+            log.warn("[{}] Remote OS detection failed (non-critical): {}", session.getSessionId(), e.getMessage());
         }
         return "SSH Server";
     }
@@ -259,7 +257,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         ChannelExec exec = (ChannelExec) jschSession.openChannel("exec");
         try {
             exec.setCommand(command);
-            exec.setErrStream(null);          // discard stderr
+            exec.setErrStream(null); // discard stderr
             InputStream in = exec.getInputStream();
             exec.connect(props.getChannelTimeoutMs());
 

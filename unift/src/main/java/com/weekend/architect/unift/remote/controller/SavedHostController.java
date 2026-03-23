@@ -1,1 +1,138 @@
-package com.weekend.architect.unift.remote.controller;import com.weekend.architect.unift.remote.dto.ConnectResponse;import com.weekend.architect.unift.remote.dto.SavedHostRequest;import com.weekend.architect.unift.remote.dto.SavedHostResponse;import com.weekend.architect.unift.remote.service.SavedHostService;import com.weekend.architect.unift.security.UniFtUserDetails;import io.swagger.v3.oas.annotations.Operation;import io.swagger.v3.oas.annotations.media.Content;import io.swagger.v3.oas.annotations.media.Schema;import io.swagger.v3.oas.annotations.responses.ApiResponse;import io.swagger.v3.oas.annotations.security.SecurityRequirement;import io.swagger.v3.oas.annotations.tags.Tag;import jakarta.validation.Valid;import java.util.List;import java.util.UUID;import lombok.RequiredArgsConstructor;import lombok.extern.slf4j.Slf4j;import org.springframework.http.HttpStatus;import org.springframework.http.ResponseEntity;import org.springframework.security.core.annotation.AuthenticationPrincipal;import org.springframework.web.bind.annotation.DeleteMapping;import org.springframework.web.bind.annotation.GetMapping;import org.springframework.web.bind.annotation.PathVariable;import org.springframework.web.bind.annotation.PostMapping;import org.springframework.web.bind.annotation.RequestBody;import org.springframework.web.bind.annotation.RequestMapping;import org.springframework.web.bind.annotation.RestController;/** * REST endpoints for managing saved remote host configurations. * * <p>Credentials flow: * <ol> *   <li>Client POSTs plaintext credentials over TLS → encrypted with AES-256-GCM → stored in DB</li> *   <li>Credentials are <strong>never</strong> returned in any response</li> *   <li>At connect time, credentials are decrypted on the fly, used to open the remote session, *       then discarded — they never leave the JVM heap in plaintext form</li> * </ol> */@RestController@RequiredArgsConstructor@RequestMapping("/api/hosts")@Slf4j@Tag(        name = "Saved Hosts",        description = "Manage saved remote host configurations with AES-256-GCM encrypted credentials")@SecurityRequirement(name = "BearerAuth")public class SavedHostController {    private final SavedHostService service;    @PostMapping    @Operation(            summary = "Save a new host configuration",            description =                    "Accepts plaintext credentials (over TLS), encrypts them with AES-256-GCM, "                            + "and persists the host config. Credentials are never returned.",            responses = {                @ApiResponse(                        responseCode = "201",                        description = "Host saved",                        content = @Content(schema = @Schema(implementation = SavedHostResponse.class))),                @ApiResponse(responseCode = "400", description = "Validation failed", content = @Content),                @ApiResponse(                        responseCode = "422",                        description = "Missing required credential for authType",                        content = @Content)            })    public ResponseEntity<SavedHostResponse> save(            @Valid @RequestBody SavedHostRequest request,            @AuthenticationPrincipal UniFtUserDetails principal) {        log.debug("Saving host config for user {} → {}:{}", principal.user().getId(), request.getHostname(), request.getPort());        SavedHostResponse response = service.save(principal.user().getId(), request);        return ResponseEntity.status(HttpStatus.CREATED).body(response);    }    @GetMapping    @Operation(            summary = "List all saved hosts",            description = "Returns all saved host configurations for the current user. Credentials are never included.")    public ResponseEntity<List<SavedHostResponse>> list(@AuthenticationPrincipal UniFtUserDetails principal) {        return ResponseEntity.ok(service.list(principal.user().getId()));    }    @GetMapping("/{id}")    @Operation(            summary = "Get a saved host by ID",            responses = {                @ApiResponse(                        responseCode = "200",                        description = "Host found",                        content = @Content(schema = @Schema(implementation = SavedHostResponse.class))),                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content)            })    public ResponseEntity<SavedHostResponse> get(            @PathVariable UUID id, @AuthenticationPrincipal UniFtUserDetails principal) {        return ResponseEntity.ok(service.get(principal.user().getId(), id));    }    @DeleteMapping("/{id}")    @Operation(            summary = "Delete a saved host",            responses = {                @ApiResponse(responseCode = "204", description = "Deleted"),                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content)            })    public ResponseEntity<Void> delete(            @PathVariable UUID id, @AuthenticationPrincipal UniFtUserDetails principal) {        service.delete(principal.user().getId(), id);        return ResponseEntity.noContent().build();    }    @PostMapping("/{id}/connect")    @Operation(            summary = "Connect to a saved host",            description =                    "Decrypts the stored credentials on the fly and opens a new SSH session. "                            + "Plaintext credentials exist only for the duration of the TCP handshake.",            responses = {                @ApiResponse(                        responseCode = "201",                        description = "SSH session opened",                        content = @Content(schema = @Schema(implementation = ConnectResponse.class))),                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content),                @ApiResponse(                        responseCode = "429",                        description = "Max active sessions reached",                        content = @Content),                @ApiResponse(responseCode = "502", description = "SSH connection failed", content = @Content)            })    public ResponseEntity<ConnectResponse> connect(            @PathVariable UUID id, @AuthenticationPrincipal UniFtUserDetails principal) {        log.debug("Connect request for saved host [{}] by user {}", id, principal.user().getId());        ConnectResponse response = service.connect(principal.user().getId(), id);        return ResponseEntity.status(HttpStatus.CREATED).body(response);    }}
+package com.weekend.architect.unift.remote.controller;
+
+import com.weekend.architect.unift.remote.dto.ConnectResponse;
+import com.weekend.architect.unift.remote.dto.SavedHostRequest;
+import com.weekend.architect.unift.remote.dto.SavedHostResponse;
+import com.weekend.architect.unift.remote.service.SavedHostService;
+import com.weekend.architect.unift.security.UniFtUserDetails;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * REST endpoints for managing saved remote host configurations.
+ *
+ * <p>Credentials flow:
+ * <ol>
+ *   <li>Client POSTs plaintext credentials over TLS → encrypted with AES-256-GCM → stored in DB</li>
+ *   <li>Credentials are <strong>never</strong> returned in any response</li>
+ *   <li>At connect time, credentials are decrypted on the fly, used to open the remote session,
+ *       then discarded — they never leave the JVM heap in plaintext form</li>
+ * </ol>
+ */
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/hosts")
+@Slf4j
+@Tag(
+        name = "Saved Hosts",
+        description = "Manage saved remote host configurations with AES-256-GCM encrypted credentials")
+@SecurityRequirement(name = "BearerAuth")
+public class SavedHostController {
+
+    private final SavedHostService service;
+
+    @PostMapping
+    @Operation(
+            summary = "Save a new host configuration",
+            description = "Accepts plaintext credentials (over TLS), encrypts them with AES-256-GCM, "
+                    + "and persists the host config. Credentials are never returned.",
+            responses = {
+                @ApiResponse(
+                        responseCode = "201",
+                        description = "Host saved",
+                        content = @Content(schema = @Schema(implementation = SavedHostResponse.class))),
+                @ApiResponse(responseCode = "400", description = "Validation failed", content = @Content),
+                @ApiResponse(
+                        responseCode = "422",
+                        description = "Missing required credential for authType",
+                        content = @Content)
+            })
+    public ResponseEntity<SavedHostResponse> save(
+            @Valid @RequestBody SavedHostRequest request, @AuthenticationPrincipal UniFtUserDetails principal) {
+        log.debug(
+                "Saving host config for user {} → {}:{}",
+                principal.user().getId(),
+                request.getHostname(),
+                request.getPort());
+        SavedHostResponse response = service.save(principal.user().getId(), request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping
+    @Operation(
+            summary = "List all saved hosts",
+            description = "Returns all saved host configurations for the current user. Credentials are never included.")
+    public ResponseEntity<List<SavedHostResponse>> list(@AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(service.list(principal.user().getId()));
+    }
+
+    @GetMapping("/{id}")
+    @Operation(
+            summary = "Get a saved host by ID",
+            responses = {
+                @ApiResponse(
+                        responseCode = "200",
+                        description = "Host found",
+                        content = @Content(schema = @Schema(implementation = SavedHostResponse.class))),
+                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content)
+            })
+    public ResponseEntity<SavedHostResponse> get(
+            @PathVariable UUID id, @AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(service.get(principal.user().getId(), id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Delete a saved host",
+            responses = {
+                @ApiResponse(responseCode = "204", description = "Deleted"),
+                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content)
+            })
+    public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UniFtUserDetails principal) {
+        service.delete(principal.user().getId(), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/connect")
+    @Operation(
+            summary = "Connect to a saved host",
+            description = "Decrypts the stored credentials on the fly and opens a new SSH session. "
+                    + "Plaintext credentials exist only for the duration of the TCP handshake.",
+            responses = {
+                @ApiResponse(
+                        responseCode = "201",
+                        description = "SSH session opened",
+                        content = @Content(schema = @Schema(implementation = ConnectResponse.class))),
+                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content),
+                @ApiResponse(responseCode = "429", description = "Max active sessions reached", content = @Content),
+                @ApiResponse(responseCode = "502", description = "SSH connection failed", content = @Content)
+            })
+    public ResponseEntity<ConnectResponse> connect(
+            @PathVariable UUID id, @AuthenticationPrincipal UniFtUserDetails principal) {
+        log.debug(
+                "Connect request for saved host [{}] by user {}",
+                id,
+                principal.user().getId());
+        ConnectResponse response = service.connect(principal.user().getId(), id);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+}

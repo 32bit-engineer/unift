@@ -103,8 +103,13 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         // 9. Persist session metadata to DB (best-effort — never rolls back the session)
         sessionLogRepository.save(session);
 
-        log.info("Session {} opened for user {} → {}:{} [{}]",
-                sessionId, ownerId, request.getHost(), request.getPort(), remoteOs);
+        log.info(
+                "Session {} opened for user {} → {}:{} [{}]",
+                sessionId,
+                ownerId,
+                request.getHost(),
+                request.getPort(),
+                remoteOs);
         return toConnectResponse(connection, homeDir);
     }
 
