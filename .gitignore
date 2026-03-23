@@ -75,3 +75,5 @@ unift_process_doc.docx
 unift/unift/docs
 unift/unift/LICENSE
 unift/unift/product-info
+### Environment / Secrets ###
+.env
