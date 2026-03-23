@@ -1,5 +1,6 @@
 package com.weekend.architect.unift.remote.ssh;
 
+import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.HostKey;
@@ -206,6 +207,75 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     @Override
     protected void preClose() {
         log.debug("[{}] Preparing to close SSH connection", session.getSessionId());
+    }
+
+    /**
+     * Detects the remote OS by running a short exec command over the existing SSH session.
+     *
+     * <p>Strategy (in order):
+     * <ol>
+     *   <li>Read {@code PRETTY_NAME} from {@code /etc/os-release} — covers all modern
+     *       Linux distros (Ubuntu, Debian, Fedora, RHEL, Alpine, …).</li>
+     *   <li>Fall back to {@code uname -sr} — covers macOS, BSDs, and older Linux.</li>
+     *   <li>Return {@code "SSH Server"} if both commands fail or produce empty output.</li>
+     * </ol>
+     *
+     * <p>This method must never throw; all errors are logged as warnings.
+     */
+    @Override
+    public String detectRemoteOs() {
+        if (!isConnected()) {
+            return null;
+        }
+        try {
+            // /etc/os-release is present on virtually all systemd-based Linux distros
+            String os = runCommand(
+                    "grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '\"'");
+            if (!os.isBlank()) {
+                log.debug("[{}] Detected remote OS via /etc/os-release: {}", session.getSessionId(), os);
+                return os;
+            }
+            // Fallback: kernel name + release — Linux, macOS, BSDs
+            os = runCommand("uname -sr 2>/dev/null");
+            if (!os.isBlank()) {
+                log.debug("[{}] Detected remote OS via uname: {}", session.getSessionId(), os);
+                return os;
+            }
+        } catch (Exception e) {
+            log.warn("[{}] Remote OS detection failed (non-critical): {}",
+                    session.getSessionId(), e.getMessage());
+        }
+        return "SSH Server";
+    }
+
+    /**
+     * Opens a short-lived exec channel on the existing SSH session, runs {@code command},
+     * reads stdout (up to 512 bytes / 5 s), and returns the trimmed result.
+     *
+     * @param command shell command to execute on the remote host
+     * @return trimmed stdout, or an empty string if the command produced no output
+     */
+    private String runCommand(String command) throws Exception {
+        ChannelExec exec = (ChannelExec) jschSession.openChannel("exec");
+        try {
+            exec.setCommand(command);
+            exec.setErrStream(null);          // discard stderr
+            InputStream in = exec.getInputStream();
+            exec.connect(props.getChannelTimeoutMs());
+
+            byte[] buf = new byte[512];
+            StringBuilder sb = new StringBuilder();
+            int n;
+            long deadline = System.currentTimeMillis() + 5_000L;
+            while ((n = in.read(buf)) != -1 && System.currentTimeMillis() < deadline) {
+                sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+            }
+            return sb.toString().trim();
+        } finally {
+            if (exec.isConnected()) {
+                exec.disconnect();
+            }
+        }
     }
 
     @Override
@@ -496,11 +566,18 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         String permissions =
                 entry.getLongname().length() >= 10 ? entry.getLongname().substring(0, 10) : "";
 
+        // For directories the OS-reported size is the directory-inode metadata block
+        // (typically 4 096 B on ext4), which is misleading because it is always far
+        // smaller than the actual total of the directory's contents. We use -1 to
+        // signal "size not computed" so the UI can display "—" instead of a
+        // confusingly small number.
+        long sizeBytes = (type == FileType.DIRECTORY) ? -1L : attrs.getSize();
+
         return RemoteFile.builder()
                 .name(name)
                 .path(fullPath)
                 .type(type)
-                .sizeBytes(attrs.getSize())
+                .sizeBytes(sizeBytes)
                 .lastModified(lastModified)
                 .permissions(permissions)
                 .owner(String.valueOf(attrs.getUId()))

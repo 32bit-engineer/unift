@@ -1,7 +1,6 @@
 import { apiClient, tokenStorage } from '@/utils/apiClient';
 import { API_BASE_URL } from '@/config/api.config';
 
-// ─── Types ─────────────────────────────────────────────────────────────────
 
 export type ProtocolType = 'SSH_SFTP' | 'FTP' | 'SMB';
 
@@ -78,9 +77,49 @@ export interface TestConnectionResponse {
   port: number;
 }
 
-// ─── API ───────────────────────────────────────────────────────────────────
+export interface SavedHostRequest {
+  label?: string;
+  protocol: ProtocolType;
+  hostname: string;
+  port: number;
+  username: string;
+  authType?: SshAuthType;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
+  strictHostKeyChecking?: boolean;
+  expectedFingerprint?: string;
+}
+
+export interface SavedHostResponse {
+  id: string;
+  label?: string;
+  protocol: ProtocolType;
+  hostname: string;
+  port: number;
+  username: string;
+  authType?: SshAuthType;
+  strictHostKeyChecking: boolean;
+  expectedFingerprint?: string;
+  createdAt: string;
+  lastUsed?: string;
+}
+
+export interface ConnectFromSavedResponse {
+  sessionId: string;
+  label?: string;
+  protocol: ProtocolType;
+  host: string;
+  port: number;
+  username: string;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+  homeDirectory?: string;
+}
 
 const BASE = '/api/remote';
+const HOSTS_BASE = '/api/hosts';
 const STREAM_BASE = '/api/stream';
 
 export const remoteConnectionAPI = {
@@ -184,4 +223,31 @@ export const remoteConnectionAPI = {
    */
   testConnection: (request: ConnectRequest) =>
     apiClient.post<TestConnectionResponse>(`${BASE}/test-connection`, request),
+
+
+  /**
+   * Saves a host configuration with AES-256-GCM encrypted credentials.
+   * Credentials are never returned in any response.
+   */
+  saveSavedHost: (request: SavedHostRequest) =>
+    apiClient.post<SavedHostResponse>(HOSTS_BASE, request),
+
+  /** Returns all saved host configurations for the current user. */
+  listSavedHosts: () =>
+    apiClient.get<SavedHostResponse[]>(HOSTS_BASE),
+
+  /** Returns a single saved host by ID. */
+  getSavedHost: (id: string) =>
+    apiClient.get<SavedHostResponse>(`${HOSTS_BASE}/${id}`),
+
+  /** Permanently removes a saved host configuration. */
+  deleteSavedHost: (id: string) =>
+    apiClient.delete<void>(`${HOSTS_BASE}/${id}`),
+
+  /**
+   * Opens a new SSH session using the stored (decrypted on-the-fly) credentials.
+   * Plaintext credentials exist only for the duration of the TCP handshake.
+   */
+  connectSavedHost: (id: string) =>
+    apiClient.post<ConnectFromSavedResponse>(`${HOSTS_BASE}/${id}/connect`),
 };

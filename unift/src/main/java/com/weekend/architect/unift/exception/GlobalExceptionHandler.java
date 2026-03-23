@@ -3,6 +3,7 @@ package com.weekend.architect.unift.exception;
 import com.weekend.architect.unift.remote.exception.CredentialValidationException;
 import com.weekend.architect.unift.remote.exception.MaxSessionsExceededException;
 import com.weekend.architect.unift.remote.exception.RemoteConnectionException;
+import com.weekend.architect.unift.remote.exception.SavedHostNotFoundException;
 import com.weekend.architect.unift.remote.exception.RemotePermissionDeniedException;
 import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
@@ -109,6 +110,12 @@ public class GlobalExceptionHandler {
         log.warn("Credential validation error: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
                 .body(errorBody(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage()));
+    }
+
+    @ExceptionHandler(SavedHostNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSavedHostNotFound(SavedHostNotFoundException ex) {
+        log.warn("Saved host not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage()));
     }
 
     @ExceptionHandler(RemotePermissionDeniedException.class)

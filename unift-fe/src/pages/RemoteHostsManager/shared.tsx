@@ -53,9 +53,11 @@ export function getFileIcon(name: string): string {
   return map[ext] ?? 'insert_drive_file';
 }
 
-// Format a byte count into a human-readable string
+// Format a byte count into a human-readable string.
+// A value of -1 (or any negative number) means "not computed" (e.g. directories)
+// and is rendered as "—" to avoid showing the misleading inode metadata size.
 export function formatSize(bytes?: number): string {
-  if (bytes === undefined) return '—';
+  if (bytes === undefined || bytes < 0) return '—';
   if (bytes === 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

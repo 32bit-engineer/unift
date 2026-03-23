@@ -48,4 +48,19 @@ public interface RemoteConnection extends DirectoryBrowsable, FileTransferable, 
 
     /** Returns {@code true} only when the underlying transport is open. */
     boolean isConnected();
+
+    /**
+     * Detects and returns a human-readable name for the OS or service on the
+     * remote end (e.g. {@code "Ubuntu 22.04.3 LTS"}, {@code "Amazon S3"}).
+     *
+     * <p>This is a best-effort operation called once after a successful connect.
+     * Implementations may run a remote command, inspect a response header, or
+     * return a static label.  Must never throw — return {@code null} on failure.
+     *
+     * <p>The default implementation returns {@code null}; protocol-specific
+     * subclasses override this to provide real detection.
+     */
+    default String detectRemoteOs() {
+        return null;
+    }
 }

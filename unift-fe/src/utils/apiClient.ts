@@ -17,6 +17,44 @@ export const tokenStorage = {
   },
 };
 
+// ─── Refresh-lock 
+// A singleton promise so that concurrent 401s share one refresh attempt
+// instead of each trying to rotate the refresh token independently (which
+// would cause all but the first to fail with a revoked-token 401).
+
+let refreshPromise: Promise<boolean> | null = null;
+
+function attemptTokenRefresh(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async (): Promise<boolean> => {
+    const refreshToken = tokenStorage.getRefresh();
+    if (!refreshToken) return false;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.auth.refresh}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!response.ok) return false;
+
+      const refreshed = (await response.json()) as AuthResponse;
+      tokenStorage.setAccess(refreshed.access_token);
+      tokenStorage.setRefresh(refreshed.refresh_token);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      // Release the lock so future expiries can trigger a new refresh
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 // ─── Core fetch wrapper ────────────────────────────────────────────────────
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -45,31 +83,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  // ── 401 handling: attempt token refresh once, then give up ──────────────
+  // ── 401 handling: attempt token refresh once, then give up
   if (response.status === 401 && !skipAuth && !_isRetry && !path.startsWith('/api/auth')) {
-    const refreshToken = tokenStorage.getRefresh();
-    if (refreshToken) {
-      try {
-        const refreshResponse = await fetch(`${API_BASE_URL}${API_ENDPOINTS.auth.refresh}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
+    const refreshed = await attemptTokenRefresh();
 
-        if (refreshResponse.ok) {
-          const refreshed = (await refreshResponse.json()) as AuthResponse;
-          tokenStorage.setAccess(refreshed.access_token);
-          tokenStorage.setRefresh(refreshed.refresh_token);
-
-          // Retry the original request with the new access token
-          return request<T>(path, { ...options, _isRetry: true });
-        }
-      } catch {
-        // refresh request itself failed — fall through to clear + redirect
-      }
+    if (refreshed) {
+      // Retry the original request with the new access token
+      return request<T>(path, { ...options, _isRetry: true });
     }
 
-    // Refresh failed or no refresh token — log out and redirect
+    // Refresh failed — log out and redirect to login
     tokenStorage.clear();
     window.location.href = '?page=login';
   }

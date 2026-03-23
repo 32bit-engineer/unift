@@ -48,6 +48,13 @@ public class RemoteSession {
     private volatile SessionState state;
     private volatile OffsetDateTime expiresAt;
 
+    /**
+     * OS or service name detected after a successful connect, e.g.
+     * "Ubuntu 22.04.3 LTS", "Debian GNU/Linux 12", "Amazon S3".
+     * {@code null} until detection completes.
+     */
+    private volatile String remoteOs;
+
     // -- Lifecycle helpers ---
     /**
      * Returns {@code true} if the session's TTL has elapsed.
