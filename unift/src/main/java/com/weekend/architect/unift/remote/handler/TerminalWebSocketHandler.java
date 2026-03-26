@@ -1,4 +1,4 @@
-package com.weekend.architect.unift.remote.controller;
+package com.weekend.architect.unift.remote.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -7,6 +7,7 @@ import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.core.RemoteShell;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
+import com.weekend.architect.unift.remote.interceptor.TerminalHandshakeInterceptor;
 import com.weekend.architect.unift.remote.model.TerminalSession;
 import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.registry.TerminalSessionRegistry;

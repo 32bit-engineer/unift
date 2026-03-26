@@ -1,6 +1,7 @@
-package com.weekend.architect.unift.remote.controller;
+package com.weekend.architect.unift.remote.interceptor;
 
 import com.weekend.architect.unift.auth.service.JwtService;
+import com.weekend.architect.unift.remote.handler.BearerProtocolHandshakeHandler;
 import com.weekend.architect.unift.security.UniFtUserDetailsService;
 import java.util.List;
 import java.util.Map;

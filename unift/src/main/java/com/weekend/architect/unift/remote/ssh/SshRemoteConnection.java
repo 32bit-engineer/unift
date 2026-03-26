@@ -6,14 +6,16 @@ import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.HostKey;
 import com.jcraft.jsch.HostKeyRepository;
 import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
-import com.jcraft.jsch.UIKeyboardInteractive;
 import com.jcraft.jsch.UserInfo;
+import com.weekend.architect.unift.common.stream.ProgressTrackingInputStream;
 import com.weekend.architect.unift.common.utils.StringUtils;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.AbstractRemoteConnection;
+import com.weekend.architect.unift.remote.core.CancellationToken;
 import com.weekend.architect.unift.remote.core.RemoteShell;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
 import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
@@ -21,14 +23,17 @@ import com.weekend.architect.unift.remote.credentials.SshKeyCredentials;
 import com.weekend.architect.unift.remote.credentials.SshKeyPassphraseCredentials;
 import com.weekend.architect.unift.remote.credentials.SshPasswordCredentials;
 import com.weekend.architect.unift.remote.enums.FileType;
+import com.weekend.architect.unift.remote.enums.SessionState;
 import com.weekend.architect.unift.remote.exception.BrowseException;
 import com.weekend.architect.unift.remote.exception.ConnectionException;
 import com.weekend.architect.unift.remote.exception.CredentialValidationException;
 import com.weekend.architect.unift.remote.exception.RemotePermissionDeniedException;
+import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.TransferException;
+import com.weekend.architect.unift.remote.model.PasswordUserInfo;
 import com.weekend.architect.unift.remote.model.RemoteFile;
 import com.weekend.architect.unift.remote.model.RemoteSession;
-import java.io.FilterInputStream;
+import com.weekend.architect.unift.remote.stream.ChannelClosingInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -36,9 +41,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Vector;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -64,7 +68,6 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     /** POSIX path separator — remote hosts are always Unix-like. */
     private static final String PATH_SEP = "/";
 
-    private JSch jsch;
     private Session jschSession;
     private ChannelSftp sftpChannel;
 
@@ -93,7 +96,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
 
     @Override
     protected void doConnect(RemoteCredentials credentials) throws Exception {
-        jsch = new JSch();
+        var jsch = new JSch();
         log.debug(
                 "[{}] Initializing JSch for SSH connection to {}:{}",
                 session.getSessionId(),
@@ -166,14 +169,16 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 credentials.getHost(),
                 credentials.getPort());
         try {
-            // Send a keep-alive every 60 seconds
-            jschSession.setServerAliveInterval(60000);
-            // If the server doesn't respond to 3 pings in a row, kill the connection
-            jschSession.setServerAliveCountMax(3);
+            // TCP-level keep-alive (OS sends ACK probes — works even when app-level traffic is silent)
+            jschSession.setConfig("TCPKeepAlive", "yes");
+            // SSH-level keep-alive: send an SSH_MSG_GLOBAL_REQUEST every N ms.
+            // Use a value well below the shortest expected firewall/NAT idle timeout.
+            jschSession.setServerAliveInterval(props.getSshKeepAliveIntervalMs());
+            jschSession.setServerAliveCountMax(props.getSshKeepAliveCountMax());
             jschSession.connect(props.getConnectTimeoutMs());
-            log.info("[{}] ✓ SSH session established", session.getSessionId());
+            log.info("[{}]  SSH session established", session.getSessionId());
         } catch (Exception e) {
-            log.error("[{}] ❌ SSH connection failed: {}", session.getSessionId(), e.getMessage(), e);
+            log.error("[{}]  SSH connection failed: {}", session.getSessionId(), e.getMessage(), e);
             throw e;
         }
 
@@ -183,9 +188,9 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
             ChannelSftp channel = (ChannelSftp) jschSession.openChannel("sftp");
             channel.connect(props.getChannelTimeoutMs());
             this.sftpChannel = channel;
-            log.info("[{}] ✓ SFTP channel opened successfully for user '{}'", session.getSessionId(), username);
+            log.info("[{}]  SFTP channel opened successfully for user '{}'", session.getSessionId(), username);
         } catch (Exception e) {
-            log.error("[{}] ❌ Failed to open SFTP channel: {}", session.getSessionId(), e.getMessage(), e);
+            log.error("[{}]  Failed to open SFTP channel: {}", session.getSessionId(), e.getMessage(), e);
             throw e;
         }
     }
@@ -195,12 +200,12 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         if (sftpChannel != null && sftpChannel.isConnected()) {
             log.debug("[{}] Disconnecting SFTP channel", session.getSessionId());
             sftpChannel.disconnect();
-            log.debug("[{}] ✓ SFTP channel disconnected", session.getSessionId());
+            log.debug("[{}]  SFTP channel disconnected", session.getSessionId());
         }
         if (jschSession != null && jschSession.isConnected()) {
             log.debug("[{}] Disconnecting SSH session", session.getSessionId());
             jschSession.disconnect();
-            log.info("[{}] ✓ SSH session closed", session.getSessionId());
+            log.info("[{}]  SSH session closed", session.getSessionId());
         }
     }
 
@@ -229,8 +234,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         }
         try {
             // /etc/os-release is present on virtually all systemd-based Linux distros
-            String os = runCommand(
-                    "grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '\"'");
+            String os = runCommand("grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '\"'");
             if (!os.isBlank()) {
                 log.debug("[{}] Detected remote OS via /etc/os-release: {}", session.getSessionId(), os);
                 return os;
@@ -242,8 +246,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 return os;
             }
         } catch (Exception e) {
-            log.warn("[{}] Remote OS detection failed (non-critical): {}",
-                    session.getSessionId(), e.getMessage());
+            log.warn("[{}] Remote OS detection failed (non-critical): {}", session.getSessionId(), e.getMessage());
         }
         return "SSH Server";
     }
@@ -255,11 +258,11 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
      * @param command shell command to execute on the remote host
      * @return trimmed stdout, or an empty string if the command produced no output
      */
-    private String runCommand(String command) throws Exception {
+    private String runCommand(String command) throws JSchException, IOException {
         ChannelExec exec = (ChannelExec) jschSession.openChannel("exec");
         try {
             exec.setCommand(command);
-            exec.setErrStream(null);          // discard stderr
+            exec.setErrStream(null); // discard stderr
             InputStream in = exec.getInputStream();
             exec.connect(props.getChannelTimeoutMs());
 
@@ -303,7 +306,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         private final InputStream stdout;
         private final OutputStream stdin;
 
-        JSchShellSession(ChannelShell channel) throws Exception {
+        JSchShellSession(ChannelShell channel) throws IOException, JSchException {
             this.channel = channel;
             this.stdout = channel.getInputStream();
             this.stdin = channel.getOutputStream();
@@ -335,27 +338,73 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         }
     }
 
+    /**
+     * Pre-flight check called at the top of every SFTP operation that uses the
+     * shared {@link #sftpChannel}.  Detects a silently-dropped connection
+     * (e.g. NAT/firewall idle timeout) <em>before</em> submitting work to JSch,
+     * so we get a clean 410 rather than an obscure "Pipe closed" 502.
+     */
+    private void assertSftpChannelAlive() {
+        if (jschSession == null || !jschSession.isConnected()) {
+            log.warn("[{}] SSH session is no longer connected", session.getSessionId());
+            session.setState(SessionState.ERROR);
+            throw new SessionExpiredException(session.getSessionId());
+        }
+        if (sftpChannel == null || !sftpChannel.isConnected()) {
+            log.warn("[{}] SFTP channel is no longer connected", session.getSessionId());
+            session.setState(SessionState.ERROR);
+            throw new SessionExpiredException(session.getSessionId());
+        }
+    }
+
+    /**
+     * Called inside every SFTP {@code catch} block.  If the root cause is a
+     * broken-pipe / closed-pipe {@link IOException} (the signature of a silently
+     * dropped idle connection), the session is marked {@code ERROR} and a
+     * {@link SessionExpiredException} (→ HTTP 410) is thrown so the client knows
+     * to reconnect.  If the exception is unrelated, this method does nothing.
+     */
+    private void guardDeadPipe(Throwable t) {
+        Throwable cause = t;
+        while (cause != null) {
+            String msg = cause.getMessage();
+            if (msg != null
+                    && (msg.contains("Pipe closed")
+                            || msg.contains("Broken pipe")
+                            || msg.contains("Connection reset by peer"))) {
+                log.warn(
+                        "[{}] SSH pipe broken ({}); marking session as ERROR so client reconnects",
+                        session.getSessionId(),
+                        msg);
+                session.setState(SessionState.ERROR);
+                throw new SessionExpiredException(session.getSessionId());
+            }
+            cause = cause.getCause();
+        }
+    }
+
     // DirectoryBrowsable
 
     @Override
     public List<RemoteFile> list(String remotePath) throws BrowseException {
         assertActive();
+        assertSftpChannelAlive();
         log.debug("[{}] Listing directory: {}", session.getSessionId(), remotePath);
         try {
             synchronized (channelLock) {
-                Vector<ChannelSftp.LsEntry> entries = sftpChannel.ls(remotePath);
+                List<ChannelSftp.LsEntry> entries = new ArrayList<>(sftpChannel.ls(remotePath));
                 List<RemoteFile> files = entries.stream()
                         .filter(e ->
                                 !e.getFilename().equals(".") && !e.getFilename().equals(".."))
                         .map(e -> mapEntry(remotePath, e))
                         .toList();
-                log.debug("[{}] ✓ Listed {} entries in {}", session.getSessionId(), files.size(), remotePath);
+                log.debug("[{}]  Listed {} entries in {}", session.getSessionId(), files.size(), remotePath);
                 return files;
             }
         } catch (SftpException e) {
+            guardDeadPipe(e);
             guardPermission(e, remotePath);
-            log.error(
-                    "[{}] ❌ Failed to list directory '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            log.error("[{}]  Failed to list directory '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new BrowseException("Failed to list directory '" + remotePath + "': " + e.getMessage(), e);
         }
     }
@@ -363,21 +412,23 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     @Override
     public void delete(String remotePath) throws BrowseException {
         assertActive();
+        assertSftpChannelAlive();
         log.info("[{}] Deleting: {}", session.getSessionId(), remotePath);
         try {
             synchronized (channelLock) {
                 SftpATTRS attrs = sftpChannel.stat(remotePath);
                 if (attrs.isDir()) {
                     sftpChannel.rmdir(remotePath);
-                    log.info("[{}] ✓ Deleted directory: {}", session.getSessionId(), remotePath);
+                    log.info("[{}]  Deleted directory: {}", session.getSessionId(), remotePath);
                 } else {
                     sftpChannel.rm(remotePath);
-                    log.info("[{}] ✓ Deleted file: {}", session.getSessionId(), remotePath);
+                    log.info("[{}]  Deleted file: {}", session.getSessionId(), remotePath);
                 }
             }
         } catch (SftpException e) {
+            guardDeadPipe(e);
             guardPermission(e, remotePath);
-            log.error("[{}] ❌ Failed to delete '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            log.error("[{}]  Failed to delete '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new BrowseException("Failed to delete '" + remotePath + "': " + e.getMessage(), e);
         }
     }
@@ -385,16 +436,18 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     @Override
     public void rename(String remotePath, String newPath) throws BrowseException {
         assertActive();
+        assertSftpChannelAlive();
         log.info("[{}] Renaming: {} → {}", session.getSessionId(), remotePath, newPath);
         try {
             synchronized (channelLock) {
                 sftpChannel.rename(remotePath, newPath);
-                log.info("[{}] ✓ Renamed successfully", session.getSessionId());
+                log.info("[{}]  Renamed successfully", session.getSessionId());
             }
         } catch (SftpException e) {
+            guardDeadPipe(e);
             guardPermission(e, remotePath);
             log.error(
-                    "[{}] ❌ Failed to rename '{}' to '{}': {}",
+                    "[{}]  Failed to rename '{}' to '{}': {}",
                     session.getSessionId(),
                     remotePath,
                     newPath,
@@ -408,20 +461,18 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     @Override
     public void mkdir(String remotePath) throws BrowseException {
         assertActive();
+        assertSftpChannelAlive();
         log.info("[{}] Creating directory: {}", session.getSessionId(), remotePath);
         try {
             synchronized (channelLock) {
                 sftpChannel.mkdir(remotePath);
-                log.info("[{}] ✓ Directory created: {}", session.getSessionId(), remotePath);
+                log.info("[{}]  Directory created: {}", session.getSessionId(), remotePath);
             }
         } catch (SftpException e) {
+            guardDeadPipe(e);
             guardPermission(e, remotePath);
             log.error(
-                    "[{}] ❌ Failed to create directory '{}': {}",
-                    session.getSessionId(),
-                    remotePath,
-                    e.getMessage(),
-                    e);
+                    "[{}]  Failed to create directory '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new BrowseException("Failed to create directory '" + remotePath + "': " + e.getMessage(), e);
         }
     }
@@ -429,16 +480,18 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     @Override
     public String homeDirectory() throws BrowseException {
         assertActive();
+        assertSftpChannelAlive();
         log.debug("[{}] Resolving home directory", session.getSessionId());
         try {
             synchronized (channelLock) {
                 String home = sftpChannel.getHome();
-                log.debug("[{}] ✓ Home directory: {}", session.getSessionId(), home);
+                log.debug("[{}]  Home directory: {}", session.getSessionId(), home);
                 return home;
             }
         } catch (SftpException e) {
+            guardDeadPipe(e);
             guardPermission(e, "~");
-            log.error("[{}] ❌ Failed to determine home directory: {}", session.getSessionId(), e.getMessage(), e);
+            log.error("[{}]  Failed to determine home directory: {}", session.getSessionId(), e.getMessage(), e);
             throw new BrowseException("Failed to determine home directory: " + e.getMessage(), e);
         }
     }
@@ -446,28 +499,34 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     // FileTransferable
 
     @Override
-    public void upload(String remotePath, InputStream source, long fileSize, TransferProgressCallback callback)
+    public void upload(
+            String remotePath,
+            InputStream source,
+            long fileSize,
+            TransferProgressCallback callback,
+            CancellationToken cancellationToken)
             throws TransferException {
         assertActive();
-        log.info("[{}] ⬆️  Upload starting → '{}' ({} bytes)", session.getSessionId(), remotePath, fileSize);
+        log.info("[{}] Upload starting → '{}' ({} bytes)", session.getSessionId(), remotePath, fileSize);
 
-        // Opend a *dedicated* ChannelSftp for this upload — same reasoning as download().
-        // sftpChannel.put() is a long-running blocking call; holding channelLock for its
-        // entire duration would block every concurrent metadata operation (list, rename, etc.)
-        // for the whole transfer time. A dedicated channel avoids both the contention and the
-        // risk of concurrent put() calls interfering with each other's internal state.
         ChannelSftp uploadChannel = null;
         try {
             uploadChannel = (ChannelSftp) jschSession.openChannel("sftp");
             uploadChannel.connect(props.getChannelTimeoutMs());
-            uploadChannel.put(source, remotePath, new JschSftpProgressMonitor(callback), ChannelSftp.OVERWRITE);
-            log.info("[{}] ✓ Upload complete → '{}'", session.getSessionId(), remotePath);
+            uploadChannel.put(
+                    source,
+                    remotePath,
+                    new JschSftpProgressMonitor(callback, cancellationToken),
+                    ChannelSftp.OVERWRITE);
+            log.info("[{}] Upload complete → '{}'", session.getSessionId(), remotePath);
         } catch (SftpException e) {
+            guardDeadPipe(e);
             guardPermission(e, remotePath);
-            log.error("[{}] ❌ Upload failed → '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            log.error("[{}] Upload failed → '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new TransferException("Upload to '" + remotePath + "' failed: " + e.getMessage(), e);
         } catch (Exception e) {
-            log.error("[{}] ❌ Upload failed → '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            guardDeadPipe(e);
+            log.error("[{}] Upload failed → '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new TransferException("Upload to '" + remotePath + "' failed: " + e.getMessage(), e);
         } finally {
             disconnectQuietly(uploadChannel);
@@ -503,17 +562,19 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
             InputStream raw = downloadChannel.get(remotePath);
             InputStream tracked = new ProgressTrackingInputStream(raw, callback);
 
-            log.info("[{}] ✓ Download stream opened ← '{}'", session.getSessionId(), remotePath);
+            log.info("[{}] Download stream opened ← '{}'", session.getSessionId(), remotePath);
             return new ChannelClosingInputStream(tracked, downloadChannel);
 
         } catch (SftpException e) {
             disconnectQuietly(downloadChannel);
+            guardDeadPipe(e);
             guardPermission(e, remotePath);
-            log.error("[{}] ❌ Download failed ← '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            log.error("[{}] Download failed ← '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new TransferException("Download from '" + remotePath + "' failed: " + e.getMessage(), e);
         } catch (Exception e) {
             disconnectQuietly(downloadChannel);
-            log.error("[{}] ❌ Download failed ← '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
+            guardDeadPipe(e);
+            log.error("[{}] Download failed ← '{}': {}", session.getSessionId(), remotePath, e.getMessage(), e);
             throw new TransferException("Download from '" + remotePath + "' failed: " + e.getMessage(), e);
         }
     }
@@ -567,7 +628,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 entry.getLongname().length() >= 10 ? entry.getLongname().substring(0, 10) : "";
 
         // For directories the OS-reported size is the directory-inode metadata block
-        // (typically 4 096 B on ext4), which is misleading because it is always far
+        // (typically 4096B on ext4), which is misleading because it is always far
         // smaller than the actual total of the directory's contents. We use -1 to
         // signal "size not computed" so the UI can display "—" instead of a
         // confusingly small number.
@@ -583,98 +644,6 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 .owner(String.valueOf(attrs.getUId()))
                 .hidden(name.startsWith("."))
                 .build();
-    }
-
-    /**
-     * Wraps an {@link InputStream} and fires {@link TransferProgressCallback#onProgress} as bytes
-     * are read, reporting cumulative bytes transferred.
-     *
-     * <p>Used in place of {@link com.jcraft.jsch.SftpProgressMonitor} for downloads to avoid the
-     * internal {@code _stat()} call that {@code ChannelSftp.get(path, monitor)} issues when a
-     * non-null monitor is provided. That stat call triggers an
-     * {@link IndexOutOfBoundsException} in certain mwiede/jsch + OpenSSH server combinations.
-     *
-     * <p>Total bytes are reported as {@code -1} because the file size is unknown without {@code _stat}.
-     * The service layer already initialises download transfers with {@code totalBytes = -1}.
-     */
-    private static final class ProgressTrackingInputStream extends FilterInputStream {
-
-        private final TransferProgressCallback callback;
-        private long transferred = 0L;
-
-        ProgressTrackingInputStream(InputStream in, TransferProgressCallback callback) {
-            super(in);
-            this.callback = callback;
-        }
-
-        @Override
-        public int read() throws IOException {
-            int b = super.read();
-            if (b != -1) {
-                callback.onProgress(++transferred, -1L);
-            }
-            return b;
-        }
-
-        @Override
-        public int read(byte[] b, int off, int len) throws IOException {
-            int n = super.read(b, off, len);
-            if (n > 0) {
-                transferred += n;
-                callback.onProgress(transferred, -1L);
-            }
-            return n;
-        }
-    }
-
-    /**
-     * Supplies a known password to JSch for both the {@code password} and
-     * {@code keyboard-interactive} SSH auth methods.
-     *
-     * <p>Many Linux servers (Ubuntu/Debian with {@code UsePAM yes}) disable the raw
-     * {@code password} method and only accept {@code keyboard-interactive} (PAM).
-     * OpenSSH's CLI client handles this transparently; JSch requires an explicit
-     * {@link UserInfo} + {@link UIKeyboardInteractive} implementation to do the same.
-     */
-    private record PasswordUserInfo(String password) implements UserInfo, UIKeyboardInteractive {
-
-        @Override
-        public String[] promptKeyboardInteractive(
-                String destination, String name, String instruction, String[] prompt, boolean[] echo) {
-            // The server may send multiple prompts (e.g. OTP after password).
-            // Fill every slot with the password — for plain PAM there is always exactly one prompt.
-            String[] responses = new String[prompt.length];
-            Arrays.fill(responses, password);
-            return responses;
-        }
-
-        @Override
-        public String getPassword() {
-            return password;
-        }
-
-        @Override
-        public boolean promptPassword(String message) {
-            return true;
-        }
-
-        @Override
-        public String getPassphrase() {
-            return null;
-        }
-
-        @Override
-        public boolean promptPassphrase(String message) {
-            return false;
-        }
-
-        @Override
-        public boolean promptYesNo(String message) {
-            return false;
-        }
-
-        @Override
-        public void showMessage(String message) {}
     }
 
     /**
@@ -712,13 +681,19 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         }
 
         @Override
-        public void add(HostKey hostkey, UserInfo ui) {}
+        public void add(HostKey hostkey, UserInfo ui) {
+            // ignored
+        }
 
         @Override
-        public void remove(String host, String type) {}
+        public void remove(String host, String type) {
+            // ignored
+        }
 
         @Override
-        public void remove(String host, String type, byte[] key) {}
+        public void remove(String host, String type, byte[] key) {
+            // ignored
+        }
 
         @Override
         public String getKnownHostsRepositoryID() {
@@ -733,34 +708,6 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         @Override
         public HostKey[] getHostKey(String host, String type) {
             return new HostKey[0];
-        }
-    }
-
-    /**
-     * Wraps an {@link InputStream} and disconnects the dedicated download {@link ChannelSftp}
-     * when the stream is closed.
-     *
-     * <p>Stacked on top of {@link ProgressTrackingInputStream}:
-     * {@code close()} → closes the tracked stream → closes the raw JSch stream → then
-     * disconnects the dedicated channel. This ensures the channel is released whether the
-     * download completes normally, is cancelled, or fails mid-transfer.
-     */
-    private static final class ChannelClosingInputStream extends FilterInputStream {
-
-        private final ChannelSftp channel;
-
-        ChannelClosingInputStream(InputStream in, ChannelSftp channel) {
-            super(in);
-            this.channel = channel;
-        }
-
-        @Override
-        public void close() throws IOException {
-            try {
-                super.close();
-            } finally {
-                disconnectQuietly(channel);
-            }
         }
     }
 }

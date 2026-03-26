@@ -71,16 +71,18 @@ public class SavedHostServiceImpl implements SavedHostService {
                 .build();
 
         hostRepo.save(host);
-        log.info("Saved host config [{}] ({}/{}) for user {}",
-                host.getId(), host.getProtocol(), host.getHostname(), ownerId);
+        log.info(
+                "Saved host config [{}] ({}/{}) for user {}",
+                host.getId(),
+                host.getProtocol(),
+                host.getHostname(),
+                ownerId);
         return toResponse(host);
     }
 
     @Override
     public List<SavedHostResponse> list(UUID ownerId) {
-        return hostRepo.findByUserId(ownerId).stream()
-                .map(this::toResponse)
-                .toList();
+        return hostRepo.findByUserId(ownerId).stream().map(this::toResponse).toList();
     }
 
     @Override
@@ -102,11 +104,12 @@ public class SavedHostServiceImpl implements SavedHostService {
         SavedHost host = requireOwned(ownerId, hostId);
 
         // Decrypt credentials on the fly — plaintext exists only for this call's duration
-        ConnectRequest connectReq = findAssembler(host.getProtocol()).assemble(
-                host,
-                encryption.decrypt(host.getEncryptedPassword()),
-                encryption.decrypt(host.getEncryptedPrivateKey()),
-                encryption.decrypt(host.getEncryptedPassphrase()));
+        ConnectRequest connectReq = findAssembler(host.getProtocol())
+                .assemble(
+                        host,
+                        encryption.decrypt(host.getEncryptedPassword()),
+                        encryption.decrypt(host.getEncryptedPrivateKey()),
+                        encryption.decrypt(host.getEncryptedPassphrase()));
 
         ConnectResponse response = connectionService.openSession(ownerId, connectReq);
 
@@ -117,8 +120,12 @@ public class SavedHostServiceImpl implements SavedHostService {
             log.warn("Failed to update last_used for saved host [{}]: {}", hostId, e.getMessage());
         }
 
-        log.info("Opened session {} from saved host [{}] ({}) for user {}",
-                response.getSessionId(), hostId, host.getProtocol(), ownerId);
+        log.info(
+                "Opened session {} from saved host [{}] ({}) for user {}",
+                response.getSessionId(),
+                hostId,
+                host.getProtocol(),
+                ownerId);
         return response;
     }
 
@@ -147,7 +154,7 @@ public class SavedHostServiceImpl implements SavedHostService {
                 .orElseThrow(() -> new UnsupportedOperationException(
                         "No ConnectRequestAssembler registered for protocol: " + protocol));
     }
-    
+
     /**
      * Loads the saved host and verifies ownership in one step.
      * Throws {@link SavedHostNotFoundException} if not found OR owned by a different user,
@@ -175,4 +182,3 @@ public class SavedHostServiceImpl implements SavedHostService {
                 .build();
     }
 }
-

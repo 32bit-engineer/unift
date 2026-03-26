@@ -5,6 +5,7 @@ import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
 import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.multipart.MultipartFile;
@@ -90,6 +91,37 @@ public interface RemoteConnectionService {
      * @return the transfer ID for progress tracking
      */
     String uploadFile(String sessionId, UUID ownerId, String remotePath, MultipartFile file);
+
+    /**
+     * Uploads a file to the remote host by streaming raw bytes from the caller-supplied
+     * {@link InputStream}.  Unlike {@link #uploadFile}, this method bypasses Spring's
+     * multipart resolver entirely — the data is piped directly into the SFTP channel
+     * without ever being buffered in a server temp file.  Use this for large files.
+     *
+     * <p>The caller is responsible for closing {@code inputStream}.
+     *
+     * @param remotePath    target path on the remote host (must include filename)
+     * @param inputStream   raw byte stream of the file content
+     * @param contentLength total byte count; pass {@code -1} if unknown
+     * @return the transfer ID for progress tracking
+     */
+    String uploadStream(String sessionId, UUID ownerId, String remotePath, InputStream inputStream, long contentLength);
+
+    /**
+     * Cancels an in-progress stream upload, stops the data transfer, and removes
+     * any partial file written to the remote host.
+     *
+     * <p>Cancellation is asynchronous: this method sets the cancellation signal and
+     * returns immediately.  The upload thread will detect the signal on its next read,
+     * abort the SFTP transfer, and delete the partial remote file.
+     *
+     * @param sessionId  the session the transfer belongs to
+     * @param ownerId    ID of the authenticated user (ownership check)
+     * @param transferId ID of the upload transfer to cancel
+     * @throws IllegalArgumentException if the transfer is not an upload or does not support cancellation
+     * @throws IllegalStateException    if the transfer has already completed, failed, or been canceled
+     */
+    void cancelTransfer(String sessionId, UUID ownerId, String transferId);
 
     /**
      * Returns the status of all transfers associated with the given session.

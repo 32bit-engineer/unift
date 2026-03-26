@@ -68,14 +68,13 @@ public class SessionLogRepository {
 
     private static MapSqlParameterSource buildParams(RemoteSession s) {
         return new MapSqlParameterSource()
-                .addValue(PARAM_ID,    UUID.fromString(s.getSessionId()))
-                .addValue("userId",    s.getOwnerId())
-                .addValue("label",     s.getLabel())
-                .addValue("protocol",  s.getProtocol().name())
-                .addValue("host",      s.getHost())
-                .addValue("port",      s.getPort())
-                .addValue("username",  s.getUsername())
-                .addValue("remoteOs",  s.getRemoteOs());
+                .addValue(PARAM_ID, UUID.fromString(s.getSessionId()))
+                .addValue("userId", s.getOwnerId())
+                .addValue("label", s.getLabel())
+                .addValue("protocol", s.getProtocol().name())
+                .addValue("host", s.getHost())
+                .addValue("port", s.getPort())
+                .addValue("username", s.getUsername())
+                .addValue("remoteOs", s.getRemoteOs());
     }
 }
-

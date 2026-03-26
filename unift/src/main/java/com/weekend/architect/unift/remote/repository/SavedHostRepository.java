@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class SavedHostRepository {
 
-    private static final String PARAM_ID      = "id";
+    private static final String PARAM_ID = "id";
     private static final String PARAM_USER_ID = "userId";
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -55,8 +55,8 @@ public class SavedHostRepository {
      */
     private static SshAuthType toSshAuthType(String dbValue) {
         return switch (dbValue) {
-            case "password"       -> SshAuthType.PASSWORD;
-            case "key"            -> SshAuthType.PRIVATE_KEY;
+            case "password" -> SshAuthType.PASSWORD;
+            case "key" -> SshAuthType.PRIVATE_KEY;
             case "key_passphrase" -> SshAuthType.PRIVATE_KEY_PASSPHRASE;
             default -> throw new IllegalArgumentException("Unknown auth_type from DB: " + dbValue);
         };
@@ -65,8 +65,8 @@ public class SavedHostRepository {
     /** Maps Java {@link SshAuthType} back to the Postgres {@code auth_type_enum} literal. */
     private static String toDbAuthType(SshAuthType authType) {
         return switch (authType) {
-            case PASSWORD               -> "password";
-            case PRIVATE_KEY            -> "key";
+            case PASSWORD -> "password";
+            case PRIVATE_KEY -> "key";
             case PRIVATE_KEY_PASSPHRASE -> "key_passphrase";
         };
     }
@@ -77,11 +77,11 @@ public class SavedHostRepository {
      */
     private static ProtocolType toProtocolType(String dbValue) {
         return switch (dbValue) {
-            case "ssh_sftp"    -> ProtocolType.SSH_SFTP;
-            case "ftp"         -> ProtocolType.FTP;
-            case "s3"          -> ProtocolType.S3;
-            case "azure_blob"  -> ProtocolType.AZURE_BLOB;
-            case "gcs"         -> ProtocolType.GCS;
+            case "ssh_sftp" -> ProtocolType.SSH_SFTP;
+            case "ftp" -> ProtocolType.FTP;
+            case "s3" -> ProtocolType.S3;
+            case "azure_blob" -> ProtocolType.AZURE_BLOB;
+            case "gcs" -> ProtocolType.GCS;
             default -> throw new IllegalArgumentException("Unknown protocol_type from DB: " + dbValue);
         };
     }
@@ -89,11 +89,11 @@ public class SavedHostRepository {
     /** Maps Java {@link ProtocolType} back to the Postgres {@code protocol_type_enum} literal. */
     private static String toDbProtocolType(ProtocolType protocol) {
         return switch (protocol) {
-            case SSH_SFTP   -> "ssh_sftp";
-            case FTP        -> "ftp";
-            case S3         -> "s3";
+            case SSH_SFTP -> "ssh_sftp";
+            case FTP -> "ftp";
+            case S3 -> "s3";
             case AZURE_BLOB -> "azure_blob";
-            case GCS        -> "gcs";
+            case GCS -> "gcs";
         };
     }
 
@@ -123,8 +123,7 @@ public class SavedHostRepository {
 
     public Optional<SavedHost> findById(UUID id) {
         String sql = "SELECT * FROM saved_hosts WHERE id = :id";
-        return jdbc.query(sql, new MapSqlParameterSource(PARAM_ID, id), this::mapRow)
-                .stream()
+        return jdbc.query(sql, new MapSqlParameterSource(PARAM_ID, id), this::mapRow).stream()
                 .findFirst();
     }
 
@@ -148,9 +147,7 @@ public class SavedHostRepository {
     public boolean deleteById(UUID id, UUID userId) {
         String sql = "DELETE FROM saved_hosts WHERE id = :id AND user_id = :userId";
         int rows = jdbc.update(
-                sql, new MapSqlParameterSource()
-                        .addValue(PARAM_ID, id)
-                        .addValue(PARAM_USER_ID, userId));
+                sql, new MapSqlParameterSource().addValue(PARAM_ID, id).addValue(PARAM_USER_ID, userId));
         return rows > 0;
     }
 
@@ -172,4 +169,3 @@ public class SavedHostRepository {
                 .addValue("expectedFingerprint", h.getExpectedFingerprint());
     }
 }
-

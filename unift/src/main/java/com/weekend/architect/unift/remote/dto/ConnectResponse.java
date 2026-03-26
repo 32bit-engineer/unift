@@ -13,13 +13,14 @@ import lombok.Value;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConnectResponse {
 
-    String       sessionId;
+    String sessionId;
     /** The friendly alias provided at connect-time. */
-    String       label;
+    String label;
+
     ProtocolType protocol;
-    String       host;
-    int          port;
-    String       username;
+    String host;
+    int port;
+    String username;
     SessionState state;
     OffsetDateTime createdAt;
     OffsetDateTime expiresAt;

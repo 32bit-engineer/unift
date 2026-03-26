@@ -1,4 +1,4 @@
-package com.weekend.architect.unift.remote.controller;
+package com.weekend.architect.unift.remote.handler;
 
 import java.util.List;
 import org.jspecify.annotations.NonNull;

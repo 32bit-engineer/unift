@@ -170,18 +170,23 @@ export const remoteConnectionAPI = {
   },
 
   /**
-   * Uploads a File/Blob to the given remote path.
+   * Uploads a File/Blob to the given remote path via raw octet-stream.
    * Returns the server-assigned transferId.
+   * Pass an AbortSignal to support mid-stream cancellation.
    */
-  uploadFile: async (sessionId: string, remotePath: string, file: File): Promise<string> => {
+  uploadFile: async (sessionId: string, remotePath: string, file: File, signal?: AbortSignal): Promise<string> => {
     const token = tokenStorage.getAccess();
-    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/files/upload?path=${encodeURIComponent(remotePath)}`;
-    const form = new FormData();
-    form.append('file', file);
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/files/upload/stream?path=${encodeURIComponent(remotePath)}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(file.size),
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const response = await fetch(url, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+      headers,
+      body: file,
+      signal,
     });
     if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
     return response.text();
@@ -192,6 +197,19 @@ export const remoteConnectionAPI = {
 
   getTransfer: (sessionId: string, transferId: string) =>
     apiClient.get<TransferStatusResponse>(`${BASE}/sessions/${sessionId}/transfers/${transferId}`),
+
+  cancelTransfer: async (sessionId: string, transferId: string): Promise<void> => {
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/transfers/${transferId}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    // 409 is the expected success response (cancellation signal accepted)
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Cancel failed: ${response.status}`);
+    }
+  },
 
   /**
    * Reads a remote text file and returns its content as a string.

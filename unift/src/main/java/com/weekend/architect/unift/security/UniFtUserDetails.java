@@ -30,17 +30,12 @@ public record UniFtUserDetails(User user) implements UserDetails {
 
     @Override
     public boolean isAccountNonExpired() {
-        return true;
+        return user.getDeletedAt() == null;
     }
 
     @Override
     public boolean isAccountNonLocked() {
         return user.getLockedUntil() == null || user.getLockedUntil().isBefore(OffsetDateTime.now());
-    }
-
-    @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
     }
 
     @Override
