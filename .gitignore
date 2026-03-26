@@ -74,7 +74,6 @@ unift_process_doc.docx
 .github/copilot-instructions.md
 
 unift/unift/docs
-unift/unift/LICENSE
 unift/unift/product-info
 ### Environment / Secrets ###
 .env
