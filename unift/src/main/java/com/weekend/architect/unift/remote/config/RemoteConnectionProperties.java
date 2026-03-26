@@ -30,6 +30,19 @@ public class RemoteConnectionProperties {
     private int channelTimeoutMs = 10_000;
 
     /**
+     * How often JSch sends SSH-level keep-alive packets to the remote host (milliseconds).
+     * Set lower than the shortest expected firewall/NAT idle-connection timeout (commonly 30–60 s).
+     * Default: 30 s.
+     */
+    private int sshKeepAliveIntervalMs = 30_000;
+
+    /**
+     * Number of unanswered SSH keep-alive packets before JSch treats the connection as dead
+     * and closes it.  Default: 3.
+     */
+    private int sshKeepAliveCountMax = 3;
+
+    /**
      * When {@code true} the session TTL is reset (slid forward) on each
      * API activity.  When {@code false} the session expires exactly
      * {@code sessionTtlMinutes} after it was created.

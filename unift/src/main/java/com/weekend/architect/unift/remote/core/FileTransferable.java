@@ -16,14 +16,21 @@ public interface FileTransferable {
     /**
      * Uploads a file to the remote host.
      *
-     * @param remotePath target path on the remote host (must include filename)
-     * @param source     input stream of file content; the caller is responsible
-     *                   for closing it after this method returns
-     * @param fileSize   total size in bytes; pass {@code -1} if unknown
-     * @param callback   progress listener; use {@link TransferProgressCallback#noop()} if unneeded
+     * @param remotePath        target path on the remote host (must include filename)
+     * @param source            input stream of file content; the caller is responsible
+     *                          for closing it after this method returns
+     * @param fileSize          total size in bytes; pass {@code -1} if unknown
+     * @param callback          progress listener; use {@link TransferProgressCallback#noop()} if unneeded
+     * @param cancellationToken optional token that can stop the transfer mid-flight;
+     *                          pass {@code null} for non-cancellable uploads
      * @throws TransferException if the upload fails
      */
-    void upload(String remotePath, InputStream source, long fileSize, TransferProgressCallback callback)
+    void upload(
+            String remotePath,
+            InputStream source,
+            long fileSize,
+            TransferProgressCallback callback,
+            CancellationToken cancellationToken)
             throws TransferException;
 
     /**

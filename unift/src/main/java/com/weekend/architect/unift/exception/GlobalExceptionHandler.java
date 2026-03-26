@@ -8,6 +8,7 @@ import com.weekend.architect.unift.remote.exception.SavedHostNotFoundException;
 import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
+import com.weekend.architect.unift.remote.exception.UploadCancelledException;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -18,6 +19,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @Slf4j
 @RestControllerAdvice
@@ -69,6 +71,29 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("Bad request: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
+        log.warn("Conflict: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(HttpStatus.CONFLICT, ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        log.warn("File upload rejected — size limit exceeded: {}", ex.getMessage());
+        HttpStatus status = HttpStatus.valueOf(413); // 413 Payload Too Large
+        return ResponseEntity.status(status)
+                .body(errorBody(
+                        status,
+                        "File is too large. Use the /upload/stream endpoint to send files as a raw "
+                                + "application/octet-stream body, which has no size limit."));
+    }
+
+    @ExceptionHandler(UploadCancelledException.class)
+    public ResponseEntity<ErrorResponse> handleUploadCancelled(UploadCancelledException ex) {
+        log.info("Upload cancelled: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(HttpStatus.CONFLICT, ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

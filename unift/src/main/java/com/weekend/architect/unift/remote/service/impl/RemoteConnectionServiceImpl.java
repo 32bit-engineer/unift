@@ -1,6 +1,8 @@
 package com.weekend.architect.unift.remote.service.impl;
 
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
+import com.weekend.architect.unift.remote.core.CancellableInputStream;
+import com.weekend.architect.unift.remote.core.CancellationToken;
 import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
 import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
@@ -219,7 +221,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
         try (InputStream source = file.getInputStream()) {
             transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);
-            conn.upload(remotePath, source, fileSize, callback);
+            conn.upload(remotePath, source, fileSize, callback, null); // multipart uploads are not cancellable
             transferRegistry.updateState(transfer.getTransferId(), TransferState.COMPLETED);
             transfer.setCompletedAt(OffsetDateTime.now());
             log.info("[{}] Upload of '{}' complete ({} bytes)", sessionId, remotePath, fileSize);
@@ -230,6 +232,120 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         }
 
         return transfer.getTransferId();
+    }
+
+    @Override
+    public String uploadStream(
+            String sessionId, UUID ownerId, String remotePath, InputStream inputStream, long contentLength) {
+        RemoteConnection conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, ownerId);
+
+        RemoteTransfer transfer = createTransfer(sessionId, remotePath, TransferDirection.UPLOAD, contentLength);
+
+        // Attach a cancellation token so the cancel endpoint can signal this transfer
+        CancellationToken cancellationToken = new CancellationToken();
+        transfer.setCancellationToken(cancellationToken);
+
+        TransferProgressCallback callback = progressCallbackFor(transfer);
+
+        try {
+            transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);
+            // CancellableInputStream is a secondary guard (throws before each read).
+            // The primary cancellation path is JschSftpProgressMonitor.count() returning false,
+            // which is JSch's official way to stop the copy loop.
+            conn.upload(
+                    remotePath,
+                    new CancellableInputStream(inputStream, cancellationToken),
+                    contentLength,
+                    callback,
+                    cancellationToken);
+
+            // IMPORTANT: when the monitor returns false, JSch breaks its write loop and
+            // put() returns normally — it does NOT throw. We must check the token here
+            // to distinguish a completed upload from a canceled one.
+            if (cancellationToken.isCancelled()) {
+                handleUploadCancellation(transfer, conn, sessionId, remotePath);
+            } else {
+                transferRegistry.updateState(transfer.getTransferId(), TransferState.COMPLETED);
+                transfer.setCompletedAt(OffsetDateTime.now());
+                log.info("[{}] Stream upload of '{}' complete ({} bytes)", sessionId, remotePath, contentLength);
+            }
+        } catch (TransferException e) {
+            // Secondary path: CancellableInputStream threw InterruptedIOException mid-read
+            if (cancellationToken.isCancelled()) {
+                handleUploadCancellation(transfer, conn, sessionId, remotePath);
+            } else {
+                transferRegistry.updateState(transfer.getTransferId(), TransferState.FAILED);
+                transfer.setErrorMessage(e.getMessage());
+                throw e;
+            }
+        }
+
+        return transfer.getTransferId();
+    }
+
+    @Override
+    public void cancelTransfer(String sessionId, UUID ownerId, String transferId) {
+        RemoteConnection conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, ownerId);
+
+        RemoteTransfer transfer = transferRegistry.require(transferId);
+
+        // Guard: transfer must belong to this session
+        if (!sessionId.equals(transfer.getSessionId())) {
+            throw new IllegalArgumentException("Transfer " + transferId + " does not belong to session " + sessionId);
+        }
+        // Guard: only uploads can be canceled
+        if (transfer.getDirection() != TransferDirection.UPLOAD) {
+            throw new IllegalArgumentException("Only upload transfers can be cancelled");
+        }
+        // Guard: must still be active
+        TransferState state = transfer.getState();
+        if (state == TransferState.COMPLETED || state == TransferState.FAILED || state == TransferState.CANCELLED) {
+            throw new IllegalStateException("Transfer " + transferId + " has already finished (state: "
+                    + state.name().toLowerCase() + ")");
+        }
+        // Guard: must be a cancellable stream upload (not multipart)
+        CancellationToken token = transfer.getCancellationToken();
+        if (token == null) {
+            throw new IllegalArgumentException("Transfer " + transferId + " does not support cancellation. "
+                    + "Only uploads started via POST .../files/upload/stream can be cancelled.");
+        }
+
+        log.info("[{}] Cancellation requested for transfer {}", sessionId, transferId);
+        token.cancel();
+        // The upload thread detects the signal on its next read, unwinds, marks the
+        // transfer CANCELLED, and deletes the partial remote file automatically.
+    }
+
+    /**
+     * Marks a transfer as CANCELLED and attempts to delete the partial remote file.
+     * Called from both the normal-return and exception paths of {@code uploadStream}.
+     */
+    private void handleUploadCancellation(
+            RemoteTransfer transfer, RemoteConnection conn, String sessionId, String remotePath) {
+        transferRegistry.updateState(transfer.getTransferId(), TransferState.CANCELLED);
+        transfer.setCompletedAt(OffsetDateTime.now());
+        transfer.setErrorMessage("Cancelled by user");
+        log.info("[{}] Upload of '{}' was cancelled; removing partial file", sessionId, remotePath);
+        tryDeletePartialFile(conn, sessionId, remotePath);
+    }
+
+    /**
+     * Best-effort deletion of a partial remote file left behind by a canceled upload.
+     * Logs a warning on failure but never throws.
+     */
+    private void tryDeletePartialFile(RemoteConnection conn, String sessionId, String remotePath) {
+        try {
+            conn.delete(remotePath);
+            log.info("[{}] ✓ Partial file '{}' removed after cancellation", sessionId, remotePath);
+        } catch (Exception e) {
+            log.warn(
+                    "[{}] Could not remove partial file '{}' after cancellation: {}",
+                    sessionId,
+                    remotePath,
+                    e.getMessage());
+        }
     }
 
     @Override
@@ -419,7 +535,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     }
 
     private TransferProgressCallback progressCallbackFor(RemoteTransfer transfer) {
-        return (transferred, totalBytes) -> {
+        return (transferred, bytes) -> {
             transfer.getBytesTransferred().set(transferred);
             if (transfer.getState() == TransferState.PENDING) {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);

@@ -1,8 +1,8 @@
 package com.weekend.architect.unift.remote.config;
 
-import com.weekend.architect.unift.remote.controller.BearerProtocolHandshakeHandler;
-import com.weekend.architect.unift.remote.controller.TerminalHandshakeInterceptor;
-import com.weekend.architect.unift.remote.controller.TerminalWebSocketHandler;
+import com.weekend.architect.unift.remote.handler.BearerProtocolHandshakeHandler;
+import com.weekend.architect.unift.remote.handler.TerminalWebSocketHandler;
+import com.weekend.architect.unift.remote.interceptor.TerminalHandshakeInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;

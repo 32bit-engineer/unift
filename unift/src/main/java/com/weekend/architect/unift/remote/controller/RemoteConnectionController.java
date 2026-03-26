@@ -15,7 +15,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -54,8 +56,6 @@ public class RemoteConnectionController {
 
     private final RemoteConnectionService service;
 
-    // Test connection endpoint
-
     @PostMapping("/test-connection")
     @Operation(
             summary = "Test connection credentials",
@@ -78,8 +78,6 @@ public class RemoteConnectionController {
                 request.getPort());
         return ResponseEntity.ok(response);
     }
-
-    // Session management endpoints
 
     @PostMapping("/sessions")
     @Operation(
@@ -259,6 +257,60 @@ public class RemoteConnectionController {
         return ResponseEntity.ok(transferId);
     }
 
+    /**
+     * Streaming upload that bypasses Spring's multipart resolver entirely.
+     *
+     * <p>Send the raw file bytes as {@code Content-Type: application/octet-stream}.
+     * The request body is piped directly into the SFTP channel without ever
+     * being buffered in a server temp file, so there is no effective size limit.
+     *
+     * <p>Usage example (curl):
+     * <pre>
+     *   curl -X POST \
+     *     "http(s)://host/api/remote/sessions/{id}/files/upload/stream?path=/remote/dir/file.bin" \
+     *     -H "Authorization: Bearer &lt;token&gt;" \
+     *     -H "Content-Type: application/octet-stream" \
+     *     --data-binary @/local/path/to/file.bin
+     * </pre>
+     */
+    @PostMapping(
+            value = "/sessions/{sessionId}/files/upload/stream",
+            consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    @Operation(
+            summary = "Stream-upload a file (no size limit)",
+            description = "Uploads a file by streaming raw bytes (Content-Type: application/octet-stream) "
+                    + "directly into the SFTP channel. No multipart parsing occurs, so very large files "
+                    + "are handled without buffering them on the server. "
+                    + "Set the Content-Length header when the file size is known so transfer progress "
+                    + "is tracked accurately; omit it (or pass -1) if the size is unknown.",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "Upload complete; returns transferId"),
+                @ApiResponse(responseCode = "400", description = "Invalid remote path", content = @Content),
+                @ApiResponse(responseCode = "404", description = "Session not found", content = @Content),
+                @ApiResponse(responseCode = "403", description = "Session not owned by caller", content = @Content),
+                @ApiResponse(responseCode = "502", description = "Remote write error", content = @Content)
+            })
+    public ResponseEntity<String> uploadStream(
+            @PathVariable String sessionId,
+            @RequestParam String path,
+            HttpServletRequest request,
+            @AuthenticationPrincipal UniFtUserDetails principal)
+            throws IOException {
+
+        long contentLength = request.getContentLengthLong(); // -1 if not provided
+        log.info(
+                "Starting stream upload in session {} → {} (Content-Length: {})",
+                sessionId,
+                path,
+                contentLength < 0 ? "unknown" : contentLength + " bytes");
+
+        String transferId = service.uploadStream(
+                sessionId, principal.user().getId(), path, request.getInputStream(), contentLength);
+
+        log.info("Stream upload complete, transfer ID: {}", transferId);
+        return ResponseEntity.ok(transferId);
+    }
+
     // Transfer progress tracking
 
     @GetMapping("/sessions/{sessionId}/transfers")
@@ -283,5 +335,33 @@ public class RemoteConnectionController {
                 service.getTransfer(sessionId, principal.user().getId(), transferId);
         log.debug("Transfer {} is at {}%", transferId, transfer.getProgressPercent());
         return ResponseEntity.ok(transfer);
+    }
+
+    @DeleteMapping("/sessions/{sessionId}/transfers/{transferId}")
+    @Operation(
+            summary = "Cancel an in-progress stream upload",
+            description = "Signals cancellation to a stream upload that is PENDING or IN_PROGRESS. "
+                    + "The upload thread stops on its next read and any partially-written file "
+                    + "on the remote host is automatically deleted. "
+                    + "Only uploads started via POST .../files/upload/stream support cancellation.",
+            responses = {
+                @ApiResponse(responseCode = "204", description = "Cancellation signal accepted"),
+                @ApiResponse(
+                        responseCode = "400",
+                        description = "Transfer is not cancellable (wrong direction or started via multipart)",
+                        content = @Content),
+                @ApiResponse(responseCode = "404", description = "Session or transfer not found", content = @Content),
+                @ApiResponse(
+                        responseCode = "409",
+                        description = "Transfer has already finished (COMPLETED / FAILED / CANCELLED)",
+                        content = @Content)
+            })
+    public ResponseEntity<Void> cancelTransfer(
+            @PathVariable String sessionId,
+            @PathVariable String transferId,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        log.info("Cancel requested for transfer {} in session {}", transferId, sessionId);
+        service.cancelTransfer(sessionId, principal.user().getId(), transferId);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -29,15 +29,14 @@ public class SshCredentialValidator implements CredentialValidator {
      * Sonar rule S6880 is a false positive for enum switches — suppressed below.
      */
     @Override
-    @SuppressWarnings("java:S6880")
+    @SuppressWarnings({"java:S6880", "java:S6916"})
     public void validate(SavedHostRequest request) {
-        if (request.getAuthType() == null) {
-            throw new CredentialValidationException("authType is required for SSH_SFTP protocol");
-        }
         switch (request.getAuthType()) {
+            case null -> throw new CredentialValidationException("authType is required for SSH_SFTP protocol");
+
             case PASSWORD -> {
                 if (request.getPassword() == null || request.getPassword().isBlank()) {
-                    throw new CredentialValidationException("password is required when authType=PASSWORD");
+                    throw new CredentialValidationException("password is    required when authType=PASSWORD");
                 }
             }
             case PRIVATE_KEY -> {

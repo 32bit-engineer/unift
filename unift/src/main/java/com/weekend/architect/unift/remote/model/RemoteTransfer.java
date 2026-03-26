@@ -1,5 +1,6 @@
 package com.weekend.architect.unift.remote.model;
 
+import com.weekend.architect.unift.remote.core.CancellationToken;
 import com.weekend.architect.unift.remote.enums.TransferDirection;
 import com.weekend.architect.unift.remote.enums.TransferState;
 import java.time.OffsetDateTime;
@@ -35,14 +36,17 @@ public class RemoteTransfer {
     private volatile OffsetDateTime completedAt;
     private volatile String errorMessage;
 
+    /**
+     * Cancellation token for stream uploads; {@code null} for non-cancellable transfers
+     * (e.g. multipart uploads).  Set by {@code uploadStream} immediately after the transfer
+     * is created so the cancel endpoint can signal it.
+     */
+    private volatile CancellationToken cancellationToken;
+
     /** Bytes transferred so far; updated atomically by the progress callback. */
     @Builder.Default
     @Getter
     private final AtomicLong bytesTransferred = new AtomicLong(0L);
-
-    // ------------------------------------------------------------------
-    // Derived helpers
-    // ------------------------------------------------------------------
 
     /**
      * Returns transfer progress as an integer percentage (0–100).
