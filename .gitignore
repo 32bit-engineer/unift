@@ -70,7 +70,8 @@ AGENTS.md
 
 unift_process_doc.docx
 
-.github/
+.github/agents/
+.github/copilot-instructions.md
 
 unift/unift/docs
 unift/unift/LICENSE

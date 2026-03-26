@@ -1,0 +1,92 @@
+name: Build and Publish Docker Image
+
+# Triggered on every push to main.
+# Builds the single-container image (frontend + backend in one JAR) and
+# pushes it to the GitHub Container Registry (GHCR).
+#
+# Images produced:
+#   ghcr.io/32bit-engineer/unift:latest        -- always the most recent main build
+#   ghcr.io/32bit-engineer/unift:sha-<7-char>  -- immutable per-commit tag
+#
+# Required repository secrets / variables: none beyond the default GITHUB_TOKEN.
+# The workflow uses the token granted automatically to each workflow run.
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write     # required to push to GHCR
+      id-token: write     # required for attestation (optional but good practice)
+
+    steps:
+      # ── 1. Checkout source ────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Docker Buildx for multi-platform / layer caching ────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 3. Authenticate to GHCR ───────────────────────────────────────────
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 4. Compute image metadata (tags + labels) ─────────────────────────
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Always tag latest on main
+            type=raw,value=latest,enable={{is_default_branch}}
+            # Short SHA tag for immutable per-commit reference
+            type=sha,prefix=sha-,format=short
+
+      # ── 5. Build and push ─────────────────────────────────────────────────
+      # The root Dockerfile is the single-container build:
+      #   Stage 1: Node 22 builds the React/Vite frontend
+      #   Stage 2: Gradle embeds frontend dist into Spring Boot static resources and builds the JAR
+      #   Stage 3: Minimal JRE runtime image
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions cache to speed up repeated builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Pass version metadata into the frontend build
+          build-args: |
+            VITE_APP_NAME=UniFT
+            VITE_APP_VERSION=${{ github.ref_name }}
+            VITE_ENABLE_DARK_MODE=true
+            VITE_API_BASE_URL=
+
+      # ── 6. Generate build attestation (supply-chain provenance) ──────────
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
