@@ -3,7 +3,18 @@ spring:
     name: uniFT
   threads:
     virtual:
-      enabled: true 
+      enabled: true
+
+  servlet:
+    multipart:
+      # Raise limits so the multipart upload endpoint handles large files.
+      # Override with MAX_UPLOAD_FILE_SIZE / MAX_UPLOAD_REQUEST_SIZE env vars in production.
+      # Use -1 for unlimited.
+      max-file-size: ${MAX_UPLOAD_FILE_SIZE:5GB}
+      max-request-size: ${MAX_UPLOAD_REQUEST_SIZE:5GB}
+      # Write to a temp file once the in-memory threshold is exceeded.
+      file-size-threshold: ${UPLOAD_MEM_THRESHOLD:2KB}
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -11,7 +22,7 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:unift-group}
       auto-offset-reset: earliest
@@ -34,7 +45,7 @@ logging:
     console: "%d{HH:mm:ss.SSS} [%-5level] [%logger{35}] - %msg%n"
 
 jwt:
-  # Generate a secure key with: openssl rand -base64 64
+  # Required — generate with: openssl rand -base64 64
   secret: ${JWT_SECRET}
   access-token-expiration-ms: ${JWT_ACCESS_TOKEN_EXPIRATION_MS:900000}      # 15 minutes
   refresh-token-expiration-ms: ${JWT_REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
@@ -50,8 +61,8 @@ springdoc:
 
 unift:
   # AES-256-GCM key for encrypting SSH credentials at rest.
-  # REQUIRED — generate with: openssl rand -base64 32
-  # Set via UNIFT_ENCRYPTION_KEY environment variable in production.
+  # Required — generate with: openssl rand -base64 32
+  # Must be set via UNIFT_ENCRYPTION_KEY environment variable.
   encryption:
     key: ${UNIFT_ENCRYPTION_KEY}
 
@@ -62,6 +73,10 @@ unift:
     connect-timeout-ms: ${UNIFT_CONNECT_TIMEOUT_MS:15000}
     channel-timeout-ms: ${UNIFT_CHANNEL_TIMEOUT_MS:10000}
     sliding-ttl: ${UNIFT_SLIDING_TTL:true}
+    # SSH keep-alive: sends an SSH heartbeat every N ms to prevent NAT/firewall
+    # idle-connection drops.  Keep well below your firewall's idle timeout (often 30–60 s).
+    ssh-keep-alive-interval-ms: ${UNIFT_SSH_KEEPALIVE_INTERVAL_MS:30000}
+    ssh-keep-alive-count-max: ${UNIFT_SSH_KEEPALIVE_COUNT_MAX:3}
 
   terminal:
     # Allowed WebSocket upgrade origins — mirrors the HTTP CORS list.
