@@ -27,6 +27,7 @@ export function FileBrowser({ host, onClose, onSessionExpired }: FileBrowserProp
   const [opLoading, setOpLoading]         = useState(false);
   const [transfers, setTransfers]         = useState<TransferStatusResponse[]>([]);
   const [showTransfers, setShowTransfers] = useState(false);
+  const uploadAbortControllers            = useRef<Map<string, AbortController>>(new Map());
   const [successMsg, setSuccessMsg]       = useState<string | null>(null);
   const [editorState, setEditorState]     = useState<EditorState | null>(null);
   const [pathInputValue, setPathInputValue] = useState('/');
@@ -249,20 +250,42 @@ export function FileBrowser({ host, onClose, onSessionExpired }: FileBrowserProp
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    let wasCancelled = false;
     try {
       setOpLoading(true);
+      setShowTransfers(true);
       for (const file of Array.from(files)) {
         const remotePath = absPath(file.name);
-        await remoteConnectionAPI.uploadFile(host.sessionId, remotePath, file);
+        const controller = new AbortController();
+        uploadAbortControllers.current.set(remotePath, controller);
+        try {
+          await remoteConnectionAPI.uploadFile(host.sessionId, remotePath, file, controller.signal);
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            wasCancelled = true;
+            break; // stop remaining files in the queue
+          }
+          throw err; // re-throw real errors
+        } finally {
+          uploadAbortControllers.current.delete(remotePath);
+        }
       }
       await loadDirectory(currentPath);
       const updated = await remoteConnectionAPI.getTransfers(host.sessionId);
       setTransfers(updated);
-      setShowTransfers(true);
     } catch (err) {
-      handleApiError(err, 'Upload failed');
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        handleApiError(err, 'Upload failed');
+      }
     } finally {
       setOpLoading(false);
+      if (wasCancelled) {
+        // Refresh so cancelled state is reflected without showing an error
+        try {
+          const list = await remoteConnectionAPI.getTransfers(host.sessionId);
+          setTransfers(list);
+        } catch { /* non-critical */ }
+      }
     }
   };
 
@@ -272,6 +295,41 @@ export function FileBrowser({ host, onClose, onSessionExpired }: FileBrowserProp
       setTransfers(list);
     } catch { /* non-critical */ }
   };
+
+  const handleCancelTransfer = async (transferId: string) => {
+    try {
+      await remoteConnectionAPI.cancelTransfer(host.sessionId, transferId);
+      // Abort the in-flight fetch so we stop sending bytes to the server
+      const transfer = transfers.find(t => t.transferId === transferId);
+      if (transfer) {
+        const controller = uploadAbortControllers.current.get(transfer.remotePath);
+        if (controller) {
+          controller.abort();
+          uploadAbortControllers.current.delete(transfer.remotePath);
+        }
+      }
+      const list = await remoteConnectionAPI.getTransfers(host.sessionId);
+      setTransfers(list);
+    } catch { /* non-critical */ }
+  };
+
+  const handleClearTransfers = () => setTransfers([]);
+
+  // Auto-poll transfers while the panel is open and any transfer is active
+  const hasActiveTransfers = transfers.some(
+    t => t.state === 'PENDING' || t.state === 'IN_PROGRESS',
+  );
+  useEffect(() => {
+    if (!showTransfers) return;
+    if (!hasActiveTransfers && !opLoading) return;
+    const id = setInterval(async () => {
+      try {
+        const list = await remoteConnectionAPI.getTransfers(host.sessionId);
+        setTransfers(list);
+      } catch { /* non-critical */ }
+    }, 1500);
+    return () => clearInterval(id);
+  }, [showTransfers, hasActiveTransfers, opLoading, host.sessionId]);
 
   // ── Breadcrumb segments ────────────────────────────────────────────
   const breadcrumbSegments = pathStack.map((p, i) => ({
@@ -357,10 +415,13 @@ export function FileBrowser({ host, onClose, onSessionExpired }: FileBrowserProp
           <div className="flex items-center justify-between px-4 py-2 border-b border-[#2E3348]">
             <span className="label">Transfer History</span>
             <div className="flex items-center gap-2">
-              <button onClick={refreshTransfers} className="cursor-pointer">
+              <button title="Refresh transfer list" onClick={refreshTransfers} className="cursor-pointer">
                 <Icon name="refresh" className="text-slate-500 text-sm hover:text-slate-300" />
               </button>
-              <button onClick={() => setShowTransfers(false)} className="cursor-pointer">
+              <button title="Clear all transfers" onClick={handleClearTransfers} className="cursor-pointer">
+                <Icon name="delete_sweep" className="text-slate-500 text-sm hover:text-slate-300" />
+              </button>
+              <button title="Close panel" onClick={() => setShowTransfers(false)} className="cursor-pointer">
                 <Icon name="close" className="text-slate-500 text-sm hover:text-slate-300" />
               </button>
             </div>
@@ -378,21 +439,33 @@ export function FileBrowser({ host, onClose, onSessionExpired }: FileBrowserProp
                   <span className="text-xs font-mono text-slate-300 flex-1 truncate">
                     {t.remotePath.split('/').pop()}
                   </span>
-                  <div className="w-24">
-                    <div className="prog-track">
-                      <div
-                        className={t.state === 'COMPLETED' ? 'prog-done' : 'prog-fill'}
-                        style={{ width: `${t.progressPercent}%` }}
-                      />
+                  {t.state !== 'CANCELLED' && (
+                    <div className="w-24">
+                      <div className="prog-track">
+                        <div
+                          className={t.state === 'COMPLETED' ? 'prog-done' : 'prog-fill'}
+                          style={{ width: `${t.progressPercent}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <span className={`label w-16 text-right ${
+                  )}
+                  <span className={`label ${t.state === 'CANCELLED' ? 'w-40' : 'w-16'} text-right ${
                     t.state === 'COMPLETED' ? 'text-[#4ade80]' :
                     t.state === 'FAILED' ? 'text-red-400' :
+                    t.state === 'CANCELLED' ? 'text-slate-500' :
                     t.state === 'IN_PROGRESS' ? 'text-[#4F8EF7]' : ''
                   }`}>
                     {t.state === 'IN_PROGRESS' ? `${t.progressPercent}%` : t.state}
                   </span>
+                  {(t.state === 'PENDING' || t.state === 'IN_PROGRESS') && (
+                    <button
+                      onClick={() => void handleCancelTransfer(t.transferId)}
+                      title="Cancel upload"
+                      className="cursor-pointer shrink-0"
+                    >
+                      <Icon name="cancel" className="text-sm text-slate-500 hover:text-red-400 transition-colors" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

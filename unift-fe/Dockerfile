@@ -7,9 +7,10 @@ RUN npm ci
 
 COPY . .
 
-# Empty default: all API paths already include /api, so no prefix is needed.
-# For local dev the fallback in api.config.ts kicks in (http://localhost:8080).
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# API base URL baked in at build time.
+# Must NOT include the /api suffix — endpoint paths already carry it (e.g. /api/auth/login).
+# Default is empty so the nginx reverse-proxy path (/api/*) works when no override is given.
+ARG VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 RUN npm run build
 

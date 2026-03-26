@@ -6,74 +6,64 @@
 
 UniFT is your personal command centre for server management. Whether you're managing multiple remote servers, NAS devices, or self-hosted storage, UniFT provides:
 
-- **Dense, keyboard-first UI** — See 40 files, watch uploads at 80 MB/s, and stream media simultaneously without modal clutter
+- **Dense, keyboard-first UI** — Browse files, run a terminal, and stream media from the same screen without modal clutter
 - **File Management** — Browse, upload, download, delete, rename, and create directories on remote servers via SSH/SFTP
-- **Resumable Uploads** — Chunk-based upload with automatic resume capability for large files
-- **Media Streaming** — Built-in media player with HLS stream support and FFmpeg transcoding
+- **Media Streaming** — Stream video and audio files from any connected SSH server directly in the browser
+- **Browser Terminal** — Full PTY shell over WebSocket with resize, copy/paste, and auto-reconnect
 - **Session Management** — Persistent SSH sessions with automatic cleanup and TTL-based expiration
-- **Real-time Progress Tracking** — Monitor all file transfers and streaming operations in real time
-- **JWT Authentication** — Secure access with token-based authentication and refresh token rotation
+- **In-memory Transfer Progress** — Track active file transfer progress in real time for the duration of a session
+- **JWT Authentication** — Secure access with short-lived access tokens and rotating refresh tokens
 - **User Management** — Role-based access control with admin permissions for multi-user deployments
 
 ## Quick Start with Docker
 
 ### Prerequisites
 
-- Docker and Docker Compose installed
-- PostgreSQL database (local or cloud-hosted)
-- Kafka instance (optional for now, required for future features)
+- Docker and Docker Compose installed  
+- PostgreSQL database (local or cloud-hosted)  
+- A copy of `.env` — see `.env.example` at the repo root for all required variables
 
 ### Self-Host in 3 Steps
 
 #### 1. Create a `.env` file
 
+Copy `.env.example` and fill in your values:
+
+```bash
+cp .env.example .env
+# Edit .env with your database credentials, JWT secret, and encryption key
+```
+
+Required variables:
+
 ```bash
 # Database (PostgreSQL required)
 DB_URL=jdbc:postgresql://your-postgres-host:5432/unift_db
-DB_USERNAME=postgres
+DB_USERNAME=your_db_user
 DB_PASSWORD=your-secure-password
 
 # JWT Secret (generate with: openssl rand -base64 64)
-JWT_SECRET=$(openssl rand -base64 64)
+JWT_SECRET=<your-generated-secret>
 
-# Kafka (optional, required for future features)
-KAFKA_BOOTSTRAP_SERVERS=your-kafka-host:9092
-
-# API Configuration
-API_PORT=8080
-API_BASE_URL=http://localhost:8080/api
+# AES-256-GCM key for SSH credential encryption (generate with: openssl rand -base64 32)
+UNIFT_ENCRYPTION_KEY=<your-generated-key>
 ```
 
 #### 2. Run Docker Compose
 
-```yaml
-version: '3.8'
-
-services:
-  unift:
-    image: unift:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_DATASOURCE_URL=${DB_URL}
-      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME}
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-      - SPRING_KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
-    volumes:
-      - ./config:/app/config
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-```
-
-Then start the service:
-
 ```bash
 docker-compose up -d
+```
+
+This starts two containers:
+- `unift-api` — Spring Boot backend on port 8080
+- `unift-fe` — React frontend served via Nginx on port 80, proxying `/api/*` to the backend
+
+For a single-container deployment (backend serves frontend static assets directly):
+
+```bash
+docker build -f Dockerfile -t unift:latest .
+docker run -p 8080:8080 --env-file .env unift:latest
 ```
 
 #### 3. Access UniFT
@@ -111,17 +101,14 @@ Connect to any remote server via SSH and maintain a persistent session. Sessions
 
 ### Media Streaming
 
-- **Built-in player** — Watch videos directly from your remote servers
-- **HLS support** — Stream long-form content without full download
-- **Real-time transcoding** — FFmpeg integration for format conversion
-- **Progress tracking** — Resume playback from last known position
+- **Direct stream** — Stream video and audio files from any connected SSH server to the browser via a dedicated range-request endpoint
+- **Format support** — Browser-native formats (MP4/H.264, WebM, MP3, AAC, FLAC) play without conversion
+- Media player UI and HLS relay are planned for a future release (Phase 5)
 
-### Transfer History
+### Transfer Progress
 
-- Monitor all active and completed transfers
-- View detailed progress information
-- Resume failed uploads
-- Search and filter transfer logs
+- In-memory progress tracking for all active uploads and downloads within a session
+- Progress is visible for the lifetime of the transfer; persistent transfer history is planned (Phase 3)
 
 ## API Reference
 
@@ -215,14 +202,14 @@ LOGGING_LEVEL_COM_WEEKEND_ARCHITECT_UNIFT=DEBUG
 
 ## Architecture Overview
 
-UniFT is built as a unified **Docker image** containing both backend and frontend:
+UniFT is a two-container Docker Compose application with an optional single-container build mode:
 
-- **Backend**: Java 24 + Spring Boot 4 (REST API, SSH/SFTP session management)
-- **Frontend**: React 19 + TypeScript + Tailwind CSS (UI, media player)
-- **Database**: PostgreSQL (users, sessions, transfer logs)
-- **Transport**: SSH/SFTP for remote server connections
+- **Backend**: Java 24 + Spring Boot 4 (REST API, SSH/SFTP session management, WebSocket terminal)
+- **Frontend**: React 19 + TypeScript + Tailwind CSS, served by Nginx
+- **Database**: PostgreSQL (users, sessions, saved hosts, refresh tokens)
+- **Transport**: SSH/SFTP for all remote server operations
 
-The frontend is served as static assets from the backend, so a single `docker run` command gives you the complete application.
+The `docker-compose.yml` runs a separate Nginx container that proxies `/api/*` and `/api/ws/*` to the Spring Boot backend. A combined single-container build (frontend embedded in the Spring Boot JAR) is also available via the root-level `Dockerfile`.
 
 ## Development
 
@@ -298,16 +285,38 @@ cd unift-fe && npm run test
 
 ## Roadmap
 
-- [ ] Multi-protocol support (FTP, S3, Azure Blob, GCS)
-- [ ] Advanced permission management (ACLs, role-based access)
-- [ ] Scheduled backups and sync jobs
-- [ ] Email notifications for failed transfers
-- [ ] Mobile app (native iOS/Android)
-- [ ] Desktop app (Electron)
+See [product-info/PRODUCT_ROADMAP.md](unift/product-info/PRODUCT_ROADMAP.md) for the full map. Headlines:
+
+### v1.2.0 — Q2 2026
+- [ ] Local file browser (browse files mounted on the UniFT server itself)
+- [ ] My Files UI page
+- [ ] Session management UI (list and revoke active tokens)
+- [ ] Rate limiting (Bucket4j)
+
+### v1.3.0 — Q3 2026
+- [ ] Resumable chunked upload API (schema and DB tables are already in place)
+- [ ] Persistent transfer history to `transfer_log`
+- [ ] SSE upload progress events
+- [ ] QR code mobile pairing for phone-to-server uploads
+
+### v1.4.0 — Q3 2026
+- [ ] Media player UI (Video.js + hls.js)
+- [ ] FFmpeg on-demand transcoding for unsupported formats
+- [ ] HLS live stream relay
+
+### v2.0.0 — Q4 2026
+- [ ] Admin panel and per-folder ACL
+- [ ] Multi-protocol support (FTP/FTPS, Amazon S3, Azure Blob, GCS, SMB)
+- [ ] Multi-arch Docker image (ARM64 + x86\_64)
+- [ ] Password reset and email verification
+
+---
+
+Protocol connector stubs (credential model exists in DB) for FTP, S3, Azure Blob, and GCS are already in the codebase and will be filled in during Phase 7.
 
 ## License
 
-[Your License Here]
+Apache License 2.0 — see [LICENSE](unift/LICENSE).
 
 ## Support
 
@@ -317,4 +326,4 @@ For issues, feature requests, or contributions:
 
 ## Credits
 
-Built with ❤️ for self-hosters, power users, and everyone who wants to take control of their data.
+Built for self-hosters, power users, and anyone who wants a direct window into their own infrastructure.
