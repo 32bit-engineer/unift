@@ -246,6 +246,10 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
                         .build();
             }
         } catch (Exception e) {
+            if (e instanceof InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("[analytics] Packet-loss probe interrupted - {}", ie.getMessage());
+            }
             log.debug("[analytics] Packet-loss probe failed (non-critical): {}", e.getMessage());
         }
         return PacketLossInfo.unavailable();

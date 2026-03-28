@@ -9,6 +9,7 @@ import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
 import com.weekend.architect.unift.remote.exception.UploadCancelledException;
+import com.weekend.architect.unift.remote.exception.UploadSessionNotFoundException;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -140,6 +141,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(SavedHostNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleSavedHostNotFound(SavedHostNotFoundException ex) {
         log.warn("Saved host not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage()));
+    }
+
+    @ExceptionHandler(UploadSessionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUploadSessionNotFound(UploadSessionNotFoundException ex) {
+        log.warn("Upload session not found: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage()));
     }
 

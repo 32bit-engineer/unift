@@ -1,11 +1,17 @@
 package com.weekend.architect.unift.remote.analytics.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /** Packet-loss statistics derived from a local ICMP ping probe to the remote host. */
-@Value
+@Data
 @Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class PacketLossInfo {
 
     /** Percentage of packets that did not receive a reply (0.0 – 100.0). */

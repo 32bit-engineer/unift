@@ -28,13 +28,16 @@ import com.weekend.architect.unift.remote.factory.ConnectionFactory;
 import com.weekend.architect.unift.remote.model.RemoteFile;
 import com.weekend.architect.unift.remote.model.RemoteSession;
 import com.weekend.architect.unift.remote.model.RemoteTransfer;
+import com.weekend.architect.unift.remote.model.TransferLog;
 import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.registry.TransferRegistry;
 import com.weekend.architect.unift.remote.repository.SessionLogRepository;
+import com.weekend.architect.unift.remote.repository.TransferLogRepository;
 import com.weekend.architect.unift.remote.service.RemoteConnectionService;
 import com.weekend.architect.unift.utils.UuidUtils;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -57,6 +60,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     private final TransferRegistry transferRegistry;
     private final ConnectionFactory connectionFactory;
     private final SessionLogRepository sessionLogRepository;
+    private final TransferLogRepository transferLogRepository;
 
     @Override
     public ConnectResponse openSession(UUID ownerId, ConnectRequest request) {
@@ -193,6 +197,11 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         RemoteTransfer transfer = createTransfer(sessionId, remotePath, TransferDirection.DOWNLOAD, -1L);
         TransferProgressCallback callback = progressCallbackFor(transfer);
 
+        // Capture session metadata before entering the lambda (session may be closed by the time
+        // the streaming body is written)
+        String remoteHost = conn.getSession().getHost();
+        int remotePort = conn.getSession().getPort();
+
         // Open the remote stream now (before returning the lambda) so that any
         // immediate errors (file not found, permissions) surface as HTTP 502,
         // not as a broken streaming response.
@@ -200,7 +209,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
         return outputStream -> {
             try (remoteStream) {
-                byte[] buffer = new byte[8192];
+                byte[] buffer = new byte[128000]; // 128KB Buffer
                 int bytesRead;
                 while ((bytesRead = remoteStream.read(buffer)) != -1) {
                     outputStream.write(buffer, 0, bytesRead);
@@ -208,9 +217,12 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 }
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.COMPLETED);
                 transfer.setCompletedAt(OffsetDateTime.now());
+                logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
             } catch (IOException e) {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.FAILED);
                 transfer.setErrorMessage(e.getMessage());
+                transfer.setCompletedAt(OffsetDateTime.now());
+                logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
                 log.error("[{}] Download of '{}' failed: {}", sessionId, remotePath, e.getMessage());
                 throw new TransferException("Download stream interrupted: " + e.getMessage(), e);
             }
@@ -226,15 +238,21 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         RemoteTransfer transfer = createTransfer(sessionId, remotePath, TransferDirection.UPLOAD, fileSize);
         TransferProgressCallback callback = progressCallbackFor(transfer);
 
+        String remoteHost = conn.getSession().getHost();
+        int remotePort = conn.getSession().getPort();
+
         try (InputStream source = file.getInputStream()) {
             transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);
             conn.upload(remotePath, source, fileSize, callback, null); // multipart uploads are not cancellable
             transferRegistry.updateState(transfer.getTransferId(), TransferState.COMPLETED);
             transfer.setCompletedAt(OffsetDateTime.now());
             log.info("[{}] Upload of '{}' complete ({} bytes)", sessionId, remotePath, fileSize);
+            logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
         } catch (IOException e) {
             transferRegistry.updateState(transfer.getTransferId(), TransferState.FAILED);
             transfer.setErrorMessage(e.getMessage());
+            transfer.setCompletedAt(OffsetDateTime.now());
+            logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
             throw new TransferException("Failed to read upload stream: " + e.getMessage(), e);
         }
 
@@ -255,6 +273,9 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
         TransferProgressCallback callback = progressCallbackFor(transfer);
 
+        String remoteHost = conn.getSession().getHost();
+        int remotePort = conn.getSession().getPort();
+
         try {
             transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);
             // CancellableInputStream is a secondary guard (throws before each read).
@@ -271,19 +292,22 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
             // put() returns normally — it does NOT throw. We must check the token here
             // to distinguish a completed upload from a canceled one.
             if (cancellationToken.isCancelled()) {
-                handleUploadCancellation(transfer, conn, sessionId, remotePath);
+                handleUploadCancellation(transfer, conn, sessionId, remotePath, ownerId, remoteHost, remotePort);
             } else {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.COMPLETED);
                 transfer.setCompletedAt(OffsetDateTime.now());
                 log.info("[{}] Stream upload of '{}' complete ({} bytes)", sessionId, remotePath, contentLength);
+                logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
             }
         } catch (TransferException e) {
             // Secondary path: CancellableInputStream threw InterruptedIOException mid-read
             if (cancellationToken.isCancelled()) {
-                handleUploadCancellation(transfer, conn, sessionId, remotePath);
+                handleUploadCancellation(transfer, conn, sessionId, remotePath, ownerId, remoteHost, remotePort);
             } else {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.FAILED);
                 transfer.setErrorMessage(e.getMessage());
+                transfer.setCompletedAt(OffsetDateTime.now());
+                logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
                 throw e;
             }
         }
@@ -330,12 +354,19 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
      * Called from both the normal-return and exception paths of {@code uploadStream}.
      */
     private void handleUploadCancellation(
-            RemoteTransfer transfer, RemoteConnection conn, String sessionId, String remotePath) {
+            RemoteTransfer transfer,
+            RemoteConnection conn,
+            String sessionId,
+            String remotePath,
+            UUID ownerId,
+            String remoteHost,
+            int remotePort) {
         transferRegistry.updateState(transfer.getTransferId(), TransferState.CANCELLED);
         transfer.setCompletedAt(OffsetDateTime.now());
         transfer.setErrorMessage("Cancelled by user");
         log.info("[{}] Upload of '{}' was cancelled; removing partial file", sessionId, remotePath);
         tryDeletePartialFile(conn, sessionId, remotePath);
+        logTransfer(ownerId, remotePath, remoteHost, remotePort, transfer);
     }
 
     /**
@@ -522,6 +553,61 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         } catch (Exception e) {
             log.warn("[{}] Could not detect remote OS: {}", conn.getSessionId(), e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Best-effort: writes a {@link TransferLog} row for a terminal transfer.
+     * Never throws — a logging failure must never affect the API response.
+     *
+     * @param ownerId    the authenticated user's ID
+     * @param remotePath remote file path (used to derive filename, source and destination)
+     * @param remoteHost hostname of the remote server
+     * @param remotePort port of the remote server
+     * @param transfer   the completed/failed/cancelled transfer
+     */
+    private void logTransfer(
+            UUID ownerId, String remotePath, String remoteHost, int remotePort, RemoteTransfer transfer) {
+        try {
+            // Extract just the filename from the remote path
+            java.nio.file.Path p = Paths.get(remotePath);
+            String filename = p.getFileName() != null ? p.getFileName().toString() : remotePath;
+
+            // source / destination from the perspective of data flow
+            String remoteAddr = remoteHost + ":" + remotePort + remotePath;
+            boolean isUpload = transfer.getDirection() == TransferDirection.UPLOAD;
+            String source = isUpload ? "client" : remoteAddr;
+            String destination = isUpload ? remoteAddr : "client";
+
+            // Duration and throughput
+            Long durationMs = null;
+            Long avgSpeedBps = null;
+            if (transfer.getStartedAt() != null && transfer.getCompletedAt() != null) {
+                durationMs = java.time.Duration.between(transfer.getStartedAt(), transfer.getCompletedAt())
+                        .toMillis();
+                long bytes = transfer.getBytesTransferred().get();
+                if (durationMs > 0 && bytes > 0) {
+                    avgSpeedBps = (bytes * 1000L) / durationMs;
+                }
+            }
+
+            TransferLog entry = TransferLog.builder()
+                    .id(UuidUtils.uuidVersion7())
+                    .userId(ownerId)
+                    .filename(filename)
+                    .source(source)
+                    .destination(destination)
+                    .sizeBytes(transfer.getBytesTransferred().get())
+                    .avgSpeedBps(avgSpeedBps)
+                    .durationMs(durationMs)
+                    .status(transfer.getState().name())
+                    .errorMessage(transfer.getErrorMessage())
+                    .build();
+
+            transferLogRepository.save(entry);
+            log.debug("[transfer-log] Logged {} transfer for user {} → {}", transfer.getState(), ownerId, filename);
+        } catch (Exception e) {
+            log.warn("[transfer-log] Failed to persist transfer log entry: {}", e.getMessage());
         }
     }
 

@@ -1,15 +1,21 @@
 package com.weekend.architect.unift.remote.analytics.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * A single bandwidth sample captured at one-minute intervals.
  * Stored in the rolling 60-entry history kept by {@code SessionMetricsStore}.
  */
-@Value
+@Data
 @Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class TrafficDataPoint {
 
     /** Wall-clock instant when this sample was taken. */

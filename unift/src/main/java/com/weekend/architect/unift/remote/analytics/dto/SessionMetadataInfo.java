@@ -2,12 +2,16 @@ package com.weekend.architect.unift.remote.analytics.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /** SSH session-level metadata shown in the "Session Metadata" panel. */
-@Value
+@Data
 @Builder
+@AllArgsConstructor
+@NoArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SessionMetadataInfo {
 

@@ -106,8 +106,6 @@ public class SessionAnalyticsSnapshotRepository {
                 FROM   session_analytics_snapshot
                 WHERE  session_id = :sessionId::uuid
                   AND  user_id    = :userId
-                  AND  (:from::timestamptz IS NULL OR captured_at >= :from)
-                  AND  (:to::timestamptz   IS NULL OR captured_at <= :to)
                 ORDER BY captured_at DESC
                 LIMIT  :limit
                 """;
@@ -115,8 +113,6 @@ public class SessionAnalyticsSnapshotRepository {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("sessionId", sessionId)
                 .addValue("userId", userId)
-                .addValue("from", from)
-                .addValue("to", to)
                 .addValue("limit", effectiveLimit);
 
         return jdbc
