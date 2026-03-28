@@ -51,12 +51,12 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Uses the <a href="https://github.com/mwiede/jsch">mwiede/jsch</a> fork of JSch
  * for SSH transport and SFTP file operations.
  *
- * <h2>Thread-safety</h2>
+ * <h6>Thread-safety</h6>
  * <p>A single {@link ChannelSftp} is kept open for the lifetime of the session.
  * All SFTP operations are {@code synchronized} on the channel instance to prevent
  * concurrent access from multiple request threads.
  *
- * <h2>Connection lifecycle</h2>
+ * <h6>Connection lifecycle</h6>
  * <pre>
  *   doConnect() → open JSch Session → open ChannelSftp
  *   doClose()   → disconnect ChannelSftp → disconnect Session
@@ -249,6 +249,30 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
             log.warn("[{}] Remote OS detection failed (non-critical): {}", session.getSessionId(), e.getMessage());
         }
         return "SSH Server";
+    }
+
+    /**
+     * Public implementation of {@link RemoteShell#executeCommand} — delegates to
+     * the internal {@link #runCommand} after asserting the session is active.
+     * Used by the analytics layer for system-metric probes.
+     */
+    @Override
+    public String executeCommand(String command) throws Exception {
+        assertActive();
+        return runCommand(command);
+    }
+
+    /**
+     * Returns the first entry of the configured SSH client-to-server cipher preference
+     * list (e.g. {@code "chacha20-poly1305@openssh.com"}).  This approximates the
+     * actually-negotiated cipher; JSch does not expose the negotiated value via a
+     * public API.  Returns {@code null} when the session is not yet connected.
+     */
+    public String getCipherName() {
+        if (jschSession == null) return null;
+        String list = jschSession.getConfig("cipher.c2s");
+        if (list == null || list.isBlank()) return null;
+        return list.split(",")[0].trim();
     }
 
     /**

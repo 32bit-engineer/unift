@@ -4,6 +4,7 @@ import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Data;
 
@@ -13,9 +14,17 @@ import lombok.Data;
  * <p>This is NOT stored in any database – it lives in the in-memory
  * {@code SessionRegistry} and is discarded when the session closes or expires.
  *
- * <p>Thread-safety note: {@code state} and {@code expiresAt} are declared
- * {@code volatile} so that the {@code SessionReaper} thread and request threads
- * can read/write them without locking the whole object.
+ * <h6>Thread-safety</h6>
+ * <ul>
+ *   <li>{@code state} is {@code volatile}: the {@code SessionReaper} thread and request
+ *       threads can read/write it without locking.</li>
+ *   <li>{@code expiresAt} is an {@link AtomicReference}: {@link #renewTtl()} calls
+ *       {@code atomicExpiresAt.set(now + ttlMinutes)} which does <em>not</em> read the
+ *       existing value before writing, so there is no read-compute-write race.
+ *       Two concurrent {@code renewTtl()} calls both compute {@code now + ttlMinutes}
+ *       independently and the last write wins — both are valid future timestamps,
+ *       making this safe without CAS or locking (L1 resolved).</li>
+ * </ul>
  */
 @Data
 @Builder
@@ -44,9 +53,8 @@ public class RemoteSession {
     private final boolean slidingTtl;
 
     // --- mutable fields ---
-
     private volatile SessionState state;
-    private volatile OffsetDateTime expiresAt;
+    private AtomicReference<OffsetDateTime> atomicExpiresAt;
 
     /**
      * OS or service name detected after a successful connect, e.g.
@@ -55,12 +63,16 @@ public class RemoteSession {
      */
     private volatile String remoteOs;
 
-    // -- Lifecycle helpers ---
+    public OffsetDateTime getExpiresAt() {
+        return this.atomicExpiresAt.get();
+    }
+
     /**
      * Returns {@code true} if the session's TTL has elapsed.
      */
     public boolean isExpired() {
-        return expiresAt != null && OffsetDateTime.now().isAfter(expiresAt);
+        OffsetDateTime exp = atomicExpiresAt.get();
+        return exp != null && OffsetDateTime.now().isAfter(exp);
     }
 
     /**
@@ -68,8 +80,7 @@ public class RemoteSession {
      * Called on every activity when sliding-TTL is enabled.
      */
     public void renewTtl() {
-        if (slidingTtl) {
-            this.expiresAt = OffsetDateTime.now().plusMinutes(ttlMinutes);
-        }
+        if (!slidingTtl) return;
+        this.atomicExpiresAt.set(OffsetDateTime.now().plusMinutes(ttlMinutes));
     }
 }

@@ -48,4 +48,12 @@ public class RemoteConnectionProperties {
      * {@code sessionTtlMinutes} after it was created.
      */
     private boolean slidingTtl = true;
+
+    /**
+     * How long completed/failed/cancelled transfers remain in the registry
+     * before Caffeine automatically evicts them.  Keeps recent transfer
+     * history visible to the UI without leaking memory indefinitely.
+     * Default: 30 min.
+     */
+    private long transferTerminalTtlMinutes = 30;
 }

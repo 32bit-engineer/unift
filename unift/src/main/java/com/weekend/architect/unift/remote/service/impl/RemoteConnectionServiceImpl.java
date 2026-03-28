@@ -1,5 +1,6 @@
 package com.weekend.architect.unift.remote.service.impl;
 
+import com.weekend.architect.unift.remote.analytics.SessionMetricsStore;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.CancellableInputStream;
 import com.weekend.architect.unift.remote.core.CancellationToken;
@@ -37,6 +38,8 @@ import java.io.InputStream;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -50,6 +53,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
     private final SessionRegistry sessionRegistry;
     private final RemoteConnectionProperties props;
+    private final SessionMetricsStore metricsStore;
     private final TransferRegistry transferRegistry;
     private final ConnectionFactory connectionFactory;
     private final SessionLogRepository sessionLogRepository;
@@ -82,7 +86,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 .port(request.getPort())
                 .username(request.getUsername())
                 .createdAt(now)
-                .expiresAt(now.plusMinutes(ttl))
+                .atomicExpiresAt(new AtomicReference<>(now.plusMinutes(ttl)))
                 .ttlMinutes(ttl)
                 .slidingTtl(props.isSlidingTtl())
                 .state(SessionState.INITIALIZING)
@@ -94,6 +98,9 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
         // 6. Register
         sessionRegistry.register(connection);
+
+        // 6a. Initialize per-session metrics bucket
+        metricsStore.initSession(sessionId);
 
         // 7. Fetch home directory (best-effort)
         String homeDir = resolveHomeDirectory(connection);
@@ -390,7 +397,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                     .port(request.getPort())
                     .username(request.getUsername())
                     .createdAt(now)
-                    .expiresAt(now.plusMinutes(1)) // minimal TTL for test
+                    .atomicExpiresAt(new AtomicReference<>(now.plusMinutes(1)))
                     .ttlMinutes(1L)
                     .slidingTtl(props.isSlidingTtl())
                     .state(SessionState.INITIALIZING)
@@ -535,10 +542,20 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     }
 
     private TransferProgressCallback progressCallbackFor(RemoteTransfer transfer) {
-        return (transferred, bytes) -> {
+        AtomicLong prevTransferred = new AtomicLong(0L);
+        return (transferred, total) -> {
             transfer.getBytesTransferred().set(transferred);
             if (transfer.getState() == TransferState.PENDING) {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);
+            }
+            // Track bandwidth delta in the metrics store
+            long delta = transferred - prevTransferred.getAndSet(transferred);
+            if (delta > 0) {
+                if (transfer.getDirection() == TransferDirection.UPLOAD) {
+                    metricsStore.addUploadBytes(transfer.getSessionId(), delta);
+                } else {
+                    metricsStore.addDownloadBytes(transfer.getSessionId(), delta);
+                }
             }
         };
     }

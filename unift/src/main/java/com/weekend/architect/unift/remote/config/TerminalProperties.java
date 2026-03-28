@@ -10,13 +10,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>All properties live under the {@code unift.terminal.*} prefix in {@code application.yaml}.
  *
- * <h2>Security knobs</h2>
+ * <h6>Security knobs</h6>
  * <ul>
  *   <li>{@code maxSessionsPerUser} — limits blast radius of a compromised JWT</li>
  *   <li>{@code allowedOrigins} — WebSocket upgrade CORS; mirrors the HTTP CORS list</li>
  * </ul>
  *
- * <h2>Resource knobs</h2>
+ * <h6>Resource knobs</h6>
  * <ul>
  *   <li>{@code maxConcurrentSessions} — global JVM cap; also sizes the bounded thread pool</li>
  *   <li>{@code idleTimeoutMinutes} — auto-close shells abandoned by users</li>

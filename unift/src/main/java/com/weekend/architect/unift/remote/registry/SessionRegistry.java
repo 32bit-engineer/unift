@@ -1,5 +1,7 @@
 package com.weekend.architect.unift.remote.registry;
 
+import com.weekend.architect.unift.common.cache.namedcache.SshConnectionCache;
+import com.weekend.architect.unift.remote.analytics.SessionMetricsStore;
 import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
@@ -7,7 +9,6 @@ import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,37 +17,36 @@ import org.springframework.stereotype.Component;
 /**
  * In-memory registry of all active {@link RemoteConnection} instances.
  *
- * <h2>Thread-safety</h2>
- * <p>The backing map is a {@link ConcurrentHashMap}, making all public
- * methods safe to call from concurrent request threads without explicit
- * locking. The {@link #reapExpiredSessions()} method runs on a separate
- * scheduler thread and uses the same map.
+ * <h6>Backing store</h6>
+ * <p>Uses an injected {@link SshConnectionCache} (Caffeine-backed by default,
+ * bounded to 10,000 entries).  No automatic TTL — the {@link #reapExpiredSessions()}
+ * scheduler manages eviction based on
+ * {@link com.weekend.architect.unift.remote.model.RemoteSession#isExpired()}.
  *
- * <h2>Session reaper</h2>
- * <p>The {@code @Scheduled} method runs every
- * {@code unift.remote.reaper-interval-ms} milliseconds (default: 60 s),
- * identifies sessions whose TTL has elapsed, and closes + removes them.
+ * <p>To swap to Redis: update {@link SshConnectionCache} to delegate to a
+ * {@code RedisRegistryCache} instance.  No changes needed here.
  *
- * <h2>Terminal cascade</h2>
+ * <h6>Thread-safety</h6>
+ * <p>Delegated entirely to the {@link SshConnectionCache} implementation.
+ *
+ * <h6>Terminal cascade</h6>
  * <p>Every removal path ({@link #remove}, {@link #reapExpiredSessions},
- * {@link #clearAllSessions}) automatically closes all terminal WebSocket
- * sub-sessions linked to the departing SSH session via
- * {@link TerminalSessionRegistry#closeAllBySshSession}.
+ * {@link #clearAllSessions}) closes all WebSocket sub-sessions linked to the
+ * departing SSH session via {@link TerminalSessionRegistry#closeAllBySshSession}.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SessionRegistry {
 
-    /** sessionId → live connection */
-    private final ConcurrentHashMap<String, RemoteConnection> store = new ConcurrentHashMap<>();
+    /** sessionId → live connection; bounded by safety cap, TTL managed by the reaper */
+    private final SshConnectionCache store;
 
+    private final SessionMetricsStore metricsStore;
     private final TerminalSessionRegistry terminalSessionRegistry;
 
     /**
      * Registers a new (already-connected) session.
-     *
-     * @param connection the live connection; its {@code sessionId} is used as the key
      */
     public void register(RemoteConnection connection) {
         store.put(connection.getSessionId(), connection);
@@ -60,7 +60,7 @@ public class SessionRegistry {
      * @throws SessionExpiredException  if the session TTL has elapsed
      */
     public RemoteConnection require(String sessionId) {
-        RemoteConnection conn = store.get(sessionId);
+        RemoteConnection conn = store.getIfPresent(sessionId);
         if (conn == null) {
             throw new SessionNotFoundException(sessionId);
         }
@@ -73,21 +73,19 @@ public class SessionRegistry {
 
     /**
      * Closes the connection and removes it from the registry.
-     * Also closes all terminal WebSocket sub-sessions linked to this SSH session.
-     * Safe to call multiple times (idempotent).
+     * Also cascades to terminal WebSocket sub-sessions. Idempotent.
      */
     public void remove(String sessionId) {
         RemoteConnection conn = store.remove(sessionId);
         if (conn != null) {
-            // Cascade first — close terminal sub-sessions before the SSH transport drops.
-            // This lets the browser receive a clean WS close frame (4000) rather than
-            // a raw TCP disconnect.
+            // Cascade first — clean WS close frame before the SSH transport drops.
             terminalSessionRegistry.closeAllBySshSession(sessionId, "ssh-session-removed");
             try {
                 conn.close();
             } catch (Exception e) {
                 log.warn("[registry] Error closing session {}: {}", sessionId, e.getMessage());
             }
+            metricsStore.removeSession(sessionId);
             log.info("[registry] Removed session {}", sessionId);
         }
     }
@@ -102,19 +100,19 @@ public class SessionRegistry {
                 .toList();
     }
 
-    /** Returns the total number of registered sessions. */
+    /** Returns the approximate number of registered sessions. */
     public int size() {
-        return store.size();
+        return (int) store.estimatedSize();
     }
 
     /**
      * Scheduled task that closes and evicts expired sessions.
-     * Rate is driven by {@code unift.remote.reaper-interval-ms}.
+     * Rate driven by {@code unift.remote.reaper-interval-ms}.
      */
     @Scheduled(fixedRateString = "${unift.remote.reaper-interval-ms:60000}")
     public void reapExpiredSessions() {
         int count = 0;
-        for (Map.Entry<String, RemoteConnection> entry : store.entrySet()) {
+        for (Map.Entry<String, RemoteConnection> entry : store.entries()) {
             RemoteConnection conn = entry.getValue();
             if (conn.getSession().isExpired()) {
                 conn.getSession().setState(SessionState.EXPIRED);
@@ -128,7 +126,7 @@ public class SessionRegistry {
     }
 
     public void clearAllSessions() {
-        // Snapshot the keys — remove() mutates the map and cascades to terminal sessions.
-        List.copyOf(store.keySet()).forEach(this::remove);
+        // Snapshot keys first — remove() mutates the map and cascades to terminal sessions.
+        List.copyOf(store.keys()).forEach(this::remove);
     }
 }

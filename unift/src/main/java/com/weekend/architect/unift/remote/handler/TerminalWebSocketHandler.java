@@ -34,7 +34,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 /**
  * WebSocket handler that bridges a terminal UI (e.g., Xterm.js) with a remote PTY shell.
  *
- * <h2>Security controls</h2>
+ * <h6>Security controls</h6>
  * <ol>
  *   <li><b>Authentication</b> — JWT validated at handshake time by {@link TerminalHandshakeInterceptor}.
  *       Only authenticated requests reach this handler.</li>
@@ -48,7 +48,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  *       gracefully.</li>
  * </ol>
  *
- * <h2>Wire protocol</h2>
+ * <h6>Wire protocol</h6>
  * <p>Client → Server (JSON text frames):
  * <pre>
  *   { "type": "input",  "data": "ls -la\n" }
@@ -56,7 +56,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * </pre>
  * <p>Server → Client: raw terminal output as UTF-8 text frames (Xterm.js compatible).
  *
- * <h2>WebSocket close codes</h2>
+ * <h6>WebSocket close codes</h6>
  * <table>
  *   <tr><th>Code</th><th>Meaning</th></tr>
  *   <tr><td>4001</td><td>Access denied — session not owned by authenticated user</td></tr>
