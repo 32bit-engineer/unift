@@ -1,0 +1,134 @@
+spring:
+  application:
+    name: uniFT
+
+  # Graceful shutdown: drain in-flight HTTP requests (SFTP uploads / StreamingResponseBody
+  # downloads) before Spring starts destroying beans and calling @PreDestroy.
+  # Without this, SIGTERM would kill active transfers mid-stream.
+  # PreTermination.destroy() relies on this — it only handles executor threads (terminal
+  # pipes, analytics probes). SFTP transfers run on Spring's own servlet/async threads
+  # and must be drained here first.
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+
+  threads:
+    virtual:
+      enabled: true
+
+  servlet:
+    multipart:
+      # Raise limits so the multipart upload endpoint handles large files.
+      # Override with MAX_UPLOAD_FILE_SIZE / MAX_UPLOAD_REQUEST_SIZE env vars in production.
+      # Use -1 for unlimited.
+      max-file-size: ${MAX_UPLOAD_FILE_SIZE:5GB}
+      max-request-size: ${MAX_UPLOAD_REQUEST_SIZE:5GB}
+      # Write to a temp file once the in-memory threshold is exceeded.
+      file-size-threshold: ${UPLOAD_MEM_THRESHOLD:2KB}
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:unift-group}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+
+      properties:
+        spring.json.trusted.packages: "com.weekend.architect.unift"
+        
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  shutdown: graceful
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.weekend.architect.unift: ${LOG_LEVEL_APP:INFO}
+    com.weekend.architect.unift.exception: ${LOG_LEVEL_EXCEPTION:INFO}
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%-5level] [%logger{35}] - %msg%n"
+
+jwt:
+  # Required — generate with: openssl rand -base64 64
+  secret: ${JWT_SECRET}
+  access-token-expiration-ms: ${JWT_ACCESS_TOKEN_EXPIRATION_MS:900000}      # 15 minutes
+  refresh-token-expiration-ms: ${JWT_REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:false}
+
+unift:
+  # AES-256-GCM key for encrypting SSH credentials at rest.
+  # Required — generate with: openssl rand -base64 32
+  # Must be set via UNIFT_ENCRYPTION_KEY environment variable.
+  encryption:
+    key: 2Qkwav0LDqGZP7zf+vFStXKpUMsZVBmkRv/nJiJysSw=
+
+  remote:
+    session-ttl-minutes: ${UNIFT_SESSION_TTL_MINUTES:30}
+    max-sessions-per-user: ${UNIFT_MAX_SESSIONS_PER_USER:5}
+    reaper-interval-ms: ${UNIFT_REAPER_INTERVAL_MS:60000}
+    connect-timeout-ms: ${UNIFT_CONNECT_TIMEOUT_MS:15000}
+    channel-timeout-ms: ${UNIFT_CHANNEL_TIMEOUT_MS:10000}
+    sliding-ttl: ${UNIFT_SLIDING_TTL:true}
+    # SSH keep-alive: sends an SSH heartbeat every N ms to prevent NAT/firewall
+    # idle-connection drops.  Keep well below your firewall's idle timeout (often 30–60 s).
+    ssh-keep-alive-interval-ms: ${UNIFT_SSH_KEEPALIVE_INTERVAL_MS:30000}
+    ssh-keep-alive-count-max: ${UNIFT_SSH_KEEPALIVE_COUNT_MAX:3}
+    # How long COMPLETED/FAILED/CANCELLED transfers stay in the registry before Caffeine evicts them.
+    transfer-terminal-ttl-minutes: ${UNIFT_TRANSFER_TERMINAL_TTL_MINUTES:30}
+
+  # -----------------------------------------------------------------------
+  # Named-cache sizing (all caches use CaffeineRegistryCache by default).
+  # These are safety caps — actual working-set is expected to be far smaller.
+  # Override via environment variables to tune without changing code.
+  # -----------------------------------------------------------------------
+  cache:
+    ssh-connection:
+      max-size: ${UNIFT_CACHE_SSH_MAX_SIZE:100}
+    terminal-session:
+      max-size: ${UNIFT_CACHE_TERMINAL_MAX_SIZE:10}
+    transfer:
+      max-size: ${UNIFT_CACHE_TRANSFER_MAX_SIZE:100000}
+    metrics:
+      max-size: ${UNIFT_CACHE_METRICS_MAX_SIZE:10000}
+
+  terminal:
+    # Allowed WebSocket upgrade origins — mirrors the HTTP CORS list.
+    # Override with UNIFT_TERMINAL_ALLOWED_ORIGINS (comma-separated) in production.
+    allowed-origins: ${UNIFT_TERMINAL_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173}
+
+    # Lines in remote shell output that match any of these regex patterns are
+    # silently dropped before being forwarded to the WebSocket / Xterm.js client.
+    # Use this to hide noisy startup messages from .bashrc / .bash_profile on
+    # the remote host (e.g. Homebrew path errors on non-Mac servers).
+    suppressed-output-patterns:
+      - ".*: .*brew.*: No such file or directory.*"
+
+  analytics:
+    # How often SessionMetricsStore takes a bandwidth sample per active session.
+    # Each sample represents one data point on the 60-minute traffic chart.
+    # Default: 60 seconds (60 samples = 60-minute rolling window).
+    sample-interval-ms: ${UNIFT_ANALYTICS_SAMPLE_INTERVAL_MS:60000}
+
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8080,http://127.0.0.1:4200
+    allowed-headers: "*"
+    allowed-methods: GET,PUT,POST,DELETE,PATCH,OPTIONS
+    allow-credentials: true
+    max-age: 3600

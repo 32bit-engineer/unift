@@ -37,7 +37,7 @@ dependencies {
 
 	// jackson dependency for afterburner and object mapping
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
-	implementation 'com.fasterxml.jackson.module:jackson-module-afterburner:2.20.0'
+	implementation 'com.fasterxml.jackson.module:jackson-module-afterburner'
 
 	implementation 'org.springframework.kafka:spring-kafka'
 

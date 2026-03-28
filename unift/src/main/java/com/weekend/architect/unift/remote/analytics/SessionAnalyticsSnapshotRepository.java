@@ -35,7 +35,6 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class SessionAnalyticsSnapshotRepository {
 
-    private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 500;
 
     private final NamedParameterJdbcTemplate jdbc;
