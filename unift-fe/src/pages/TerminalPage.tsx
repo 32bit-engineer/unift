@@ -93,19 +93,19 @@ export function TerminalPage({
   const renderSessionPicker = () => {
     if (sessions.length === 0) {
       return (
-        <div className="px-4 py-3 bg-[#11141C] border-b border-[#2E3348] text-xs text-slate-400">
+        <div className="px-4 py-3 bg-[#0C0C14] border-b border-[#1E1E2E] text-xs text-slate-400">
           No active sessions. Connect to a remote host first.
         </div>
       );
     }
 
     return (
-      <div className="px-4 py-3 bg-[#11141C] border-b border-[#2E3348] flex items-center gap-3">
+      <div className="px-4 py-3 bg-[#0C0C14] border-b border-[#1E1E2E] flex items-center gap-3">
         <label className="text-xs font-mono uppercase tracking-wider text-slate-500">Session:</label>
         <select
           value={selectedSessionId || ''}
           onChange={(e) => handleSessionChange(e.target.value)}
-          className="px-2.5 py-1.5 bg-[#1E2130] border border-[#2E3348] rounded text-xs font-mono text-slate-300 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+          className="px-2.5 py-1.5 bg-[#13131E] border border-[#1E1E2E] rounded text-xs font-mono text-slate-300 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
         >
           {sessions.map(session => (
             <option key={session.sessionId} value={session.sessionId}>
@@ -115,7 +115,7 @@ export function TerminalPage({
         </select>
         {selectedSession && (
           <span className="ml-auto flex items-center gap-2 text-xs text-slate-400">
-            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>dns</span>
+            <span className="material-symbols-rounded" style={{ fontSize: '14px' }}>dns</span>
             {selectedSession.name}
           </span>
         )}
@@ -128,10 +128,10 @@ export function TerminalPage({
     return (
       <div
         ref={containerRef}
-        className="h-full flex flex-col bg-[#0F1117]"
+        className="h-full flex flex-col bg-[#0F0F1A]"
       >
         {/* Terminal Container with distinct styling */}
-        <div className="flex-1 flex flex-col bg-linear-to-br from-[#161923] via-[#0F1117] to-[#0A0E14] border border-[#2E3348] rounded-lg m-3 shadow-xl overflow-hidden"
+        <div className="flex-1 flex flex-col bg-linear-to-br from-[#0F0F1A] via-[#0F0F1A] to-[#0C0C14] border border-[#1E1E2E] rounded-lg m-3 shadow-xl overflow-hidden"
           style={{ height: `${terminalHeight}px` }}
         >
           {/* Session Picker */}
@@ -152,7 +152,7 @@ export function TerminalPage({
         {/* Resize Handle */}
         <div
           onMouseDown={() => setIsResizing(true)}
-          className="h-1 bg-linear-to-r from-[#2E3348] via-[#4F8EF7]/50 to-[#2E3348] hover:via-[#4F8EF7] cursor-ns-resize group transition-all hover:h-1.5 mx-3 rounded-full shadow-sm hover:shadow-md"
+          className="h-1 bg-linear-to-r from-[#1E1E2E] via-[#7C6DFA]/50 to-[#1E1E2E] hover:via-[#7C6DFA] cursor-ns-resize group transition-all hover:h-1.5 mx-3 rounded-full shadow-sm hover:shadow-md"
           title="Drag to resize terminal height"
         />
       </div>
@@ -163,13 +163,13 @@ export function TerminalPage({
   return (
     <div
       ref={containerRef}
-      className="h-screen w-screen flex flex-col bg-linear-to-br from-[#0F1117] to-[#0A0E14]"
+      className="h-screen w-screen flex flex-col bg-linear-to-br from-[#0F0F1A] to-[#0C0C14]"
     >
       {/* Header */}
-      <div className="bg-[#1E2130] border-b border-[#2E3348] px-6 py-4 flex items-center justify-between">
+      <div className="bg-[#13131E] border-b border-[#1E1E2E] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#E07B39]">terminal</span>
+            <span className="material-symbols-rounded text-[#E07B39]">terminal</span>
             <h1 className="text-xl font-bold uppercase tracking-tight text-slate-100">
               Terminal
             </h1>
@@ -192,7 +192,7 @@ export function TerminalPage({
             )}
             {terminalState === 'connecting' && (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-[#4F8EF7] animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#7C6DFA] animate-pulse" />
                 <span className="text-slate-300">Connecting...</span>
               </>
             )}
@@ -225,7 +225,7 @@ export function TerminalPage({
             aria-label="Close terminal"
             title="Close terminal"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-rounded">close</span>
           </button>
         </div>
       </div>
@@ -234,7 +234,7 @@ export function TerminalPage({
       {renderSessionPicker()}
 
       {/* Terminal Container with distinct styling */}
-      <div className="flex-1 m-4 border border-[#2E3348] rounded-lg bg-linear-to-br from-[#161923] via-[#0F1117] to-[#0A0E14] shadow-xl overflow-hidden flex flex-col">
+      <div className="flex-1 m-4 border border-[#1E1E2E] rounded-lg bg-linear-to-br from-[#0F0F1A] via-[#0F0F1A] to-[#0C0C14] shadow-xl overflow-hidden flex flex-col">
         {/* Terminal content */}
         <div className="flex-1 overflow-hidden">
           <Terminal

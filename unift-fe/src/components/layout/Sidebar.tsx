@@ -1,4 +1,6 @@
 // ─── Sidebar ───────────────────────────────────────────────────────────────
+import React, { useState } from 'react';
+import type { SavedHostResponse } from '@/utils/remoteConnectionAPI';
 
 export interface NavItem {
   id:    string;
@@ -14,9 +16,67 @@ export interface SavedHost {
 }
 
 interface SidebarProps {
-  activeItem:   string;
-  onSelectItem: (id: string) => void;
-  savedHosts?:  SavedHost[];
+  activeItem:            string;
+  onSelectItem:          (id: string) => void;
+  savedHosts?:           SavedHost[];
+  // Saved host configurations (bookmarked connections)
+  savedHostConfigs?:     SavedHostResponse[];
+  activeSessions?:       SavedHost[];
+  connectingConfigId?:   string | null;
+  deletingConfigId?:     string | null;
+  onConnectConfig?:      (id: string) => void;
+  onDeleteConfig?:       (id: string) => void;
+  // Navigate to the full saved-hosts page when list > 10
+  onShowAllSavedHosts?:  () => void;
+}
+
+// ─── Accordion ─────────────────────────────────────────────────────────────
+const SAVED_CONNECTIONS_PREVIEW_LIMIT = 10;
+
+function AccordionSection({
+  title,
+  count,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 pt-4 pb-1.5 text-left cursor-pointer group"
+      >
+        <span
+          className="material-symbols-rounded shrink-0 transition-transform duration-200"
+          style={{
+            fontSize: '14px',
+            color: '#5a6380',
+            transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        >
+          chevron_right
+        </span>
+        <span className="label flex-1" style={{ color: '#5a6380' }}>
+          {title}
+        </span>
+        {count > 0 && (
+          <span
+            className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+            style={{ background: 'rgba(90,99,128,0.2)', color: '#5a6380' }}
+          >
+            {count}
+          </span>
+        )}
+      </button>
+      {isOpen && children}
+    </div>
+  );
 }
 
 // ─── Section label ─────────────────────────────────────────────────────────
@@ -63,7 +123,7 @@ function NavButton({
       }
     >
       <span
-        className="material-symbols-outlined shrink-0"
+        className="material-symbols-rounded shrink-0"
         style={{
           fontSize: '18px',
           lineHeight: 1,
@@ -89,9 +149,14 @@ function NavButton({
 
 // ─── Static nav sections ────────────────────────────────────────────────────
 const MAIN_NAV: NavItem[] = [
-  { id: 'my-files',     label: 'My Files',     icon: 'folder' },
-  { id: 'remote-hosts', label: 'Remote Host',  icon: 'dns' },
-  { id: 'streaming',    label: 'Streaming',    icon: 'play_circle' },
+  { id: 'my-files',       label: 'Dashbord',       icon: 'folder' },
+  { id: 'remote-hosts',   label: 'Sessions',    icon: 'dns' },
+];
+
+const TRANSFERS_NAV: NavItem[] = [
+  { id: 'transfer-history', label: 'Active Transfers', icon: 'swap_vert' },
+  { id: 'transfer-log',     label: 'Transfer Log',     icon: 'history' },
+  { id: 'upload-sessions',  label: 'Upload Sessions',  icon: 'cloud_upload' },
 ];
 
 const QUICK_ACCESS_NAV: NavItem[] = [
@@ -101,9 +166,26 @@ const QUICK_ACCESS_NAV: NavItem[] = [
   { id: 'trash',    label: 'Trash',    icon: 'delete' },
 ];
 
-export function Sidebar({ activeItem, onSelectItem, savedHosts = [] }: SidebarProps) {
+export function Sidebar({
+  activeItem,
+  onSelectItem,
+  savedHosts = [],
+  savedHostConfigs = [],
+  activeSessions = [],
+  connectingConfigId = null,
+  deletingConfigId = null,
+  onConnectConfig,
+  onDeleteConfig,
+  onShowAllSavedHosts,
+}: SidebarProps) {
+  const [activeSessionsOpen, setActiveSessionsOpen] = useState(true);
+  const [savedConnectionsOpen, setSavedConnectionsOpen] = useState(true);
+
   const statusColor = (s: SavedHost['status']) =>
     s === 'online' ? '#4ade80' : s === 'warning' ? '#E07B39' : '#5a6380';
+
+  const visibleSavedConfigs = savedHostConfigs.slice(0, SAVED_CONNECTIONS_PREVIEW_LIMIT);
+  const hasMore = savedHostConfigs.length > SAVED_CONNECTIONS_PREVIEW_LIMIT;
 
   return (
     <aside
@@ -123,7 +205,7 @@ export function Sidebar({ activeItem, onSelectItem, savedHosts = [] }: SidebarPr
           style={{ background: 'var(--color-primary)' }}
         >
           <span
-            className="material-symbols-outlined text-white"
+            className="material-symbols-rounded text-white"
             style={{
               fontSize: '15px',
               fontVariationSettings: "'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20",
@@ -169,11 +251,28 @@ export function Sidebar({ activeItem, onSelectItem, savedHosts = [] }: SidebarPr
           ))}
         </div>
 
-        {/* SAVED HOSTS */}
+        {/* TRANSFERS */}
+        <SectionLabel>Transfers</SectionLabel>
+        <div className="flex flex-col gap-0.5 px-1">
+          {TRANSFERS_NAV.map(item => (
+            <NavButton
+              key={item.id}
+              item={item}
+              isActive={activeItem === item.id}
+              onClick={() => onSelectItem(item.id)}
+            />
+          ))}
+        </div>
+
+        {/* ACTIVE SESSIONS — accordion */}
         {savedHosts.length > 0 && (
-          <>
-            <SectionLabel>Saved Hosts</SectionLabel>
-            <div className="flex flex-col gap-0.5 px-1">
+          <AccordionSection
+            title="Active Sessions"
+            count={savedHosts.length}
+            isOpen={activeSessionsOpen}
+            onToggle={() => setActiveSessionsOpen(p => !p)}
+          >
+            <div className="flex flex-col gap-0.5 px-1 pb-1">
               {savedHosts.map(host => (
                 <button
                   key={host.id}
@@ -188,7 +287,107 @@ export function Sidebar({ activeItem, onSelectItem, savedHosts = [] }: SidebarPr
                 </button>
               ))}
             </div>
-          </>
+          </AccordionSection>
+        )}
+
+        {/* SAVED CONNECTIONS — accordion */}
+        {savedHostConfigs.length > 0 && (
+          <AccordionSection
+            title="Saved Connections"
+            count={savedHostConfigs.length}
+            isOpen={savedConnectionsOpen}
+            onToggle={() => setSavedConnectionsOpen(p => !p)}
+          >
+            <div className="flex flex-col gap-0.5 px-1 pb-1">
+              {visibleSavedConfigs.map(cfg => {
+                const displayName = cfg.label ?? cfg.hostname;
+                const isConnecting = connectingConfigId === cfg.id;
+                const isDeleting   = deletingConfigId   === cfg.id;
+                const isAlreadyActive = activeSessions.some(
+                  s => s.status === 'online' && s.label === displayName,
+                );
+                return (
+                  <div
+                    key={cfg.id}
+                    className="group flex items-center gap-2 px-3 py-2 rounded hover:bg-white/5 transition-colors"
+                  >
+                    {/* Status/bookmark dot */}
+                    <span
+                      className="material-symbols-rounded shrink-0"
+                      style={{
+                        fontSize: '14px',
+                        color: isAlreadyActive ? '#4ade80' : '#5a6380',
+                        fontVariationSettings: isAlreadyActive
+                          ? "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20"
+                          : "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20",
+                      }}
+                    >
+                      {isAlreadyActive ? 'check_circle' : 'bookmark'}
+                    </span>
+
+                    {/* Label */}
+                    <span className="flex-1 min-w-0 text-[12px] text-slate-400 group-hover:text-slate-200 truncate transition-colors">
+                      {displayName}
+                    </span>
+
+                    {/* Action buttons — visible on hover */}
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      {isAlreadyActive ? (
+                        <span
+                          className="text-[10px] font-semibold text-emerald-500 px-1"
+                        >
+                          Active
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => onConnectConfig?.(cfg.id)}
+                          disabled={isConnecting || isDeleting}
+                          title="Connect"
+                          className="w-5 h-5 flex items-center justify-center rounded brand-tint-hover text-slate-500 hover:text-accent transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <span
+                            className="material-symbols-rounded"
+                            style={{ fontSize: '13px', fontVariationSettings: "'FILL' 1" }}
+                          >
+                            {isConnecting ? 'hourglass_bottom' : 'play_arrow'}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onDeleteConfig?.(cfg.id)}
+                        disabled={isConnecting || isDeleting}
+                        title="Remove"
+                        className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-900/20 text-slate-600 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <span
+                          className="material-symbols-rounded"
+                          style={{ fontSize: '13px' }}
+                        >
+                          {isDeleting ? 'hourglass_bottom' : 'delete'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Show more — only when list exceeds the preview limit */}
+              {hasMore && (
+                <button
+                  onClick={() => onShowAllSavedHosts?.()}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"
+                >
+                  <span
+                    className="material-symbols-rounded"
+                    style={{ fontSize: '13px' }}
+                  >
+                    expand_more
+                  </span>
+                  Show all {savedHostConfigs.length} saved hosts
+                </button>
+              )}
+            </div>
+          </AccordionSection>
         )}
       </nav>
 

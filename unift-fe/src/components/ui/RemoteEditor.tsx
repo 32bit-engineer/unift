@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { remoteConnectionAPI, type DirectoryListingResponse } from '@/utils/remoteConnectionAPI';
+import { getErrorMessage } from '@/utils/apiClient';
 
 // ─── Language detection ────────────────────────────────────────────────────
 function detectLanguage(filename: string): string {
@@ -103,6 +104,8 @@ export interface RemoteEditorProps {
    */
   initialPaths?: string[];
   onClose: () => void;
+  /** Called when the user clicks the Terminal button in the editor title bar. */
+  onOpenTerminal?: () => void;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -152,7 +155,7 @@ function ExplorerTree({ nodes, depth, activeFilePath, sessionId, onFileClick, on
                 paddingTop:   '3px',
                 paddingBottom: '3px',
                 background: isActive ? 'rgba(79,142,247,0.12)' : 'transparent',
-                borderLeft: isActive ? '2px solid #4F8EF7' : '2px solid transparent',
+                borderLeft: isActive ? '2px solid #7C6DFA' : '2px solid transparent',
                 color: isActive ? '#E2E8F0' : '#94a3b8',
               }}
               onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; }}
@@ -160,7 +163,7 @@ function ExplorerTree({ nodes, depth, activeFilePath, sessionId, onFileClick, on
             >
               {/* Collapse/expand arrow for directories */}
               <span
-                className="material-symbols-outlined shrink-0 transition-transform"
+                className="material-symbols-rounded shrink-0 transition-transform"
                 style={{
                   fontSize: '12px',
                   color: '#5a6380',
@@ -175,17 +178,17 @@ function ExplorerTree({ nodes, depth, activeFilePath, sessionId, onFileClick, on
               {/* File/folder icon */}
               {node.loading ? (
                 <span
-                  className="material-symbols-outlined shrink-0 animate-spin"
+                  className="material-symbols-rounded shrink-0 animate-spin"
                   style={{ fontSize: '14px', color: '#5a6380' }}
                 >
                   progress_activity
                 </span>
               ) : (
                 <span
-                  className="material-symbols-outlined shrink-0"
+                  className="material-symbols-rounded shrink-0"
                   style={{
                     fontSize: '14px',
-                    color: isDir ? '#E07B39' : '#4F8EF7',
+                    color: isDir ? '#E07B39' : '#7C6DFA',
                     fontVariationSettings: isDir && node.expanded
                       ? "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24"
                       : undefined,
@@ -223,7 +226,7 @@ function ExplorerTree({ nodes, depth, activeFilePath, sessionId, onFileClick, on
 
 // ─── RemoteEditor ──────────────────────────────────────────────────────────
 
-export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose }: RemoteEditorProps) {
+export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose, onOpenTerminal }: RemoteEditorProps) {
   const isFolderMode = folderPath !== undefined;
 
   // ── Tab state ────────────────────────────────────────────────────────────
@@ -232,6 +235,8 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
   );
   const [activeIndex, setActiveIndex]   = useState(0);
   const [globalStatus, setGlobalStatus] = useState<string>('');
+  // Error message from a failed save — shown as a dismissible banner above Monaco
+  const [saveError, setSaveError]       = useState<string | null>(null);
 
   // ── Explorer state (folder mode only) ────────────────────────────────────
   const [explorerNodes, setExplorerNodes] = useState<ExplorerNode[]>([]);
@@ -327,14 +332,15 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
     } catch (err) {
       setFiles(prev => prev.map((f, i) =>
         i === index
-          ? { ...f, status: 'error', errorMessage: err instanceof Error ? err.message : 'Load failed' }
+          ? { ...f, status: 'error', errorMessage: getErrorMessage(err, 'Load failed') }
           : f
       ));
     }
   }, [files, sessionId]);
 
-  // Load content when active tab changes
+  // Load content when active tab changes; also clear any stale save error
   useEffect(() => {
+    setSaveError(null);
     void loadFile(activeIndex);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex]);
@@ -362,6 +368,7 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
     const file = files[index];
     if (!file || file.status === 'loading' || !file.dirty) return;
     updateFile(index, { status: 'saving' });
+    setSaveError(null);
     setGlobalStatus('Saving…');
     try {
       await remoteConnectionAPI.writeFile(sessionId, file.path, file.draft);
@@ -371,7 +378,10 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
       setGlobalStatus('Saved');
       setTimeout(() => setGlobalStatus(''), 2000);
     } catch (err) {
-      updateFile(index, { status: 'error', errorMessage: err instanceof Error ? err.message : 'Save failed' });
+      // Keep the editor open with 'ready' status so the unsaved draft is preserved.
+      // Show the backend's error message in a dismissible banner instead of an overlay.
+      updateFile(index, { status: 'ready' });
+      setSaveError(`Cannot save file: ${getErrorMessage(err, 'Save failed')}`);
       setGlobalStatus('Save failed');
     }
   }, [files, sessionId, updateFile]);
@@ -421,23 +431,23 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
       {/* ── Title bar ─────────────────────────────────────────────────────── */}
       <div
         className="flex items-center gap-0 shrink-0 select-none"
-        style={{ background: '#161923', borderBottom: '1px solid #2E3348', height: '38px' }}
+        style={{ background: '#0F0F1A', borderBottom: '1px solid #1E1E2E', height: '38px' }}
       >
         {/* IDE label */}
-        <div className="flex items-center gap-2 px-4 shrink-0" style={{ borderRight: '1px solid #2E3348' }}>
+        <div className="flex items-center gap-2 px-4 shrink-0" style={{ borderRight: '1px solid #1E1E2E' }}>
           <span
-            className="material-symbols-outlined"
-            style={{ fontSize: '16px', color: '#4F8EF7', fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24" }}
+            className="material-symbols-rounded"
+            style={{ fontSize: '16px', color: '#7C6DFA', fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24" }}
           >
             code
           </span>
-          <span className="text-[11px] font-mono uppercase tracking-widest text-slate-400">
+          <span className="text-micro">
             Remote Editor
           </span>
           {isFolderMode && explorerRootLabel && (
             <>
-              <span className="text-[11px] font-mono text-slate-700 mx-1">/</span>
-              <span className="text-[11px] font-mono text-slate-500 truncate max-w-40">
+              <span className="text-meta text-muted mx-1">/</span>
+              <span className="text-meta text-secondary truncate max-w-40">
                 {explorerRootLabel}
               </span>
             </>
@@ -457,21 +467,21 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
                   style={{
                     height: '38px',
                     background: isActive ? '#0f1117' : 'transparent',
-                    borderRight: '1px solid #2E3348',
+                    borderRight: '1px solid #1E1E2E',
                     borderBottom: isActive ? '1px solid #0f1117' : '1px solid transparent',
-                    borderTop: isActive ? '1px solid #4F8EF7' : '1px solid transparent',
+                    borderTop: isActive ? '1px solid #7C6DFA' : '1px solid transparent',
                     marginBottom: isActive ? '-1px' : '0',
                     color: isActive ? '#E2E8F0' : '#5a6380',
                   }}
                 >
-                  <span className="text-[11px] font-mono whitespace-nowrap">{file.name}</span>
+                  <span className="text-meta whitespace-nowrap">{file.name}</span>
                   {file.dirty && (
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#E07B39' }} title="Unsaved changes" />
                   )}
                   <span
                     onClick={e => closeTab(i, e)}
                     className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{ fontSize: '13px', color: '#5a6380', lineHeight: 1, cursor: 'pointer' }}
+                    style={{ fontSize: '20px', color: '#5a6380', lineHeight: 1, cursor: 'pointer' }}
                   >
                     ×
                   </span>
@@ -483,15 +493,25 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
 
         {files.length === 0 && <div className="flex-1" />}
 
-        {/* Close IDE button */}
-        <div className="shrink-0 flex items-center gap-2 px-3" style={{ borderLeft: '1px solid #2E3348' }}>
+        {/* Right-side actions: Terminal + Close IDE */}
+        <div className="shrink-0 flex items-center gap-2 px-3" style={{ borderLeft: '1px solid #1E1E2E' }}>
+          {onOpenTerminal && (
+            <button
+              onClick={onOpenTerminal}
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-micro transition-colors cursor-pointer border border-gray-700 hover:bg-gray-700/30"
+              title="Open terminal for this session"
+            >
+              <span className="material-symbols-rounded" style={{ fontSize: '13px' }}>terminal</span>
+              Terminal
+            </button>
+          )}
           <button
             onClick={handleClose}
-            className="flex items-center gap-1.5 px-3 py-1 rounded text-[10px] font-mono uppercase tracking-widest transition-colors cursor-pointer hover:bg-red-900/30"
+            className="flex items-center gap-1.5 px-3 py-1 rounded text-micro transition-colors cursor-pointer hover:bg-red-900/30"
             style={{ color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }}
             title="Close IDE"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>close</span>
+            <span className="material-symbols-rounded" style={{ fontSize: '13px' }}>close</span>
             Close Editor
           </button>
         </div>
@@ -506,19 +526,19 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
             className="flex flex-col shrink-0 overflow-hidden"
             style={{
               width: '240px',
-              background: '#161923',
-              borderRight: '1px solid #2E3348',
+              background: '#0F0F1A',
+              borderRight: '1px solid #1E1E2E',
             }}
           >
             {/* Explorer header */}
             <div
               className="flex items-center gap-2 px-3 py-2 shrink-0"
-              style={{ borderBottom: '1px solid #2E3348' }}
+              style={{ borderBottom: '1px solid #1E1E2E' }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '13px', color: '#5a6380' }}>
+              <span className="material-symbols-rounded" style={{ fontSize: '13px', color: '#5a6380' }}>
                 folder_open
               </span>
-              <span className="label uppercase tracking-widest" style={{ fontSize: '9px' }}>
+              <span className="text-micro">
                 Explorer
               </span>
             </div>
@@ -529,12 +549,12 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
               style={{ borderBottom: '1px solid #1a1f2e' }}
             >
               <span
-                className="material-symbols-outlined"
+                className="material-symbols-rounded"
                 style={{ fontSize: '13px', color: '#E07B39', fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24" }}
               >
                 folder
               </span>
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-slate-300 truncate">
+              <span className="text-micro text-primary truncate">
                 {explorerRootLabel || basename(folderPath ?? '')}
               </span>
             </div>
@@ -544,17 +564,17 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
               {explorerLoading && (
                 <div className="flex items-center gap-2 px-4 py-3">
                   <span
-                    className="material-symbols-outlined animate-spin"
-                    style={{ fontSize: '14px', color: '#4F8EF7' }}
+                    className="material-symbols-rounded animate-spin"
+                    style={{ fontSize: '14px', color: '#7C6DFA' }}
                   >
                     progress_activity
                   </span>
-                  <span className="text-[10px] font-mono text-slate-600">Loading…</span>
+                  <span className="text-micro text-muted">Loading…</span>
                 </div>
               )}
               {explorerError && (
                 <div className="px-3 py-2">
-                  <span className="text-[10px] font-mono text-red-400">{explorerError}</span>
+                  <span className="text-meta text-red-400">{explorerError}</span>
                 </div>
               )}
               {!explorerLoading && !explorerError && (
@@ -578,12 +598,12 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
           {files.length === 0 && (
             <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ background: '#0f1117' }}>
               <span
-                className="material-symbols-outlined"
-                style={{ fontSize: '40px', color: '#2E3348' }}
+                className="material-symbols-rounded"
+                style={{ fontSize: '40px', color: '#1E1E2E' }}
               >
                 code
               </span>
-              <p className="text-[11px] font-mono text-slate-700 uppercase tracking-widest">
+              <p className="text-micro text-muted">
                 Select a file to open
               </p>
             </div>
@@ -595,25 +615,49 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
               {/* Loading */}
               {activeFile?.status === 'loading' && (
                 <div className="absolute inset-0 flex items-center justify-center gap-3" style={{ background: '#0f1117' }}>
-                  <span className="material-symbols-outlined animate-spin" style={{ fontSize: '22px', color: '#4F8EF7' }}>
+                  <span className="material-symbols-rounded animate-spin" style={{ fontSize: '22px', color: '#7C6DFA' }}>
                     progress_activity
                   </span>
                   <span className="text-xs font-mono text-slate-500">Loading {activeFile.name}…</span>
                 </div>
               )}
 
-              {/* Error */}
+              {/* Error — load failure */}
               {activeFile?.status === 'error' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: '#0f1117' }}>
-                  <span className="material-symbols-outlined text-2xl" style={{ color: '#f87171' }}>error</span>
+                  <span className="material-symbols-rounded text-2xl" style={{ color: '#f87171' }}>error</span>
                   <p className="text-xs font-mono text-red-400">{activeFile.errorMessage}</p>
                   <button
-                    onClick={() => { updateFile(activeIndex, { status: 'loading' }); void loadFile(activeIndex); }}
+                    onClick={() => {
+                      updateFile(activeIndex, { status: 'loading' });
+                      // Defer so the state update commits before loadFile reads it
+                      setTimeout(() => void loadFile(activeIndex), 0);
+                    }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono uppercase tracking-widest cursor-pointer"
-                    style={{ border: '1px solid #2E3348', color: '#93a3b8' }}
+                    style={{ border: '1px solid #1E1E2E', color: '#93a3b8' }}
                   >
-                    <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>refresh</span>
+                    <span className="material-symbols-rounded" style={{ fontSize: '13px' }}>refresh</span>
                     Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Save error banner — shown above Monaco when a write operation fails */}
+              {saveError !== null && (activeFile?.status === 'ready' || activeFile?.status === 'saving') && (
+                <div
+                  className="absolute top-0 left-0 right-0 z-10 flex items-start gap-2 px-4 py-2.5"
+                  style={{ background: 'rgba(127,29,29,0.92)', borderBottom: '1px solid rgba(248,113,113,0.3)' }}
+                >
+                  <span className="material-symbols-rounded shrink-0 text-red-400" style={{ fontSize: '15px', marginTop: '1px' }}>
+                    lock
+                  </span>
+                  <p className="flex-1 text-[11px] font-mono text-red-200 leading-snug">{saveError}</p>
+                  <button
+                    onClick={() => setSaveError(null)}
+                    className="shrink-0 text-red-400 hover:text-red-200 transition-colors cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>close</span>
                   </button>
                 </div>
               )}
@@ -631,7 +675,7 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
                     updateFile(activeIndex, { draft: value, dirty: value !== activeFile.content });
                   }}
                   options={{
-                    fontFamily:                 "'IBM Plex Mono', 'Courier New', monospace",
+                    fontFamily:                 "'DM Mono', 'Courier New', monospace",
                     fontSize:                   13,
                     lineHeight:                 22,
                     tabSize:                    2,
@@ -662,7 +706,7 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
           {/* ── Status bar ──────────────────────────────────────────────────── */}
           <div
             className="flex items-center justify-between px-4 shrink-0"
-            style={{ height: '24px', background: '#161923', borderTop: '1px solid #2E3348' }}
+            style={{ height: '24px', background: '#0F0F1A', borderTop: '1px solid #1E1E2E' }}
           >
             <div className="flex items-center gap-4">
               {activeFile && (
@@ -675,7 +719,7 @@ export function RemoteEditor({ sessionId, folderPath, initialPaths = [], onClose
               {globalStatus && (
                 <span
                   className="text-[10px] font-mono"
-                  style={{ color: globalStatus === 'Saved' ? '#4ade80' : globalStatus === 'Save failed' ? '#f87171' : '#4F8EF7' }}
+                  style={{ color: globalStatus === 'Saved' ? '#4ade80' : globalStatus === 'Save failed' ? '#f87171' : '#7C6DFA' }}
                 >
                   {globalStatus}
                 </span>

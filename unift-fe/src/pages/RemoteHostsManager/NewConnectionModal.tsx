@@ -41,12 +41,12 @@ export function NewConnectionModal({
       style={{ background: 'rgba(0,0,0,0.65)' }}
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#1E2130] border border-[#2E3348] rounded w-md max-h-[90vh] flex flex-col shadow-2xl panel-depth">
+      <div className="bg-[#13131E] border border-[#1E1E2E] rounded w-md max-h-[90vh] flex flex-col shadow-2xl panel-depth">
 
         {/* Modal header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2E3348] shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1E1E2E] shrink-0">
           <div className="flex items-center gap-3">
-            <Icon name="lan" className="text-[#4F8EF7] text-xl" />
+            <Icon name="lan" className="text-[#7C6DFA] text-xl" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-[#E2E8F0]">New Connection</h2>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-white/5 transition-colors cursor-pointer">
@@ -71,14 +71,14 @@ export function NewConnectionModal({
           )}
 
           {/* Protocol Tabs */}
-          <div className="flex gap-2 border-b border-[#2E3348]">
+          <div className="flex gap-2 border-b border-[#1E1E2E]">
             {(['SSH_SFTP', 'FTP', 'SMB'] as const).map(proto => (
               <button
                 key={proto}
                 onClick={() => onProtocolChange(proto)}
                 className={`px-3 py-2 text-xs font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px cursor-pointer ${
                   selectedProtocol === proto
-                    ? 'text-[#4F8EF7] border-[#4F8EF7]'
+                    ? 'text-[#7C6DFA] border-[#7C6DFA]'
                     : 'text-slate-500 border-transparent hover:text-slate-300'
                 }`}
               >
@@ -98,7 +98,7 @@ export function NewConnectionModal({
                 placeholder="e.g., Production Server"
                 value={formData.name}
                 onChange={e => onFormChange('name', e.target.value)}
-                className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
               />
             </div>
 
@@ -110,7 +110,7 @@ export function NewConnectionModal({
                 placeholder="e.g., 192.168.1.100"
                 value={formData.host}
                 onChange={e => onFormChange('host', e.target.value)}
-                className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
               />
             </div>
 
@@ -122,7 +122,7 @@ export function NewConnectionModal({
                   type="number"
                   value={formData.port}
                   onChange={e => onFormChange('port', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
                 />
               </div>
               <div>
@@ -132,20 +132,20 @@ export function NewConnectionModal({
                   placeholder="e.g., ubuntu"
                   value={formData.username}
                   onChange={e => onFormChange('username', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
                 />
               </div>
             </div>
 
             {/* Auth Type Toggle */}
-            <div className="flex gap-3 bg-[#11141C] rounded p-2">
+            <div className="flex gap-3 bg-[#0C0C14] rounded p-2">
               {(['PASSWORD', 'PRIVATE_KEY'] as const).map(type => (
                 <button
                   key={type}
                   onClick={() => onAuthTypeChange(type)}
                   className={`flex-1 px-2 py-1.5 text-xs font-mono uppercase tracking-wider rounded transition-all cursor-pointer ${
                     authType === type
-                      ? 'bg-[#4F8EF7] text-white'
+                      ? 'bg-[#7C6DFA] text-white'
                       : 'text-slate-400 hover:text-slate-300'
                   }`}
                 >
@@ -163,7 +163,7 @@ export function NewConnectionModal({
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={e => onFormChange('password', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                  className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
                 />
               </div>
             ) : (
@@ -173,7 +173,7 @@ export function NewConnectionModal({
                   placeholder="-----BEGIN PRIVATE KEY-----"
                   value={formData.privateKey}
                   onChange={e => onFormChange('privateKey', e.target.value)}
-                  className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all h-24 resize-none"
+                  className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all h-24 resize-none"
                 />
               </div>
             )}
@@ -186,7 +186,7 @@ export function NewConnectionModal({
                 placeholder="/home/user/data"
                 value={formData.remotePath}
                 onChange={e => onFormChange('remotePath', e.target.value)}
-                className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
               />
             </div>
 
@@ -203,7 +203,7 @@ export function NewConnectionModal({
                 placeholder="30"
                 value={formData.sessionTtlMinutes}
                 onChange={e => onFormChange('sessionTtlMinutes', e.target.value)}
-                className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
               />
             </div>
 
@@ -212,13 +212,13 @@ export function NewConnectionModal({
 
               {/* Strict Host Key Checking — SSH only */}
               {selectedProtocol === 'SSH_SFTP' && (
-                <div className="space-y-2 border border-[#2E3348] rounded p-3 bg-[#11141C]/50">
+                <div className="space-y-2 border border-[#1E1E2E] rounded p-3 bg-[#0C0C14]/50">
                   <label className="flex items-center gap-3 w-fit cursor-pointer">
                     <input
                       type="checkbox"
                       checked={formData.strictHostKeyChecking}
                       onChange={e => onFormChange('strictHostKeyChecking', e.target.checked)}
-                      className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
+                      className="w-4 h-4 rounded bg-[#0C0C14] border border-[#1E1E2E] accent-[#7C6DFA] cursor-pointer"
                     />
                     <span className="text-xs text-slate-300">Strict host key checking</span>
                   </label>
@@ -233,7 +233,7 @@ export function NewConnectionModal({
                         placeholder="SHA256:abc123... or MD5:ab:cd:ef..."
                         value={formData.expectedFingerprint}
                         onChange={e => onFormChange('expectedFingerprint', e.target.value)}
-                        className="w-full bg-[#11141C] border border-[#2E3348] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all"
+                        className="w-full bg-[#0C0C14] border border-[#1E1E2E] rounded depth-input px-3 py-2 text-xs font-mono text-[#E2E8F0] placeholder:text-slate-600 focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all"
                       />
                       <p className="mt-1.5 text-[10px] text-slate-600 leading-snug">
                         If provided, the server's key fingerprint must match exactly.
@@ -249,7 +249,7 @@ export function NewConnectionModal({
                   type="checkbox"
                   checked={formData.saveConnection}
                   onChange={e => onFormChange('saveConnection', e.target.checked)}
-                  className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
+                  className="w-4 h-4 rounded bg-[#0C0C14] border border-[#1E1E2E] accent-[#7C6DFA] cursor-pointer"
                 />
                 <span className="text-xs text-slate-300">Save this connection</span>
               </label>
@@ -259,7 +259,7 @@ export function NewConnectionModal({
                   type="checkbox"
                   checked={formData.autoReconnect}
                   onChange={e => onFormChange('autoReconnect', e.target.checked)}
-                  className="w-4 h-4 rounded bg-[#11141C] border border-[#2E3348] accent-[#4F8EF7] cursor-pointer"
+                  className="w-4 h-4 rounded bg-[#0C0C14] border border-[#1E1E2E] accent-[#7C6DFA] cursor-pointer"
                 />
                 <span className="text-xs text-slate-300">Auto-reconnect</span>
               </label>
@@ -283,18 +283,18 @@ export function NewConnectionModal({
         )}
 
         {/* Modal footer */}
-        <div className="px-5 py-4 border-t border-[#2E3348] flex gap-3 shrink-0">
+        <div className="px-5 py-4 border-t border-[#1E1E2E] flex gap-3 shrink-0">
           <button
             onClick={onClose}
             disabled={loading || testingConnection}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-[#2E3348] rounded text-[10px] font-bold uppercase tracking-widest text-slate-300 font-mono hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-40"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-[#1E1E2E] rounded text-[10px] font-bold uppercase tracking-widest text-slate-300 font-mono hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-40"
           >
             Cancel
           </button>
           <button
             onClick={onTestConnection}
             disabled={loading || testingConnection}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-[#2E3348] bg-[#1E2130] rounded text-[10px] font-bold uppercase tracking-widest text-slate-300 font-mono hover:bg-[#242a3a] transition-colors cursor-pointer disabled:opacity-40"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border border-[#1E1E2E] bg-[#13131E] rounded text-[10px] font-bold uppercase tracking-widest text-slate-300 font-mono hover:bg-[#242a3a] transition-colors cursor-pointer disabled:opacity-40"
           >
             <Icon name={testingConnection ? 'hourglass_bottom' : 'science'} className="text-sm" />
             {testingConnection ? 'Testing...' : 'Test Connection'}
@@ -302,7 +302,7 @@ export function NewConnectionModal({
           <button
             onClick={onConnect}
             disabled={loading || testingConnection}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-[#4F8EF7] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-[#4F8EF7]/15"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-[#7C6DFA] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-[#7C6DFA]/15"
           >
             <Icon name={loading ? 'hourglass_bottom' : 'play_arrow'} className="text-sm" />
             {loading ? 'Connecting...' : 'Connect'}

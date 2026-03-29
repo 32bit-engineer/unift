@@ -77,3 +77,6 @@ unift/unift/docs
 unift/unift/product-info
 ### Environment / Secrets ###
 .env
+
+old-product-guidelines/
+new-product-guidelines/

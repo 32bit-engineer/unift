@@ -1,9 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { Sidebar } from '@/components/layout';
 import type { SavedHost } from '@/components/layout';
 import { RemoteHostsManagerPage } from './RemoteHostsManagerPage';
-import { remoteConnectionAPI, type SessionState } from '@/utils/remoteConnectionAPI';
+import { DashboardPage } from './DashboardPage';
+import { SavedHostsPage } from './SavedHostsPage';
+import { TransferHistoryPage } from './TransferHistoryPage';
+import { TransferLogPage } from './TransferLogPage';
+import { UploadSessionsPage } from './UploadSessionsPage';
+import { TransferProgressPopup } from '@/components/ui';
+import { remoteConnectionAPI, type SessionState, type SavedHostResponse } from '@/utils/remoteConnectionAPI';
+import { getErrorMessage } from '@/utils/apiClient';
 import type { UIHost } from './RemoteHostsManagerPage';
 
 // ─── Valid subpage ids ─────────────────────────────────────────────────────
@@ -14,10 +21,14 @@ type SubPage =
   | 'recent'
   | 'starred'
   | 'shared'
-  | 'trash';
+  | 'trash'
+  | 'saved-hosts'
+  | 'transfer-history'
+  | 'transfer-log'
+  | 'upload-sessions';
 
 const VALID_SUBPAGES: SubPage[] = [
-  'my-files', 'remote-hosts', 'streaming', 'recent', 'starred', 'shared', 'trash',
+  'my-files', 'remote-hosts', 'streaming', 'recent', 'starred', 'shared', 'trash', 'saved-hosts', 'transfer-history', 'transfer-log', 'upload-sessions',
 ];
 
 function getSubPage(): SubPage {
@@ -35,13 +46,17 @@ function setSubPageUrl(subpage: SubPage) {
 
 // ─── Breadcrumb segments per active nav item ───────────────────────────────
 const BREADCRUMBS: Record<SubPage, { parts: string[]; title: string; subtitle: string }> = {
-  'my-files':     { parts: ['Home', 'My Files'],                   title: 'My Files',     subtitle: 'Browse your local files.' },
-  'remote-hosts': { parts: ['Home', 'Remote Host', 'Connections'], title: 'Remote Hosts', subtitle: 'Manage SFTP, FTP, and SMB connections to remote servers.' },
-  'streaming':    { parts: ['Home', 'Streaming'],                  title: 'Streaming',    subtitle: 'Stream media from remote sources.' },
-  'recent':       { parts: ['Home', 'Recent'],                     title: 'Recent',       subtitle: 'Recently accessed files.' },
-  'starred':      { parts: ['Home', 'Starred'],                    title: 'Starred',      subtitle: 'Your starred items.' },
-  'shared':       { parts: ['Home', 'Shared'],                     title: 'Shared',       subtitle: 'Files shared with you.' },
-  'trash':        { parts: ['Home', 'Trash'],                      title: 'Trash',        subtitle: 'Deleted files.' },
+  'my-files':          { parts: ['Home', 'Dashboard'],                  title: 'Dashboard',         subtitle: 'Cluster overview and live session metrics.' },
+  'remote-hosts':      { parts: ['Home', 'Remote Host', 'Connections'], title: 'Remote Hosts',      subtitle: 'Manage SFTP, FTP, and SMB connections to remote servers.' },
+  'streaming':         { parts: ['Home', 'Streaming'],                  title: 'Streaming',         subtitle: 'Stream media from remote sources.' },
+  'recent':            { parts: ['Home', 'Recent'],                     title: 'Recent',            subtitle: 'Recently accessed files.' },
+  'starred':           { parts: ['Home', 'Starred'],                    title: 'Starred',           subtitle: 'Your starred items.' },
+  'shared':            { parts: ['Home', 'Shared'],                     title: 'Shared',            subtitle: 'Files shared with you.' },
+  'trash':             { parts: ['Home', 'Trash'],                      title: 'Trash',             subtitle: 'Deleted files.' },
+  'saved-hosts':       { parts: ['Home', 'Saved Hosts'],                title: 'Saved Hosts',       subtitle: 'All your bookmarked host configurations.' },
+  'transfer-history':  { parts: ['Home', 'My Files', 'Transfers'],      title: 'Transfer History',  subtitle: 'All uploads and downloads across active sessions.' },
+  'transfer-log':      { parts: ['Home', 'Transfers', 'Log'],           title: 'Transfer Log',      subtitle: 'Persistent audit trail of completed, failed, and cancelled transfers.' },
+  'upload-sessions':   { parts: ['Home', 'Transfers', 'Uploads'],       title: 'Upload Sessions',   subtitle: 'Resumable chunked upload sessions and their progress.' },
 };
 
 // ─── Placeholder for unimplemented pages ──────────────────────────────────
@@ -49,14 +64,14 @@ function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 opacity-40">
       <span
-        className="material-symbols-outlined"
+        className="material-symbols-rounded"
         style={{ fontSize: '48px', color: 'var(--color-primary)' }}
       >
         construction
       </span>
       <div className="text-center">
-        <p className="text-sm font-bold uppercase tracking-wider text-slate-300">{title}</p>
-        <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
+        <p className="label text-secondary">{title}</p>
+        <p className="text-ui-sm text-muted mt-1">{subtitle}</p>
       </div>
     </div>
   );
@@ -67,15 +82,46 @@ function renderContent(
   activeItem: SubPage,
   sessions: UIHost[],
   onSessionsChange: (hosts: UIHost[]) => void,
+  onSavedHostAdded: () => void,
+  onNavigateToTransferHistory: () => void,
+  onNavigateToSessions: () => void,
+  onNavigateToTransfers: () => void,
 ): React.ReactNode {
+  if (activeItem === 'my-files') {
+    return (
+      <DashboardPage
+        sessions={sessions}
+        onNavigateToSessions={onNavigateToSessions}
+        onNavigateToTransfers={onNavigateToTransfers}
+      />
+    );
+  }
+
   if (activeItem === 'remote-hosts') {
     return (
       <RemoteHostsManagerPage
         sessions={sessions}
         onSessionsChange={onSessionsChange}
+        onSavedHostAdded={onSavedHostAdded}
       />
     );
   }
+  if (activeItem === 'transfer-history') {
+    return (
+      <TransferHistoryPage
+        sessionIds={sessions.map(s => s.sessionId)}
+      />
+    );
+  }
+  if (activeItem === 'transfer-log') {
+    return <TransferLogPage />;
+  }
+  if (activeItem === 'upload-sessions') {
+    return <UploadSessionsPage />;
+  }
+  void onNavigateToTransferHistory; // suppress unused warning
+  void onNavigateToSessions;
+  void onNavigateToTransfers;
   const meta = BREADCRUMBS[activeItem];
   return <PlaceholderPage title={meta.title} subtitle={meta.subtitle} />;
 }
@@ -88,6 +134,15 @@ export function HomePage() {
   // ── Single source of truth for sessions ───────────────────────────────
   const [sessions, setSessions] = useState<UIHost[]>([]);
   const fetchedOnce = useRef(false);
+
+  // Stable array of session IDs — memoized so TransferProgressPopup doesn't
+  // re-run its effects on every unrelated render of HomePage.
+  const sessionIds = useMemo(() => sessions.map(s => s.sessionId), [sessions]);
+
+  // ── Saved host configurations (sidebar) ───────────────────────────────
+  const [savedHostConfigs, setSavedHostConfigs] = useState<SavedHostResponse[]>([]);
+  const [connectingConfigId, setConnectingConfigId] = useState<string | null>(null);
+  const [deletingConfigId, setDeletingConfigId]     = useState<string | null>(null);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -114,7 +169,55 @@ export function HomePage() {
     if (fetchedOnce.current) return;
     fetchedOnce.current = true;
     void refreshSessions();
+    void reloadSavedConfigs();
   }, [refreshSessions]);
+
+  const reloadSavedConfigs = useCallback(async () => {
+    try {
+      const hosts = await remoteConnectionAPI.listSavedHosts();
+      setSavedHostConfigs(hosts);
+    } catch {
+      // Non-fatal
+    }
+  }, []);
+
+  const handleConnectConfig = useCallback(async (id: string) => {
+    try {
+      setConnectingConfigId(id);
+      const response = await remoteConnectionAPI.connectSavedHost(id);
+      setSessions(prev => [
+        ...prev,
+        {
+          sessionId:     response.sessionId,
+          name:          response.label ?? `${response.host}:${response.port}`,
+          status:        'online' as const,
+          userAtIp:      `${response.username}@${response.host}`,
+          protocol:      response.protocol,
+          port:          response.port,
+          lastConnected: new Date(response.createdAt).toLocaleTimeString(),
+          latency:       0,
+        },
+      ]);
+      // Refresh to update lastUsed timestamp
+      void reloadSavedConfigs();
+    } catch (err) {
+      console.error(getErrorMessage(err, 'Failed to connect to saved host'));
+    } finally {
+      setConnectingConfigId(null);
+    }
+  }, [reloadSavedConfigs]);
+
+  const handleDeleteConfig = useCallback(async (id: string) => {
+    try {
+      setDeletingConfigId(id);
+      await remoteConnectionAPI.deleteSavedHost(id);
+      setSavedHostConfigs(prev => prev.filter(h => h.id !== id));
+    } catch (err) {
+      console.error(getErrorMessage(err, 'Failed to delete saved host'));
+    } finally {
+      setDeletingConfigId(null);
+    }
+  }, []);
 
   // Derive saved-hosts list for the sidebar from the shared sessions state
   const savedHosts: SavedHost[] = sessions.map(s => ({
@@ -128,6 +231,21 @@ export function HomePage() {
     const next = id as SubPage;
     setActiveNav(next);
     setSubPageUrl(next);
+  };
+
+  const handleShowAllSavedHosts = () => {
+    setActiveNav('saved-hosts');
+    setSubPageUrl('saved-hosts');
+  };
+
+  const handleNavigateToTransferHistory = () => {
+    setActiveNav('transfer-history');
+    setSubPageUrl('transfer-history');
+  };
+
+  const handleNavigateToSessions = () => {
+    setActiveNav('remote-hosts');
+    setSubPageUrl('remote-hosts');
   };
 
   const handleLogout = async () => {
@@ -145,6 +263,13 @@ export function HomePage() {
         activeItem={activeNav}
         onSelectItem={handleNavSelect}
         savedHosts={savedHosts}
+        savedHostConfigs={savedHostConfigs}
+        activeSessions={savedHosts}
+        connectingConfigId={connectingConfigId}
+        deletingConfigId={deletingConfigId}
+        onConnectConfig={handleConnectConfig}
+        onDeleteConfig={handleDeleteConfig}
+        onShowAllSavedHosts={handleShowAllSavedHosts}
       />
 
       {/* ── Right column ── */}
@@ -159,12 +284,12 @@ export function HomePage() {
           }}
         >
           {/* Breadcrumb */}
-          <nav className="flex items-center gap-1 text-xs font-mono text-slate-400">
+          <nav className="flex items-center gap-1 text-meta">
             {crumb.parts.map((part, i) => (
               <span key={i} className="flex items-center gap-1">
                 {i > 0 && (
                   <span
-                    className="material-symbols-outlined"
+                    className="material-symbols-rounded"
                     style={{ fontSize: '14px', color: '#5a6380' }}
                   >
                     chevron_right
@@ -173,8 +298,8 @@ export function HomePage() {
                 <span
                   className={
                     i === crumb.parts.length - 1
-                      ? 'font-semibold text-[#E2E8F0]'
-                      : 'hover:text-slate-200 cursor-pointer transition-colors'
+                      ? 'text-primary'
+                      : 'text-secondary hover:text-primary cursor-pointer transition-colors'
                   }
                 >
                   {part}
@@ -188,7 +313,7 @@ export function HomePage() {
             {/* Search */}
             <div className="relative">
               <span
-                className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="material-symbols-rounded absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
                 style={{ fontSize: '15px', color: '#5a6380' }}
               >
                 search
@@ -196,13 +321,13 @@ export function HomePage() {
               <input
                 type="text"
                 placeholder="Search hosts..."
-                className="bg-[#11141C] border border-[#2E3348] rounded pl-8 pr-3 py-1.5 text-xs font-mono text-slate-300 placeholder:text-slate-600 focus:ring-1 focus:ring-[#4F8EF7]/40 outline-none transition-all w-52"
+                className="bg-[#0C0C14] border border-[#1E1E2E] rounded pl-8 pr-3 py-1.5 text-code text-primary placeholder:text-muted focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all w-52"
               />
             </div>
 
             {/* Notification bell */}
             <button className="p-1.5 hover:bg-white/5 rounded transition-colors relative cursor-pointer">
-              <span className="material-symbols-outlined text-slate-400" style={{ fontSize: '20px' }}>
+              <span className="material-symbols-rounded text-slate-400" style={{ fontSize: '20px' }}>
                 notifications
               </span>
               <span
@@ -212,12 +337,12 @@ export function HomePage() {
             </button>
 
             {/* Divider */}
-            <span className="w-px h-5 bg-[#2E3348]" />
+            <span className="w-px h-5 bg-[#1E1E2E]" />
 
             {/* Username */}
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--color-status-ok)' }} />
-              <span className="font-mono text-[11px]" style={{ color: '#5a6380' }}>
+              <span className="text-meta text-secondary">
                 {user?.username ?? 'user'}
               </span>
             </div>
@@ -225,10 +350,10 @@ export function HomePage() {
             {/* Logout */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer font-mono text-[10px] uppercase tracking-widest border transition-all duration-150 hover:bg-white/5"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer text-micro border transition-all duration-150 hover:bg-white/5"
               style={{ borderColor: 'var(--color-border-muted)', color: '#5a6380' }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px', lineHeight: 1 }}>
+              <span className="material-symbols-rounded" style={{ fontSize: '14px', lineHeight: 1 }}>
                 logout
               </span>
               Sign out
@@ -241,9 +366,26 @@ export function HomePage() {
           className="flex-1 overflow-auto custom-scrollbar h-0"
           style={{ background: 'var(--color-bg-base)' }}
         >
-          {renderContent(activeNav, sessions, setSessions)}
+          {activeNav === 'saved-hosts'
+            ? (
+              <SavedHostsPage
+                savedHostConfigs={savedHostConfigs}
+                connectingConfigId={connectingConfigId}
+                deletingConfigId={deletingConfigId}
+                onConnect={handleConnectConfig}
+                onDelete={handleDeleteConfig}
+              />
+            )
+            : renderContent(activeNav, sessions, setSessions, reloadSavedConfigs, handleNavigateToTransferHistory, handleNavigateToSessions, handleNavigateToTransferHistory)
+          }
         </main>
       </div>
+
+      {/* ── Global transfer progress popup (floats above all content) ── */}
+      <TransferProgressPopup
+        sessionIds={sessionIds}
+        onViewAll={handleNavigateToTransferHistory}
+      />
     </div>
   );
 }

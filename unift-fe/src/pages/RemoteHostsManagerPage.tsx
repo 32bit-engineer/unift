@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   remoteConnectionAPI,
   type SessionState,
   type ConnectRequest,
   type TestConnectionResponse,
-  type SavedHostResponse,
 } from '@/utils/remoteConnectionAPI';
 import { getErrorMessage } from '@/utils/apiClient';
 import { Icon } from './RemoteHostsManager/shared';
@@ -13,17 +12,44 @@ import { NewConnectionModal } from './RemoteHostsManager/NewConnectionModal';
 import { HostListView } from './RemoteHostsManager/HostListView';
 import { HostGridView } from './RemoteHostsManager/HostGridView';
 import { TerminalPanel } from './RemoteHostsManager/TerminalPanel';
-import { SavedHostsSection } from './RemoteHostsManager/SavedHostsSection';
+import { SessionDetailPage } from './RemoteHostsManager/SessionDetailPage';
 import type { UIHost, ProtocolType, StatusFilter, ConnectionFormData } from './RemoteHostsManager/types';
 import type { SshAuthType } from '@/utils/remoteConnectionAPI';
 
 export type { UIHost };
+
+type RemoteView = 'analytics' | 'browser';
+
+function getRemoteViewFromUrl(): { view: RemoteView; sessionId: string } | null {
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get('view') as RemoteView | null;
+  const sessionId = params.get('sessionId');
+  if ((view === 'analytics' || view === 'browser') && sessionId) {
+    return { view, sessionId };
+  }
+  return null;
+}
+
+function pushRemoteViewUrl(view: RemoteView, sessionId: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('view', view);
+  url.searchParams.set('sessionId', sessionId);
+  window.history.pushState(null, '', url.toString());
+}
+
+function clearRemoteViewUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('view');
+  url.searchParams.delete('sessionId');
+  window.history.pushState(null, '', url.toString());
+}
 
 interface RemoteHostsManagerPageProps {
   sessions:              UIHost[];
   onSessionsChange:      (hosts: UIHost[]) => void;
   openNewConnection?:    boolean;
   onNewConnectionClose?: () => void;
+  onSavedHostAdded?:     () => void;
 }
 
 const EMPTY_FORM: ConnectionFormData = {
@@ -47,6 +73,7 @@ export function RemoteHostsManagerPage({
   onSessionsChange,
   openNewConnection = false,
   onNewConnectionClose,
+  onSavedHostAdded,
 }: RemoteHostsManagerPageProps) {
   const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType>('SSH_SFTP');
   const [statusFilter, setStatusFilter]         = useState<StatusFilter>('all');
@@ -67,6 +94,62 @@ export function RemoteHostsManagerPage({
   // File browser: which session (if any) is open
   const [browserHost, setBrowserHost] = useState<UIHost | null>(null);
 
+  // Analytics detail page: which session (if any) is open
+  const [analyticsHost, setAnalyticsHost] = useState<UIHost | null>(null);
+
+  // Restore overlay state from URL on first sessions load (handles page refresh)
+  const hasSyncedFromUrl = useRef(false);
+  useEffect(() => {
+    if (hasSyncedFromUrl.current || sessions.length === 0) return;
+    hasSyncedFromUrl.current = true;
+    const urlState = getRemoteViewFromUrl();
+    if (!urlState) return;
+    const host = sessions.find(s => s.sessionId === urlState.sessionId);
+    if (!host) { clearRemoteViewUrl(); return; }
+    if (urlState.view === 'analytics') setAnalyticsHost(host);
+    else setBrowserHost(host);
+  }, [sessions]);
+
+  // Sync React state when the user navigates with browser back/forward
+  useEffect(() => {
+    const onPopState = () => {
+      const urlState = getRemoteViewFromUrl();
+      if (!urlState) {
+        setAnalyticsHost(null);
+        setBrowserHost(null);
+      } else {
+        const host = sessions.find(s => s.sessionId === urlState.sessionId);
+        if (!host) return;
+        if (urlState.view === 'analytics') { setAnalyticsHost(host); setBrowserHost(null); }
+        else { setBrowserHost(host); setAnalyticsHost(null); }
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [sessions]);
+
+  // URL-aware wrappers — always call these instead of the raw setters
+  const openAnalytics = (host: UIHost) => {
+    pushRemoteViewUrl('analytics', host.sessionId);
+    setAnalyticsHost(host);
+  };
+  const closeAnalytics = () => {
+    clearRemoteViewUrl();
+    setAnalyticsHost(null);
+  };
+  const openBrowser = (host: UIHost) => {
+    pushRemoteViewUrl('browser', host.sessionId);
+    setBrowserHost(host);
+  };
+  const closeBrowser = () => {
+    clearRemoteViewUrl();
+    setBrowserHost(null);
+    // Close the terminal panel when leaving the connection — the session context is gone
+    setTerminalOpen(false);
+    setTerminalMinimized(false);
+    setTerminalSessionId(undefined);
+  };
+
   // IDE-style terminal panel
   const [terminalOpen, setTerminalOpen]           = useState(false);
   const [terminalHeight, setTerminalHeight]       = useState(280);
@@ -78,23 +161,6 @@ export function RemoteHostsManagerPage({
   const [error, setError]               = useState<string | null>(null);
   const [testResult, setTestResult]     = useState<TestConnectionResponse | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
-
-  // Saved hosts
-  const [savedHosts, setSavedHosts]       = useState<SavedHostResponse[]>([]);
-  const [connectingId, setConnectingId]   = useState<string | null>(null);
-  const [deletingId, setDeletingId]       = useState<string | null>(null);
-
-  // Terminal session sync
-  useEffect(() => {
-    const active = sessions.filter(s => s.status === 'online');
-    if (active.length > 0) {
-      if (!terminalSessionId || !active.some(s => s.sessionId === terminalSessionId)) {
-        setTerminalSessionId(active[0].sessionId);
-      }
-    } else {
-      if (terminalSessionId) setTerminalSessionId(undefined);
-    }
-  }, [sessions]);
 
   // Terminal resize via drag handle
   const handleTerminalResizeMouseDown = (e: React.MouseEvent) => {
@@ -113,18 +179,13 @@ export function RemoteHostsManagerPage({
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  /*
-   * Open the terminal panel and auto-select the most relevant session.
-   * Prefers the currently open file-browser host, then falls back to
-   * the first online session.
-   */
+  // Open a terminal session for the currently active connection.
+  // Only callable from within the file browser, so browserHost is always set.
   const openTerminal = () => {
+    if (!browserHost) return;
+    setTerminalSessionId(browserHost.sessionId);
     setTerminalOpen(true);
     setTerminalMinimized(false);
-    if (!terminalSessionId) {
-      const candidate = browserHost ?? sessions.find(s => s.status === 'online') ?? null;
-      if (candidate) setTerminalSessionId(candidate.sessionId);
-    }
   };
 
   // Reload sessions from the server and push the result up to the parent
@@ -152,21 +213,6 @@ export function RemoteHostsManagerPage({
     }
   };
 
-  // Load saved host configurations from the server
-  const reloadSavedHosts = async () => {
-    try {
-      const hosts = await remoteConnectionAPI.listSavedHosts();
-      setSavedHosts(hosts);
-    } catch {
-      // Non-fatal — saved hosts are a convenience feature
-    }
-  };
-
-  // Load saved hosts on mount
-  useEffect(() => {
-    reloadSavedHosts();
-  }, []);
-
   // Filter and count helpers
   const filteredHosts = useMemo(() => {
     if (statusFilter === 'all') return sessions;
@@ -180,7 +226,15 @@ export function RemoteHostsManagerPage({
     warning: sessions.filter(h => h.status === 'warning').length,
   };
 
-  const activeSessions = sessions.filter(s => s.status === 'online');
+  const avgLatency = useMemo(() => {
+    const live = sessions.filter(s => s.status === 'online' && s.latency > 0);
+    if (live.length === 0) return null;
+    return Math.round(live.reduce((acc, s) => acc + s.latency, 0) / live.length);
+  }, [sessions]);
+
+  const sessionHealthPct = sessions.length === 0
+    ? 100
+    : Math.round((statusCounts.online / sessions.length) * 100);
 
   const handleFormChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -299,7 +353,7 @@ export function RemoteHostsManagerPage({
               passphrase: formData.passphrase,
             }),
           });
-          await reloadSavedHosts();
+          onSavedHostAdded?.();
         } catch {
           // Non-fatal — the session opened successfully, saving the config is best-effort
           console.warn('Failed to save host configuration');
@@ -330,147 +384,195 @@ export function RemoteHostsManagerPage({
     }
   };
 
-  // Connect using stored (encrypted) credentials for a saved host
-  const handleConnectSaved = async (id: string) => {
-    try {
-      setConnectingId(id);
-      const response = await remoteConnectionAPI.connectSavedHost(id);
-      onSessionsChange([
-        ...sessions,
-        {
-          sessionId:     response.sessionId,
-          name:          response.label ?? `${response.host}:${response.port}`,
-          status:        'online' as const,
-          userAtIp:      `${response.username}@${response.host}`,
-          protocol:      response.protocol,
-          port:          response.port,
-          lastConnected: new Date(response.createdAt).toLocaleTimeString(),
-          latency:       0,
-        },
-      ]);
-      // Refresh saved hosts to update lastUsed timestamp
-      await reloadSavedHosts();
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to connect to saved host'));
-    } finally {
-      setConnectingId(null);
-    }
-  };
-
-  // Remove a saved host configuration (does not affect active sessions)
-  const handleDeleteSaved = async (id: string) => {
-    try {
-      setDeletingId(id);
-      await remoteConnectionAPI.deleteSavedHost(id);
-      setSavedHosts(prev => prev.filter(h => h.id !== id));
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to delete saved host'));
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
   return (
     <>
-      <div className="h-full flex flex-col bg-[#161923]">
+      <div className="h-full flex flex-col bg-[#0C0C14] relative">
 
-        {/* Page Title Bar */}
-        <div className="px-6 pt-6 pb-2 flex items-start justify-between shrink-0">
+        {/* Analytics detail full-page overlay */}
+        {analyticsHost && (
+          <SessionDetailPage
+            host={analyticsHost}
+            onBack={closeAnalytics}
+            onDisconnect={async (sessionId) => {
+              await handleDisconnect(sessionId);
+              closeAnalytics();
+            }}
+            onOpenTerminal={() => {
+              closeAnalytics();
+              openTerminal();
+            }}
+          />
+        )}
+
+        {/* File Browser full-page overlay */}
+        {browserHost && (
+          <div className="absolute inset-0 z-20 flex flex-col bg-[#0C0C14]">
+            {/* Breadcrumb back bar */}
+            <div className="flex items-center gap-3 px-8 py-4 border-b border-[#1E1E2E] shrink-0">
+              <button
+                onClick={closeBrowser}
+                className="flex items-center gap-1.5 text-muted hover:text-primary transition-colors cursor-pointer"
+              >
+                <Icon name="arrow_back" className="text-base" />
+                <span className="text-micro text-secondary">Active Sessions</span>
+              </button>
+              <Icon name="chevron_right" className="text-sm text-slate-700" />
+              <span className="text-meta text-primary truncate">
+                {browserHost.name.split(':')[0]}
+              </span>
+              <span className="ml-auto px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-800/30 text-micro text-emerald-400 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#4ade80]" />
+                CONNECTED
+              </span>
+            </div>
+
+            {/* FileBrowser fills the remaining vertical space above the terminal */}
+            <div className="flex-1 overflow-hidden">
+              <FileBrowser
+                host={browserHost}
+                onClose={closeBrowser}
+                onSessionExpired={() => {
+                  onSessionsChange(sessions.filter(h => h.sessionId !== browserHost.sessionId));
+                  closeBrowser();
+                }}
+                onOpenTerminal={openTerminal}
+              />
+            </div>
+
+            {/* Terminal panel — sits at the bottom of the file browser overlay */}
+            <TerminalPanel
+              sessions={sessions}
+              terminalOpen={terminalOpen}
+              terminalMinimized={terminalMinimized}
+              terminalHeight={terminalHeight}
+              terminalSessionId={terminalSessionId}
+              onResizeMouseDown={handleTerminalResizeMouseDown}
+              onClose={() => setTerminalOpen(false)}
+              onToggleMinimize={() => setTerminalMinimized(v => !v)}
+            />
+          </div>
+        )}
+
+        {/* Page Header */}
+        <div className="px-8 pt-7 pb-5 flex items-start justify-between shrink-0 border-b border-[#1E1E2E]">
           <div>
-            <h1 className="text-xl font-bold tracking-tight uppercase text-slate-100">Remote Hosts</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Manage SFTP, FTP, and SMB connections to remote servers.
+            <p className="label text-muted mb-1.5">
+              Infrastructure Management
+            </p>
+            <h1 className="text-display" style={{ fontSize: '26px' }}>
+              Active Sessions
+            </h1>
+            <p className="text-ui-sm text-secondary mt-1.5">
+              Monitor and manage concurrent server connections across the cluster.
             </p>
           </div>
-          {/* Summary badges */}
-          <div className="flex items-center gap-2 mt-1">
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono badge-done">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80]" />
-              {statusCounts.online} Online
-            </span>
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono badge-queue">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-              {statusCounts.offline} Offline
-            </span>
-            {statusCounts.warning > 0 && (
-              <span
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono badge-active"
-                style={{ color: '#E07B39', background: 'rgba(224,123,57,0.12)', borderColor: 'rgba(224,123,57,0.28)' }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#E07B39]" />
-                {statusCounts.warning} Warning
+          <div className="flex items-center gap-2.5 mt-1">
+            <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#252D45] text-ui-sm text-primary hover:border-slate-600 transition-colors cursor-pointer">
+              <Icon name="filter_list" className="text-sm" />
+              Filter
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg brand-gradient brand-gradient-hover brand-gradient-shadow text-micro text-on-brand cursor-pointer"
+            >
+              <Icon name="add" className="text-sm" />
+              New Session
+            </button>
+          </div>
+        </div>
+
+        {/* Stat Cards */}
+        <div className="px-8 py-5 grid grid-cols-4 gap-4 shrink-0 border-b border-[#1E1E2E]">
+          <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl p-4">
+            <p className="text-micro text-muted mb-2">Active Links</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-display" style={{ fontSize: '24px' }}>{statusCounts.online}</span>
+              <span className="text-meta text-muted">/ {sessions.length} slots</span>
+            </div>
+          </div>
+          <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl p-4">
+            <p className="text-micro text-muted mb-2">Total Bandwidth</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-display" style={{ fontSize: '24px' }}>—</span>
+              <span className="text-meta text-muted">GB/s</span>
+            </div>
+          </div>
+          <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl p-4">
+            <p className="text-micro text-muted mb-2">Avg Latency</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-display" style={{ fontSize: '24px' }}>
+                {avgLatency !== null ? avgLatency : '—'}
               </span>
-            )}
+              <span className="text-meta text-muted">ms</span>
+            </div>
+          </div>
+          <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl p-4">
+            <p className="text-micro text-muted mb-2">Session Health</p>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-display ${
+                sessionHealthPct >= 80 ? 'text-emerald-400' :
+                sessionHealthPct >= 50 ? 'text-amber-400' : 'text-red-400'
+              }`} style={{ fontSize: '24px' }}>
+                {sessionHealthPct}%
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-hidden flex gap-6 p-6 pt-4">
-
-          {/* Full-width: File Browser OR Session List */}
-          {browserHost ? (
-            <FileBrowser
-              host={browserHost}
-              onClose={() => setBrowserHost(null)}
-              onSessionExpired={() => {
-                onSessionsChange(sessions.filter(h => h.sessionId !== browserHost.sessionId));
-                setBrowserHost(null);
-              }}
-            />
-          ) : (
-            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+        <div className="flex-1 overflow-hidden flex gap-6 px-8 py-5">
+          <div className="flex-1 flex flex-col gap-4 overflow-hidden">
 
               {/* Toolbar row */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between shrink-0">
                 {/* Status Tabs */}
-                <div className="flex gap-1 items-center bg-[#1E2130] rounded p-1 w-fit">
+                <div className="flex gap-0.5 items-center bg-[#0F0F1A] border border-[#13131E] rounded-lg p-1 w-fit">
                   {(['all', 'online', 'offline', 'warning'] as const).map(status => (
                     <button
                       key={status}
                       onClick={() => setStatusFilter(status)}
-                      className={`px-4 py-2 rounded text-xs font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                      className={`px-4 py-1.5 rounded-md text-micro transition-all cursor-pointer ${
                         statusFilter === status
-                          ? 'bg-[#4F8EF7] text-white'
-                          : 'text-slate-400 hover:text-slate-200'
+                            ? 'brand-gradient text-on-brand shadow-sm'
+                          : 'text-muted hover:text-secondary'
                       }`}
+                      
                     >
                       {status === 'all' ? 'All' :
                        status === 'online' ? 'Online' :
                        status === 'offline' ? 'Offline' : 'Warning'}
                       {' '}
-                      <span className="font-bold">({statusCounts[status]})</span>
+                      <span className={statusFilter === status ? 'text-accent-soft' : 'text-muted'}>
+                        ({statusCounts[status]})
+                      </span>
                     </button>
                   ))}
                 </div>
 
-                {/* Right side: view toggle + sort + new connection */}
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-2">
+                {/* Right side: view toggle + reload */}
+                <div className="flex items-center gap-2.5">
+                  <div className="flex gap-0.5 bg-[#0F0F1A] border border-[#13131E] rounded-lg p-1">
                     {(['list', 'grid'] as const).map(mode => (
                       <button
                         key={mode}
                         onClick={() => setViewMode(mode)}
-                        className={`p-2 rounded transition-colors cursor-pointer ${
+                        className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                           viewMode === mode
-                            ? 'bg-[#4F8EF7] text-white'
-                            : 'bg-[#1E2130] text-slate-400 hover:text-slate-200'
+                            ? 'brand-gradient text-on-brand'
+                            : 'text-muted hover:text-secondary'
                         }`}
                       >
                         <Icon name={mode === 'list' ? 'list' : 'grid_on'} className="text-base" />
                       </button>
                     ))}
                   </div>
-                  <button className="flex items-center gap-2 px-3 py-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer">
-                    <Icon name="sort" className="text-sm" />
-                    Sort
-                  </button>
-                  <div className="w-px h-5 bg-[#2E3348]" />
                   <button
-                    onClick={() => setShowModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#4F8EF7] rounded text-[10px] font-bold uppercase tracking-widest text-white font-mono hover:brightness-110 transition-all cursor-pointer shadow-lg shadow-[#4F8EF7]/15"
+                    onClick={reloadSessions}
+                    disabled={loading}
+                    className="p-2 rounded-lg border border-[#13131E] bg-[#0F0F1A] text-muted hover:text-secondary hover:border-slate-600 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Reload sessions"
                   >
-                    <Icon name="add" className="text-sm" />
-                    New Connection
+                    <Icon name="refresh" className="text-base" />
                   </button>
                 </div>
               </div>
@@ -479,73 +581,65 @@ export function RemoteHostsManagerPage({
               <div className={`flex-1 overflow-y-auto custom-scrollbar ${
                 viewMode === 'grid'
                   ? 'grid grid-cols-2 xl:grid-cols-3 gap-3 content-start'
-                  : 'space-y-1.5'
+                  : 'space-y-0'
               }`}>
                 {viewMode === 'list' ? (
                   <HostListView
                     hosts={filteredHosts}
                     loading={loading}
-                    onBrowse={setBrowserHost}
+                    onBrowse={openBrowser}
                     onDisconnect={handleDisconnect}
+                    onAnalytics={openAnalytics}
                   />
                 ) : (
                   <HostGridView
                     hosts={filteredHosts}
                     loading={loading}
-                    onBrowse={setBrowserHost}
+                    onBrowse={openBrowser}
                     onDisconnect={handleDisconnect}
                   />
                 )}
-
-                {/* Saved hosts — rendered below active sessions in list mode */}
-                {viewMode === 'list' && (
-                  <div className="mt-4">
-                    <SavedHostsSection
-                      savedHosts={savedHosts}
-                      connectingId={connectingId}
-                      deletingId={deletingId}
-                      onConnect={handleConnectSaved}
-                      onDelete={handleDeleteSaved}
-                    />
-                  </div>
-                )}
               </div>
 
-              {/* Stats Footer */}
-              <div className="bg-[#1E2130] border border-[#2E3348] rounded p-4 grid grid-cols-3 gap-6">
-                <div>
-                  <span className="label block mb-1">Total Sessions</span>
-                  <span className="text-lg font-bold text-[#E2E8F0]">{sessions.length}</span>
+              {/* Pagination + Bottom Action Cards */}
+              <div className="shrink-0 space-y-4">
+                {/* Pagination row */}
+                <div className="flex items-center justify-between py-2 border-t border-[#1E1E2E]">
+                  <p className="text-meta text-muted">
+                    Showing {filteredHosts.length} of {sessions.length} sessions
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button className="w-7 h-7 flex items-center justify-center rounded border border-[#13131E] text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-colors cursor-pointer">
+                      <Icon name="chevron_left" className="text-sm" />
+                    </button>
+                    <button className="w-7 h-7 flex items-center justify-center rounded border border-[#13131E] text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-colors cursor-pointer">
+                      <Icon name="chevron_right" className="text-sm" />
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <span className="label block mb-1">Active</span>
-                  <span className="text-lg font-bold text-[#4ade80]">{statusCounts.online}</span>
-                </div>
-                <div>
-                  <span className="label block mb-1">Inactive</span>
-                  <span className="text-lg font-bold text-[#E07B39]">
-                    {statusCounts.offline + statusCounts.warning}
-                  </span>
-                </div>
+
+                {/* Bottom Action Cards */}
+                <button
+                  onClick={openTerminal}
+                  className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0F0F1A] border border-[#13131E] hover:border-slate-600/50 transition-all cursor-pointer group text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-slate-800/70 border border-slate-700/40 flex items-center justify-center shrink-0">
+                      <Icon name="history" className="text-base text-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-title">View Session Logs</p>
+                      <p className="text-ui-sm text-muted mt-0.5">
+                        Audit all terminal commands and file transfers from previous sessions.
+                      </p>
+                    </div>
+                  </div>
+                  <Icon name="arrow_forward" className="text-base text-slate-600 group-hover:text-slate-400 transition-colors shrink-0 ml-3" />
+                </button>
               </div>
             </div>
-          )}
         </div>
 
-        {/* IDE Terminal Panel */}
-        <TerminalPanel
-          sessions={sessions}
-          terminalOpen={terminalOpen}
-          terminalMinimized={terminalMinimized}
-          terminalHeight={terminalHeight}
-          terminalSessionId={terminalSessionId}
-          activeSessions={activeSessions}
-          onResizeMouseDown={handleTerminalResizeMouseDown}
-          onSessionChange={setTerminalSessionId}
-          onClose={() => setTerminalOpen(false)}
-          onToggleMinimize={() => setTerminalMinimized(v => !v)}
-          onOpen={openTerminal}
-        />
       </div>
 
       {/* New Connection Modal */}
