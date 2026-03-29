@@ -236,6 +236,13 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
                 terminal.shellSession().resize(cols, rows);
                 terminalRegistry.touchActivity(wsSession.getId());
             }
+            case "ping" -> {
+                // Application-level keepalive: reply with pong so the client
+                // clears its pong-timeout and does not self-close the connection.
+                wsSession.sendMessage(new TextMessage("{\"type\":\"pong\"}"));
+                terminalRegistry.touchActivity(wsSession.getId());
+                log.trace("[ws-terminal] Ping/pong exchange with {}", wsSession.getId());
+            }
             default -> log.warn("[ws-terminal] Unknown message type '{}' from {}", type, wsSession.getId());
         }
     }
