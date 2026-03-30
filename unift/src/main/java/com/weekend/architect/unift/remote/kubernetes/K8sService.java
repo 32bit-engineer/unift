@@ -76,13 +76,64 @@ public interface K8sService {
      */
     PodActionResult restartDeployment(String sessionId, UUID userId, String namespace, String deploymentName);
 
-    /**
-     * Lists services, optionally filtered by namespace.
-     */
+    /** Lists services, optionally filtered by namespace. */
     ServicePage listServices(String sessionId, UUID userId, String namespace);
 
-    /**
-     * Lists nodes in the cluster.
-     */
+    /** Lists nodes in the cluster. */
     NodePage listNodes(String sessionId, UUID userId);
+
+
+    /** Lists ConfigMaps, optionally filtered by namespace. */
+    ConfigMapPage listConfigMaps(String sessionId, UUID userId, String namespace);
+
+    /** Lists Ingresses (networking.k8s.io/v1), optionally filtered by namespace. */
+    IngressPage listIngresses(String sessionId, UUID userId, String namespace);
+
+    /** Lists DaemonSets, optionally filtered by namespace. */
+    DaemonSetPage listDaemonSets(String sessionId, UUID userId, String namespace);
+
+    /** Rolling-restart a DaemonSet. */
+    PodActionResult restartDaemonSet(String sessionId, UUID userId, String namespace, String name);
+
+    /** Lists StatefulSets, optionally filtered by namespace. */
+    StatefulSetPage listStatefulSets(String sessionId, UUID userId, String namespace);
+
+    /** Rolling-restart a StatefulSet. */
+    PodActionResult restartStatefulSet(String sessionId, UUID userId, String namespace, String name);
+
+    /** Scale a StatefulSet to the given replica count. */
+    PodActionResult scaleStatefulSet(String sessionId, UUID userId, String namespace, String name, int replicas);
+
+    // ─── Generic YAML view / edit ─────────────────────────────────────────────
+
+    /**
+     * Returns the live YAML for any namespaced resource.
+     * {@code managedFields} and {@code status} are stripped for a clean editor view.
+     *
+     * @param kind      k8s kind, e.g. {@code "Deployment"}, {@code "ConfigMap"}
+     * @param namespace resource namespace
+     * @param name      resource name
+     */
+    ResourceYaml getResourceYaml(String sessionId, UUID userId, String kind, String namespace, String name);
+
+    /**
+     * Server-side-applies the given YAML, updating the live resource.
+     * Works for any resource type — the kind is determined from the YAML itself.
+     *
+     * @param yamlContent complete YAML document
+     */
+    PodActionResult applyResourceYaml(String sessionId, UUID userId, String yamlContent);
+
+    // ─── Rollout management ───────────────────────────────────────────────────
+
+    /**
+     * Returns the rollout history for a Deployment (derived from its ReplicaSets).
+     */
+    RolloutHistoryPage getRolloutHistory(String sessionId, UUID userId, String namespace, String deploymentName);
+
+    /**
+     * Rolls back a Deployment to the specified revision.
+     * Pass {@code revision = 0} to roll back to the previous revision.
+     */
+    PodActionResult undoRollout(String sessionId, UUID userId, String namespace, String deploymentName, int revision);
 }

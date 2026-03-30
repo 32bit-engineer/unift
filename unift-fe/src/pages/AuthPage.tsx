@@ -400,7 +400,7 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
 
   const handleSuccess = () => {
-    window.location.href = '?page=home';
+    window.location.href = '/';
   };
 
   const switchMode = (next: AuthMode) => {

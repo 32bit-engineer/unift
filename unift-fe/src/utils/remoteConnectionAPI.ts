@@ -8,6 +8,8 @@ export type SshAuthType = 'PASSWORD' | 'PRIVATE_KEY' | 'PRIVATE_KEY_PASSPHRASE';
 
 export interface ConnectRequest {
   protocol: ProtocolType;
+  /** Optional friendly label stored with the session, e.g. "Production Server". */
+  label?: string;
   host: string;
   port: number;
   username: string;
@@ -107,7 +109,12 @@ export interface SavedHostResponse {
   expectedFingerprint?: string;
   createdAt: string;
   lastUsed?: string;
+  workspacePreference?: WorkspaceType;
+  activeSessionId?: string;
+  activeSessionInitiatedBy?: string;
 }
+
+export type WorkspaceType = 'ssh' | 'docker' | 'kubernetes';
 
 /** Response from connecting to a saved host — same shape as SessionState. */
 export type ConnectFromSavedResponse = SessionState;
@@ -235,6 +242,270 @@ export interface UploadSessionResponse {
   progressPercent: number;
   createdAt: string;
   expiresAt: string;
+}
+
+// Docker types — mirrors DockerModels.java DTOs
+export interface DockerInfo {
+  available: boolean;
+  version: string;
+  totalContainers: number;
+  runningContainers: number;
+  stoppedContainers: number;
+  pausedContainers: number;
+  totalImages: number;
+  serverOs: string;
+  storageDriver: string;
+}
+
+export interface DockerContainer {
+  id: string;
+  names: string;
+  image: string;
+  state: string;
+  status: string;
+  ports: string;
+  createdAt: string;
+  size: string;
+  networks: string;
+}
+
+export interface DockerContainerStats {
+  containerId: string;
+  name: string;
+  cpuPercent: string;
+  memoryUsage: string;
+  memoryLimit: string;
+  memoryPercent: string;
+  networkIo: string;
+  blockIo: string;
+}
+
+export interface DockerImage {
+  id: string;
+  repository: string;
+  tag: string;
+  size: string;
+  createdAt: string;
+  createdSince: string;
+}
+
+export interface DockerOverview {
+  info: DockerInfo;
+  runningContainers: DockerContainer[];
+  stats: DockerContainerStats[];
+}
+
+export interface ContainerActionResult {
+  containerId: string;
+  action: string;
+  success: boolean;
+  message: string;
+}
+
+export interface ContainerPage {
+  containers: DockerContainer[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ImagePage {
+  images: DockerImage[];
+  total: number;
+}
+
+// -- Kubernetes types --
+
+export interface K8sClusterInfo {
+  available: boolean;
+  serverVersion: string;
+  platform: string;
+  clusterName: string;
+}
+
+export interface K8sContainerStatus {
+  name: string;
+  image: string;
+  ready: boolean;
+  restartCount: number;
+  state: string;
+}
+
+export interface K8sPod {
+  name: string;
+  namespace: string;
+  status: string;
+  nodeName: string;
+  restarts: number;
+  age: string;
+  ip: string;
+  labels: Record<string, string>;
+  containers: K8sContainerStatus[];
+}
+
+export interface K8sDeployment {
+  name: string;
+  namespace: string;
+  replicas: number;
+  readyReplicas: number;
+  updatedReplicas: number;
+  availableReplicas: number;
+  age: string;
+  strategy: string;
+  labels: Record<string, string>;
+}
+
+export interface K8sServiceResource {
+  name: string;
+  namespace: string;
+  type: string;
+  clusterIp: string;
+  externalIp: string;
+  ports: string;
+  age: string;
+  selector: Record<string, string>;
+}
+
+export interface K8sNode {
+  name: string;
+  status: string;
+  roles: string;
+  version: string;
+  internalIp: string;
+  osImage: string;
+  architecture: string;
+  cpuCapacity: string;
+  memoryCapacity: string;
+}
+
+export interface K8sNamespace {
+  name: string;
+  status: string;
+  age: string;
+}
+
+export interface K8sOverview {
+  clusterInfo: K8sClusterInfo;
+  totalPods: number;
+  runningPods: number;
+  pendingPods: number;
+  failedPods: number;
+  totalDeployments: number;
+  totalServices: number;
+  totalNodes: number;
+  readyNodes: number;
+  namespaces: K8sNamespace[];
+  recentPods: K8sPod[];
+}
+
+export interface PodPage {
+  pods: K8sPod[];
+  total: number;
+}
+
+export interface DeploymentPage {
+  deployments: K8sDeployment[];
+  total: number;
+}
+
+export interface K8sServicePage {
+  services: K8sServiceResource[];
+  total: number;
+}
+
+export interface NodePage {
+  nodes: K8sNode[];
+  total: number;
+}
+
+export interface PodActionResult {
+  podName: string;
+  namespace: string;
+  action: string;
+  success: boolean;
+  message: string;
+}
+
+/** Live YAML for a Kubernetes resource (status + managedFields stripped by the server). */
+export interface ResourceYaml {
+  kind: string;
+  namespace: string;
+  name: string;
+  yaml: string;
+}
+
+// -- Additional Kubernetes resource types --
+
+export interface K8sConfigMap {
+  name: string;
+  namespace: string;
+  age: string;
+  dataCount: number;
+  dataKeys: string[];
+}
+
+export interface ConfigMapPage {
+  configMaps: K8sConfigMap[];
+  total: number;
+}
+
+export interface K8sIngressPath {
+  path: string;
+  pathType: string;
+  serviceName: string;
+  servicePort: string;
+}
+
+export interface K8sIngressHostRule {
+  host: string;
+  paths: K8sIngressPath[];
+}
+
+export interface K8sIngress {
+  name: string;
+  namespace: string;
+  age: string;
+  className: string;
+  tls: boolean;
+  tlsHosts: string[];
+  rules: K8sIngressHostRule[];
+}
+
+export interface IngressPage {
+  ingresses: K8sIngress[];
+  total: number;
+}
+
+export interface K8sDaemonSet {
+  name: string;
+  namespace: string;
+  age: string;
+  desired: number;
+  current: number;
+  ready: number;
+  upToDate: number;
+  available: number;
+  labels: Record<string, string>;
+}
+
+export interface DaemonSetPage {
+  daemonSets: K8sDaemonSet[];
+  total: number;
+}
+
+export interface K8sStatefulSet {
+  name: string;
+  namespace: string;
+  age: string;
+  replicas: number;
+  readyReplicas: number;
+  serviceName: string;
+  labels: Record<string, string>;
+}
+
+export interface StatefulSetPage {
+  statefulSets: K8sStatefulSet[];
+  total: number;
 }
 
 const BASE = '/api/remote';
@@ -398,6 +669,13 @@ export const remoteConnectionAPI = {
     apiClient.post<ConnectFromSavedResponse>(`${HOSTS_BASE}/${id}/connect`),
 
   /**
+   * Updates the workspace preference for a saved host.
+   * Valid values: 'ssh', 'docker', 'kubernetes'.
+   */
+  updateWorkspacePreference: (id: string, preference: WorkspaceType) =>
+    apiClient.patch<void>(`${HOSTS_BASE}/${id}/workspace-preference`, { preference }),
+
+  /**
    * Returns a live analytics snapshot for a session.
    * Endpoint: GET /sessions/{sessionId}/analytics
    */
@@ -468,4 +746,208 @@ export const remoteConnectionAPI = {
   /** Aborts and removes an upload session. */
   abortUploadSession: (sessionId: string) =>
     apiClient.delete<void>(`${UPLOADS_BASE}/${sessionId}`),
+
+  // Docker API
+
+  /** Checks if Docker is available on the remote host. */
+  checkDockerAvailable: (sessionId: string) =>
+    apiClient.get<{ available: boolean }>(`${BASE}/sessions/${sessionId}/docker/status`),
+
+  /** Returns Docker daemon info (version, container/image counts, OS). */
+  getDockerInfo: (sessionId: string) =>
+    apiClient.get<DockerInfo>(`${BASE}/sessions/${sessionId}/docker/info`),
+
+  /** Returns Docker overview: info + running containers + live stats. */
+  getDockerOverview: (sessionId: string) =>
+    apiClient.get<DockerOverview>(`${BASE}/sessions/${sessionId}/docker/overview`),
+
+  /** Lists Docker containers with optional pagination. */
+  listDockerContainers: (sessionId: string, all = true, page = 0, pageSize = 20) =>
+    apiClient.get<ContainerPage>(
+      `${BASE}/sessions/${sessionId}/docker/containers?all=${all}&page=${page}&pageSize=${pageSize}`,
+    ),
+
+  /** Returns live stats for all running containers. */
+  getDockerContainerStats: (sessionId: string) =>
+    apiClient.get<DockerContainerStats[]>(`${BASE}/sessions/${sessionId}/docker/containers/stats`),
+
+  /** Starts a stopped container. */
+  startDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient.post<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}/start`),
+
+  /** Stops a running container. */
+  stopDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient.post<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}/stop`),
+
+  /** Restarts a container. */
+  restartDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient.post<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}/restart`),
+
+  /** Removes a stopped container. */
+  removeDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient.delete<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}`),
+
+  /** Returns tail logs for a container. */
+  getDockerContainerLogs: (sessionId: string, containerId: string, tail = 200) =>
+    apiClient.get<{ logs: string }>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}/logs?tail=${tail}`),
+
+  /** Lists all Docker images on the remote host. */
+  listDockerImages: (sessionId: string) =>
+    apiClient.get<ImagePage>(`${BASE}/sessions/${sessionId}/docker/images`),
+
+  /** Removes a Docker image from the remote host. */
+  removeDockerImage: (sessionId: string, imageId: string) =>
+    apiClient.delete<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/images/${imageId}`),
+
+  // -- Kubernetes --
+
+  /** Checks whether kubectl is available on the remote host. */
+  checkKubectlAvailable: (sessionId: string) =>
+    apiClient.get<{ available: boolean }>(`${BASE}/sessions/${sessionId}/k8s/status`),
+
+  /** Retrieves Kubernetes cluster info (version, platform, cluster name). */
+  getK8sClusterInfo: (sessionId: string) =>
+    apiClient.get<K8sClusterInfo>(`${BASE}/sessions/${sessionId}/k8s/info`),
+
+  /** Fetches the K8s cluster overview (counts, namespaces, recent pods). */
+  getK8sOverview: (sessionId: string, namespace = '') =>
+    apiClient.get<K8sOverview>(`${BASE}/sessions/${sessionId}/k8s/overview?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Lists all Kubernetes namespaces. */
+  listK8sNamespaces: (sessionId: string) =>
+    apiClient.get<K8sNamespace[]>(`${BASE}/sessions/${sessionId}/k8s/namespaces`),
+
+  /** Lists pods, optionally filtered by namespace. */
+  listK8sPods: (sessionId: string, namespace = '') =>
+    apiClient.get<PodPage>(`${BASE}/sessions/${sessionId}/k8s/pods?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Fetches tail logs for a specific pod. */
+  getK8sPodLogs: (sessionId: string, podName: string, namespace = 'default', tail = 200) =>
+    apiClient.get<{ logs: string }>(`${BASE}/sessions/${sessionId}/k8s/pods/${encodeURIComponent(podName)}/logs?namespace=${encodeURIComponent(namespace)}&tail=${tail}`),
+
+  /** Deletes a pod (triggers re-creation by its controller). */
+  deleteK8sPod: (sessionId: string, podName: string, namespace = 'default') =>
+    apiClient.delete<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/pods/${encodeURIComponent(podName)}?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Lists deployments, optionally filtered by namespace. */
+  listK8sDeployments: (sessionId: string, namespace = '') =>
+    apiClient.get<DeploymentPage>(`${BASE}/sessions/${sessionId}/k8s/deployments?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Scales a deployment to the specified number of replicas. */
+  scaleK8sDeployment: (sessionId: string, deploymentName: string, replicas: number, namespace = 'default') =>
+    apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/deployments/${encodeURIComponent(deploymentName)}/scale?namespace=${encodeURIComponent(namespace)}&replicas=${replicas}`, {}),
+
+  /** Restarts a deployment via rollout restart. */
+  restartK8sDeployment: (sessionId: string, deploymentName: string, namespace = 'default') =>
+    apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/deployments/${encodeURIComponent(deploymentName)}/restart?namespace=${encodeURIComponent(namespace)}`, {}),
+
+  /** Lists services, optionally filtered by namespace. */
+  listK8sServices: (sessionId: string, namespace = '') =>
+    apiClient.get<K8sServicePage>(`${BASE}/sessions/${sessionId}/k8s/services?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Lists all nodes in the cluster. */
+  listK8sNodes: (sessionId: string) =>
+    apiClient.get<NodePage>(`${BASE}/sessions/${sessionId}/k8s/nodes`),
+
+  /** Lists ConfigMaps, optionally filtered by namespace. */
+  listK8sConfigMaps: (sessionId: string, namespace = '') =>
+    apiClient.get<ConfigMapPage>(`${BASE}/sessions/${sessionId}/k8s/configmaps?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Lists Ingresses (networking.k8s.io/v1), optionally filtered by namespace. */
+  listK8sIngresses: (sessionId: string, namespace = '') =>
+    apiClient.get<IngressPage>(`${BASE}/sessions/${sessionId}/k8s/ingresses?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Lists DaemonSets, optionally filtered by namespace. */
+  listK8sDaemonSets: (sessionId: string, namespace = '') =>
+    apiClient.get<DaemonSetPage>(`${BASE}/sessions/${sessionId}/k8s/daemonsets?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Lists StatefulSets, optionally filtered by namespace. */
+  listK8sStatefulSets: (sessionId: string, namespace = '') =>
+    apiClient.get<StatefulSetPage>(`${BASE}/sessions/${sessionId}/k8s/statefulsets?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Restarts a DaemonSet via pod-template annotation patch. */
+  restartK8sDaemonSet: (sessionId: string, name: string, namespace = 'default') =>
+    apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/daemonsets/${encodeURIComponent(name)}/restart?namespace=${encodeURIComponent(namespace)}`, {}),
+
+  /** Restarts a StatefulSet via rollout restart. */
+  restartK8sStatefulSet: (sessionId: string, name: string, namespace = 'default') =>
+    apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/statefulsets/${encodeURIComponent(name)}/restart?namespace=${encodeURIComponent(namespace)}`, {}),
+
+  /** Scales a StatefulSet to the specified number of replicas. */
+  scaleK8sStatefulSet: (sessionId: string, name: string, replicas: number, namespace = 'default') =>
+    apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/statefulsets/${encodeURIComponent(name)}/scale?namespace=${encodeURIComponent(namespace)}&replicas=${replicas}`, {}),
+
+  /**
+   * Streams pod logs in follow mode via SSE.
+   * Uses raw fetch with Authorization header (EventSource doesn’t support headers).
+   * Returns a stop function — call it to abort the stream.
+   */
+  streamK8sPodLogs: async (
+    sessionId: string,
+    podName: string,
+    namespace = 'default',
+    tail = 100,
+    onLine: (line: string) => void,
+    onComplete: () => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const { API_BASE_URL } = await import('@/config/api.config');
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/k8s/pods/${encodeURIComponent(podName)}/logs/stream?namespace=${encodeURIComponent(namespace)}&tail=${tail}`;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(url, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { onComplete(); break; }
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() ?? '';
+          for (const part of parts) {
+            // SSE data lines: "data: <content>"
+            if (part.startsWith('data:')) onLine(part.slice(5).trimStart());
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        onError(err instanceof Error ? err.message : 'Stream failed');
+      }
+    })();
+    return () => controller.abort();
+  },
+
+  /** Fetches the live YAML for any K8s resource (status + managedFields stripped). */
+  getResourceYaml: (sessionId: string, kind: string, namespace: string, name: string) =>
+    apiClient.get<ResourceYaml>(`${BASE}/sessions/${sessionId}/k8s/resources/${encodeURIComponent(kind)}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`),
+
+  /**
+   * Server-side-applies a YAML document for any resource kind.
+   * Sends as text/plain to match the backend's @RequestBody String expectation.
+   */
+  applyResourceYaml: async (sessionId: string, yamlContent: string): Promise<PodActionResult> => {
+    const { API_BASE_URL } = await import('@/config/api.config');
+    const token = tokenStorage.getAccess();
+    const response = await fetch(`${API_BASE_URL}${BASE}/sessions/${sessionId}/k8s/resources/yaml`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/plain',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: yamlContent,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw { status: response.status, message: text || `Request failed: ${response.status}` };
+    }
+    return response.json() as Promise<PodActionResult>;
+  },
 };

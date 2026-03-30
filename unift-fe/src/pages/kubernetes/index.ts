@@ -1,0 +1,9 @@
+export { K8sDashboardPage } from './K8sDashboardPage';
+export { K8sPodsPage } from './K8sPodsPage';
+export { K8sDeploymentsPage } from './K8sDeploymentsPage';
+export { K8sServicesPage } from './K8sServicesPage';
+export { K8sNodesPage } from './K8sNodesPage';
+export { K8sIngressPage } from './K8sIngressPage';
+export { K8sStatefulSetsPage } from './K8sStatefulSetsPage';
+export { K8sDaemonSetsPage } from './K8sDaemonSetsPage';
+export { K8sConfigMapsPage } from './K8sConfigMapsPage';

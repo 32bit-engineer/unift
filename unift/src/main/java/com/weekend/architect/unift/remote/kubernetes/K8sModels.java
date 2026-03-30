@@ -185,7 +185,6 @@ public final class K8sModels {
         private String message;
     }
 
-    // ─── ConfigMaps ───────────────────────────────────────────────────────────
 
     @Data
     @Builder
@@ -208,7 +207,6 @@ public final class K8sModels {
         private int total;
     }
 
-    // ─── Ingresses ────────────────────────────────────────────────────────────
 
     @Data
     @Builder
@@ -253,8 +251,6 @@ public final class K8sModels {
         private int total;
     }
 
-    // ─── DaemonSets ───────────────────────────────────────────────────────────
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -280,7 +276,6 @@ public final class K8sModels {
         private int total;
     }
 
-    // ─── StatefulSets ─────────────────────────────────────────────────────────
 
     @Data
     @Builder
@@ -305,7 +300,6 @@ public final class K8sModels {
         private int total;
     }
 
-    // ─── Generic resource YAML (view / edit) ─────────────────────────────────
 
     @Data
     @Builder
@@ -320,7 +314,6 @@ public final class K8sModels {
         private String yaml;
     }
 
-    // ─── Rollout history / undo ───────────────────────────────────────────────
 
     @Data
     @Builder

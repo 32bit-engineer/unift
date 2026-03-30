@@ -94,7 +94,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
     // Refresh failed — log out and redirect to login
     tokenStorage.clear();
-    window.location.href = '?page=login';
+    window.location.href = '/login';
   }
 
   if (!response.ok) {

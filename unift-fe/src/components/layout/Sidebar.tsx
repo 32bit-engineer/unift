@@ -1,6 +1,7 @@
 // ─── Sidebar ───────────────────────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { SavedHostResponse } from '@/utils/remoteConnectionAPI';
+import type { SessionCapabilities } from '@/store/connectionStore';
 
 export interface NavItem {
   id:    string;
@@ -28,6 +29,9 @@ interface SidebarProps {
   onDeleteConfig?:       (id: string) => void;
   // Navigate to the full saved-hosts page when list > 10
   onShowAllSavedHosts?:  () => void;
+  // Workspace context — set when viewing a specific session workspace
+  workspaceSessionName?: string | null;
+  workspaceCapabilities?: SessionCapabilities | null;
 }
 
 // ─── Accordion ─────────────────────────────────────────────────────────────
@@ -149,8 +153,9 @@ function NavButton({
 
 // ─── Static nav sections ────────────────────────────────────────────────────
 const MAIN_NAV: NavItem[] = [
-  { id: 'my-files',       label: 'Dashbord',       icon: 'folder' },
-  { id: 'remote-hosts',   label: 'Sessions',    icon: 'dns' },
+  { id: 'my-files',        label: 'Dashboard',      icon: 'folder' },
+  { id: 'remote-hosts',    label: 'Sessions',        icon: 'dns' },
+  { id: 'connection-hub',  label: 'Infrastructure',  icon: 'hub' },
 ];
 
 const TRANSFERS_NAV: NavItem[] = [
@@ -166,6 +171,30 @@ const QUICK_ACCESS_NAV: NavItem[] = [
   { id: 'trash',    label: 'Trash',    icon: 'delete' },
 ];
 
+// Dynamic workspace nav items — rendered when user is inside a session workspace
+const WORKSPACE_BASE_NAV: NavItem[] = [
+  { id: 'ws-overview',  label: 'Overview',        icon: 'dashboard' },
+  { id: 'ws-terminal',  label: 'Terminal',         icon: 'terminal' },
+  { id: 'ws-files',     label: 'File Browser',     icon: 'folder_open' },
+];
+
+const WORKSPACE_DOCKER_NAV: NavItem[] = [
+  { id: 'ws-docker-containers', label: 'Containers', icon: 'view_in_ar' },
+  { id: 'ws-docker-images',     label: 'Images',     icon: 'layers' },
+];
+
+const WORKSPACE_K8S_NAV: NavItem[] = [
+  { id: 'ws-k8s-pods',        label: 'Pods',         icon: 'deployed_code' },
+  { id: 'ws-k8s-deployments', label: 'Deployments',  icon: 'rocket_launch' },
+  { id: 'ws-k8s-services',    label: 'Services',     icon: 'hub' },
+  { id: 'ws-k8s-nodes',       label: 'Nodes',        icon: 'dns' },
+];
+
+const WORKSPACE_MONITORING_NAV: NavItem[] = [
+  { id: 'ws-monitoring', label: 'Monitoring',  icon: 'monitoring' },
+  { id: 'ws-logs',       label: 'Logs',        icon: 'list_alt' },
+];
+
 export function Sidebar({
   activeItem,
   onSelectItem,
@@ -177,9 +206,30 @@ export function Sidebar({
   onConnectConfig,
   onDeleteConfig,
   onShowAllSavedHosts,
+  workspaceSessionName = null,
+  workspaceCapabilities = null,
 }: SidebarProps) {
   const [activeSessionsOpen, setActiveSessionsOpen] = useState(true);
   const [savedConnectionsOpen, setSavedConnectionsOpen] = useState(true);
+
+  const isInWorkspace = workspaceSessionName !== null;
+
+  // Build workspace nav items dynamically based on capabilities
+  const workspaceNav = useMemo(() => {
+    if (!isInWorkspace || !workspaceCapabilities) return [];
+    const items: NavItem[] = [...WORKSPACE_BASE_NAV];
+    return items;
+  }, [isInWorkspace, workspaceCapabilities]);
+
+  const workspaceDockerNav = useMemo(() => {
+    if (!workspaceCapabilities?.docker) return [];
+    return [...WORKSPACE_DOCKER_NAV];
+  }, [workspaceCapabilities?.docker]);
+
+  const workspaceK8sNav = useMemo(() => {
+    if (!workspaceCapabilities?.kubernetes) return [];
+    return [...WORKSPACE_K8S_NAV];
+  }, [workspaceCapabilities?.kubernetes]);
 
   const statusColor = (s: SavedHost['status']) =>
     s === 'online' ? '#4ade80' : s === 'warning' ? '#E07B39' : '#5a6380';
@@ -224,6 +274,88 @@ export function Sidebar({
 
       {/* ── Nav Sections ── */}
       <nav className="flex-1 overflow-y-auto custom-scrollbar py-2">
+
+        {/* WORKSPACE CONTEXT — only when inside a session workspace */}
+        {isInWorkspace && (
+          <>
+            <div className="px-3 pt-1 pb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ background: '#4ade80' }}
+                />
+                <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--color-text-warm)' }}>
+                  {workspaceSessionName}
+                </span>
+              </div>
+              <button
+                onClick={() => onSelectItem('connection-hub')}
+                className="text-[10px] cursor-pointer hover:underline transition-colors"
+                style={{ color: '#5a6380' }}
+              >
+                Back to Infrastructure
+              </button>
+            </div>
+
+            <SectionLabel>Workspace</SectionLabel>
+            <div className="flex flex-col gap-0.5 px-1">
+              {workspaceNav.map(item => (
+                <NavButton
+                  key={item.id}
+                  item={item}
+                  isActive={activeItem === item.id}
+                  onClick={() => onSelectItem(item.id)}
+                />
+              ))}
+            </div>
+
+            {workspaceDockerNav.length > 0 && (
+              <>
+                <SectionLabel>Docker</SectionLabel>
+                <div className="flex flex-col gap-0.5 px-1">
+                  {workspaceDockerNav.map(item => (
+                    <NavButton
+                      key={item.id}
+                      item={item}
+                      isActive={activeItem === item.id}
+                      onClick={() => onSelectItem(item.id)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {workspaceK8sNav.length > 0 && (
+              <>
+                <SectionLabel>Kubernetes</SectionLabel>
+                <div className="flex flex-col gap-0.5 px-1">
+                  {workspaceK8sNav.map(item => (
+                    <NavButton
+                      key={item.id}
+                      item={item}
+                      isActive={activeItem === item.id}
+                      onClick={() => onSelectItem(item.id)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            <SectionLabel>Observability</SectionLabel>
+            <div className="flex flex-col gap-0.5 px-1">
+              {WORKSPACE_MONITORING_NAV.map(item => (
+                <NavButton
+                  key={item.id}
+                  item={item}
+                  isActive={activeItem === item.id}
+                  onClick={() => onSelectItem(item.id)}
+                />
+              ))}
+            </div>
+
+            <div className="my-3 mx-3" style={{ borderTop: '1px solid var(--color-border-muted)' }} />
+          </>
+        )}
 
         {/* MAIN */}
         <SectionLabel>Main</SectionLabel>

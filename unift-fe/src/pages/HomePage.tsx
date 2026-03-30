@@ -8,6 +8,8 @@ import { SavedHostsPage } from './SavedHostsPage';
 import { TransferHistoryPage } from './TransferHistoryPage';
 import { TransferLogPage } from './TransferLogPage';
 import { UploadSessionsPage } from './UploadSessionsPage';
+import { ConnectionHubPage } from './ConnectionHubPage';
+import { KineticWorkspacePage } from './KineticWorkspacePage';
 import { TransferProgressPopup } from '@/components/ui';
 import { remoteConnectionAPI, type SessionState, type SavedHostResponse } from '@/utils/remoteConnectionAPI';
 import { getErrorMessage } from '@/utils/apiClient';
@@ -17,6 +19,8 @@ import type { UIHost } from './RemoteHostsManagerPage';
 type SubPage =
   | 'my-files'
   | 'remote-hosts'
+  | 'connection-hub'
+  | 'kinetic-workspace'
   | 'streaming'
   | 'recent'
   | 'starred'
@@ -28,7 +32,7 @@ type SubPage =
   | 'upload-sessions';
 
 const VALID_SUBPAGES: SubPage[] = [
-  'my-files', 'remote-hosts', 'streaming', 'recent', 'starred', 'shared', 'trash', 'saved-hosts', 'transfer-history', 'transfer-log', 'upload-sessions',
+  'my-files', 'remote-hosts', 'connection-hub', 'kinetic-workspace', 'streaming', 'recent', 'starred', 'shared', 'trash', 'saved-hosts', 'transfer-history', 'transfer-log', 'upload-sessions',
 ];
 
 function getSubPage(): SubPage {
@@ -48,6 +52,8 @@ function setSubPageUrl(subpage: SubPage) {
 const BREADCRUMBS: Record<SubPage, { parts: string[]; title: string; subtitle: string }> = {
   'my-files':          { parts: ['Home', 'Dashboard'],                  title: 'Dashboard',         subtitle: 'Cluster overview and live session metrics.' },
   'remote-hosts':      { parts: ['Home', 'Remote Host', 'Connections'], title: 'Remote Hosts',      subtitle: 'Manage SFTP, FTP, and SMB connections to remote servers.' },
+  'connection-hub':    { parts: ['Home', 'Infrastructure'],             title: 'Connection Hub',    subtitle: 'Manage SSH nodes and Kubernetes clusters.' },
+  'kinetic-workspace': { parts: ['Home', 'Infrastructure', 'Workspace'], title: 'Kinetic Workspace', subtitle: 'Live SSH workspace with resource monitoring.' },
   'streaming':         { parts: ['Home', 'Streaming'],                  title: 'Streaming',         subtitle: 'Stream media from remote sources.' },
   'recent':            { parts: ['Home', 'Recent'],                     title: 'Recent',            subtitle: 'Recently accessed files.' },
   'starred':           { parts: ['Home', 'Starred'],                    title: 'Starred',           subtitle: 'Your starred items.' },
@@ -86,6 +92,16 @@ function renderContent(
   onNavigateToTransferHistory: () => void,
   onNavigateToSessions: () => void,
   onNavigateToTransfers: () => void,
+  savedHostConfigs: import('@/utils/remoteConnectionAPI').SavedHostResponse[],
+  savedHosts: SavedHost[],
+  connectingConfigId: string | null,
+  deletingConfigId: string | null,
+  onConnectConfig: (id: string) => void,
+  onDeleteConfig: (id: string) => void,
+  onNavigateToAddNew: () => void,
+  workspaceSession: UIHost | null,
+  onLaunchWorkspace: (cfg: import('@/utils/remoteConnectionAPI').SavedHostResponse) => void,
+  onLeaveWorkspace: () => void,
 ): React.ReactNode {
   if (activeItem === 'my-files') {
     return (
@@ -106,6 +122,34 @@ function renderContent(
       />
     );
   }
+
+  if (activeItem === 'connection-hub') {
+    return (
+      <ConnectionHubPage
+        savedHostConfigs={savedHostConfigs}
+        activeSessions={savedHosts}
+        connectingConfigId={connectingConfigId}
+        deletingConfigId={deletingConfigId}
+        onConnect={onConnectConfig}
+        onDelete={onDeleteConfig}
+        onCreateNew={onNavigateToAddNew}
+        onLaunchWorkspace={onLaunchWorkspace}
+      />
+    );
+  }
+
+  if (activeItem === 'kinetic-workspace') {
+    if (!workspaceSession) {
+      return <PlaceholderPage title="Workspace" subtitle="No session selected." />;
+    }
+    return (
+      <KineticWorkspacePage
+        session={workspaceSession}
+        onBack={onLeaveWorkspace}
+      />
+    );
+  }
+
   if (activeItem === 'transfer-history') {
     return (
       <TransferHistoryPage
@@ -150,7 +194,7 @@ export function HomePage() {
       setSessions(
         raw.map(s => ({
           sessionId:     s.sessionId,
-          name:          `${s.host}:${s.port}`,
+          name:          s.label ?? `${s.host}:${s.port}`,
           status:        s.state === 'ACTIVE' ? ('online' as const) : ('offline' as const),
           userAtIp:      `${s.username}@${s.host}`,
           protocol:      s.protocol,
@@ -219,10 +263,61 @@ export function HomePage() {
     }
   }, []);
 
+  // Workspace session — set when navigating to kinetic-workspace
+  const [workspaceSession, setWorkspaceSession] = useState<UIHost | null>(null);
+
+  const handleLaunchWorkspace = useCallback(async (cfg: SavedHostResponse) => {
+    // Check if an active session for this config already exists
+    const displayName = cfg.label ?? cfg.hostname;
+    const existing = sessions.find(
+      s => s.name === displayName || s.name === cfg.hostname || s.userAtIp.includes(cfg.hostname),
+    );
+
+    let session = existing ?? null;
+
+    if (!session) {
+      try {
+        setConnectingConfigId(cfg.id);
+        const response = await remoteConnectionAPI.connectSavedHost(cfg.id);
+        session = {
+          sessionId:     response.sessionId,
+          name:          response.label ?? `${response.host}:${response.port}`,
+          status:        'online' as const,
+          userAtIp:      `${response.username}@${response.host}`,
+          protocol:      response.protocol,
+          port:          response.port,
+          lastConnected: new Date(response.createdAt).toLocaleTimeString(),
+          latency:       0,
+        };
+        setSessions(prev => [...prev, session!]);
+        void reloadSavedConfigs();
+      } catch (err) {
+        console.error(getErrorMessage(err, 'Failed to connect to saved host'));
+        return;
+      } finally {
+        setConnectingConfigId(null);
+      }
+    }
+
+    setWorkspaceSession(session);
+    setActiveNav('kinetic-workspace');
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', 'home');
+    url.searchParams.set('subpage', 'kinetic-workspace');
+    url.searchParams.set('workspace-session', session.sessionId);
+    window.history.pushState(null, '', url.toString());
+  }, [sessions, reloadSavedConfigs]);
+
+  const handleLeaveWorkspace = useCallback(() => {
+    setActiveNav('connection-hub');
+    setSubPageUrl('connection-hub');
+    setWorkspaceSession(null);
+  }, []);
+
   // Derive saved-hosts list for the sidebar from the shared sessions state
   const savedHosts: SavedHost[] = sessions.map(s => ({
     id:     s.sessionId,
-    label:  s.name.split(':')[0],   // just the hostname
+    label:  s.name,
     status: s.status,
   }));
 
@@ -376,7 +471,25 @@ export function HomePage() {
                 onDelete={handleDeleteConfig}
               />
             )
-            : renderContent(activeNav, sessions, setSessions, reloadSavedConfigs, handleNavigateToTransferHistory, handleNavigateToSessions, handleNavigateToTransferHistory)
+            : renderContent(
+                activeNav,
+                sessions,
+                setSessions,
+                reloadSavedConfigs,
+                handleNavigateToTransferHistory,
+                handleNavigateToSessions,
+                handleNavigateToTransferHistory,
+                savedHostConfigs,
+                savedHosts,
+                connectingConfigId,
+                deletingConfigId,
+                handleConnectConfig,
+                handleDeleteConfig,
+                () => handleNavSelect('remote-hosts'),
+                workspaceSession,
+                handleLaunchWorkspace,
+                handleLeaveWorkspace,
+              )
           }
         </main>
       </div>
