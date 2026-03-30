@@ -16,6 +16,7 @@ import com.weekend.architect.unift.common.utils.StringUtils;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.AbstractRemoteConnection;
 import com.weekend.architect.unift.remote.core.CancellationToken;
+import com.weekend.architect.unift.remote.core.PortForwardable;
 import com.weekend.architect.unift.remote.core.RemoteShell;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
 import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
@@ -63,7 +64,7 @@ import lombok.extern.slf4j.Slf4j;
  * </pre>
  */
 @Slf4j
-public class SshRemoteConnection extends AbstractRemoteConnection implements RemoteShell {
+public class SshRemoteConnection extends AbstractRemoteConnection implements RemoteShell, PortForwardable {
 
     /** POSIX path separator — remote hosts are always Unix-like. */
     private static final String PATH_SEP = "/";
@@ -214,6 +215,43 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         log.debug("[{}] Preparing to close SSH connection", session.getSessionId());
     }
 
+    // PortForwardable ─────────────────────────────────────────────────────────
+
+    /**
+     * Opens a local-to-remote port forward through the JSch session.
+     * Passing {@code 0} lets the OS pick a free port; the bound port is returned.
+     *
+     * <p>Used by {@code K8sClientPool} to tunnel Kubernetes API traffic when the
+     * API server is not directly reachable from the UniFT host.
+     */
+    @Override
+    public int forwardLocalPort(String remoteHost, int remotePort) throws Exception {
+        if (jschSession == null || !jschSession.isConnected()) {
+            throw new IllegalStateException("SSH session is not connected");
+        }
+        int assignedPort = jschSession.setPortForwardingL(0, remoteHost, remotePort);
+        log.info(
+                "[{}] SSH port forward established: localhost:{} → {}:{}",
+                session.getSessionId(),
+                assignedPort,
+                remoteHost,
+                remotePort);
+        return assignedPort;
+    }
+
+    /** Tears down a port forward previously opened by {@link #forwardLocalPort}. */
+    @Override
+    public void cancelPortForward(int localPort) {
+        if (jschSession == null || !jschSession.isConnected()) return;
+        try {
+            jschSession.delPortForwardingL(localPort);
+            log.info("[{}] SSH port forward on localhost:{} released", session.getSessionId(), localPort);
+        } catch (Exception e) {
+            log.warn(
+                    "[{}] Failed to release port forward on {}: {}", session.getSessionId(), localPort, e.getMessage());
+        }
+    }
+
     /**
      * Detects the remote OS by running a short exec command over the existing SSH session.
      *
@@ -293,7 +331,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
             byte[] buf = new byte[512];
             StringBuilder sb = new StringBuilder();
             int n;
-            long deadline = System.currentTimeMillis() + 5_000L;
+            long deadline = System.currentTimeMillis() + 30_000L;
             while ((n = in.read(buf)) != -1 && System.currentTimeMillis() < deadline) {
                 sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
             }

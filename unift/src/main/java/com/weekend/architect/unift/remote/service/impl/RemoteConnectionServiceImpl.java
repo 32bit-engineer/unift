@@ -64,26 +64,21 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
     @Override
     public ConnectResponse openSession(UUID ownerId, ConnectRequest request) {
-        // 1. Enforce per-user session cap
-        int activeSessions = sessionRegistry.getByOwner(ownerId).size();
-        if (activeSessions >= props.getMaxSessionsPerUser()) {
-            throw new MaxSessionsExceededException(props.getMaxSessionsPerUser());
-        }
-
-        // 2. Build typed credentials from request
+        // 1. Build typed credentials from request
         RemoteCredentials credentials = buildCredentials(request);
 
-        // 3. Determine TTL
+        // 2. Determine TTL
         long ttl = request.getSessionTtlMinutes() > 0
                 ? Math.min(request.getSessionTtlMinutes(), props.getSessionTtlMinutes())
                 : props.getSessionTtlMinutes();
 
-        // 4. Build session envelope
+        // 3. Build session envelope
         String sessionId = UuidUtils.uuidVersion7().toString();
         OffsetDateTime now = OffsetDateTime.now();
         RemoteSession session = RemoteSession.builder()
                 .sessionId(sessionId)
                 .ownerId(ownerId)
+                .savedHostId(request.getSavedHostId())
                 .label(request.getLabel())
                 .protocol(request.getProtocol())
                 .host(request.getHost())
@@ -96,12 +91,18 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 .state(SessionState.INITIALIZING)
                 .build();
 
-        // 5. Create & connect
+        // 4. Create & connect
         RemoteConnection connection = connectionFactory.create(credentials, session);
         connection.connect(credentials); // throws ConnectionException on failure
 
-        // 6. Register
-        sessionRegistry.register(connection);
+        // 5. Atomically check per-user cap and register (prevents TOCTOU race)
+        if (!sessionRegistry.registerIfUnderCap(connection, ownerId, props.getMaxSessionsPerUser())) {
+            try {
+                connection.close();
+            } catch (Exception ignored) {
+            }
+            throw new MaxSessionsExceededException(props.getMaxSessionsPerUser());
+        }
 
         // 6a. Initialize per-session metrics bucket
         metricsStore.initSession(sessionId);

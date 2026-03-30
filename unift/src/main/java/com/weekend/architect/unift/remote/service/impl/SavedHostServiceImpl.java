@@ -7,6 +7,7 @@ import com.weekend.architect.unift.remote.dto.SavedHostResponse;
 import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.exception.SavedHostNotFoundException;
 import com.weekend.architect.unift.remote.model.SavedHost;
+import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.repository.SavedHostRepository;
 import com.weekend.architect.unift.remote.service.ConnectRequestAssembler;
 import com.weekend.architect.unift.remote.service.CredentialValidator;
@@ -41,6 +42,7 @@ public class SavedHostServiceImpl implements SavedHostService {
     private final SavedHostRepository hostRepo;
     private final CredentialEncryptionService encryption;
     private final RemoteConnectionService connectionService;
+    private final SessionRegistry sessionRegistry;
 
     /** All protocol-specific credential validators discovered via Spring DI. */
     private final List<CredentialValidator> credentialValidators;
@@ -129,6 +131,16 @@ public class SavedHostServiceImpl implements SavedHostService {
         return response;
     }
 
+    @Override
+    public void updateWorkspacePreference(UUID ownerId, UUID hostId, String preference) {
+        requireOwned(ownerId, hostId);
+        boolean updated = hostRepo.updateWorkspacePreference(hostId, ownerId, preference);
+        if (!updated) {
+            throw new SavedHostNotFoundException(hostId);
+        }
+        log.info("Updated workspace preference for host [{}] to '{}' (user {})", hostId, preference, ownerId);
+    }
+
     /**
      * Finds the {@link CredentialValidator} that supports the given protocol.
      *
@@ -167,6 +179,9 @@ public class SavedHostServiceImpl implements SavedHostService {
     }
 
     private SavedHostResponse toResponse(SavedHost h) {
+        // Look up any currently-active session that was opened from this saved host
+        var activeSession = sessionRegistry.findBySavedHostId(h.getId()).map(conn -> conn.getSession());
+
         return SavedHostResponse.builder()
                 .id(h.getId())
                 .label(h.getLabel())
@@ -179,6 +194,9 @@ public class SavedHostServiceImpl implements SavedHostService {
                 .expectedFingerprint(h.getExpectedFingerprint())
                 .createdAt(h.getCreatedAt())
                 .lastUsed(h.getLastUsed())
+                .workspacePreference(h.getWorkspacePreference())
+                .activeSessionId(activeSession.map(s -> s.getSessionId()).orElse(null))
+                .activeSessionInitiatedBy(activeSession.map(s -> s.getOwnerId()).orElse(null))
                 .build();
     }
 }

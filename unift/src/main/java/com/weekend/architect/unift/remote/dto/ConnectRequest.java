@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,6 +32,13 @@ public class ConnectRequest {
      * Returned back in the ConnectResponse.
      */
     private String label;
+
+    /**
+     * Optional: The saved-host ID this session originates from.
+     * Populated automatically when connecting via {@code POST /api/hosts/{id}/connect}.
+     * Used to correlate active sessions back to their saved-host entry.
+     */
+    private UUID savedHostId;
 
     @NotBlank(message = "host is required")
     private String host;

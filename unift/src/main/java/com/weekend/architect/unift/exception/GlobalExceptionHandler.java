@@ -156,6 +156,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody(HttpStatus.FORBIDDEN, ex.getMessage()));
     }
 
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedOperation(UnsupportedOperationException ex) {
+        log.warn("Unsupported operation: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage()));
+    }
+
     /** Catch-all for any other remote-connection failure (connect errors, transfer errors, browse errors). */
     @ExceptionHandler(RemoteConnectionException.class)
     public ResponseEntity<ErrorResponse> handleRemoteConnection(RemoteConnectionException ex) {

@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -135,4 +137,29 @@ public class SavedHostController {
         ConnectResponse response = service.connect(principal.user().getId(), id);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+
+    @PatchMapping("/{id}/workspace-preference")
+    @Operation(
+            summary = "Update workspace preference",
+            description = "Sets the preferred workspace type (ssh, docker, kubernetes) for a saved host. "
+                    + "Determines which dedicated sidebar and landing page to show on reconnect.",
+            responses = {
+                @ApiResponse(responseCode = "204", description = "Preference updated"),
+                @ApiResponse(responseCode = "400", description = "Invalid preference value", content = @Content),
+                @ApiResponse(responseCode = "404", description = "Host not found", content = @Content)
+            })
+    public ResponseEntity<Void> updateWorkspacePreference(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        String preference = body.get("preference");
+        if (preference == null || !VALID_WORKSPACE_PREFERENCES.contains(preference)) {
+            return ResponseEntity.badRequest().build();
+        }
+        service.updateWorkspacePreference(principal.user().getId(), id, preference);
+        return ResponseEntity.noContent().build();
+    }
+
+    private static final java.util.Set<String> VALID_WORKSPACE_PREFERENCES =
+            java.util.Set.of("ssh", "docker", "kubernetes");
 }

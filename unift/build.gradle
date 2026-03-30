@@ -57,6 +57,9 @@ dependencies {
 	// SSH / SFTP — modern maintained JSch fork
 	implementation 'com.github.mwiede:jsch:0.2.21'
 
+	// Kubernetes Java SDK — direct REST calls to k8s API server (replaces kubectl-over-SSH)
+	implementation 'io.fabric8:kubernetes-client:7.3.1'
+
 	// Caffeine in-process cache
 	implementation 'com.github.ben-manes.caffeine:caffeine'
 
@@ -65,6 +68,8 @@ dependencies {
 
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
+
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
 	annotationProcessor 'org.projectlombok:lombok'
 

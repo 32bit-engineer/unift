@@ -132,3 +132,27 @@ unift:
     allowed-methods: GET,PUT,POST,DELETE,PATCH,OPTIONS
     allow-credentials: true
     max-age: 3600
+
+  rate-limit:
+    enabled: ${UNIFT_RATE_LIMIT_ENABLED:true}
+    rules:
+      - path: /api/auth/login
+        methods: [POST]
+        max-requests: ${UNIFT_RL_LOGIN_MAX:10}
+        window-seconds: ${UNIFT_RL_LOGIN_WINDOW:60}
+      - path: /api/auth/register
+        methods: [POST]
+        max-requests: ${UNIFT_RL_REGISTER_MAX:5}
+        window-seconds: ${UNIFT_RL_REGISTER_WINDOW:60}
+      - path: /api/auth/refresh
+        methods: [POST]
+        max-requests: ${UNIFT_RL_REFRESH_MAX:20}
+        window-seconds: ${UNIFT_RL_REFRESH_WINDOW:60}
+      - path: /api/remote/sessions
+        methods: [POST]
+        max-requests: ${UNIFT_RL_SESSION_OPEN_MAX:10}
+        window-seconds: ${UNIFT_RL_SESSION_OPEN_WINDOW:60}
+      - path: /api/remote/test-connection
+        methods: [POST]
+        max-requests: ${UNIFT_RL_TEST_CONN_MAX:15}
+        window-seconds: ${UNIFT_RL_TEST_CONN_WINDOW:60}

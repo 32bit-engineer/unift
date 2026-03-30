@@ -1,7 +1,9 @@
 package com.weekend.architect.unift.remote.registry;
 
+import com.weekend.architect.unift.common.cache.namedcache.SshConnectionCache;
 import com.weekend.architect.unift.common.cache.namedcache.TerminalSessionCache;
 import com.weekend.architect.unift.remote.config.TerminalProperties;
+import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.model.TerminalSession;
 import com.weekend.architect.unift.remote.service.TerminalEventPublisher;
 import java.io.IOException;
@@ -9,7 +11,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -26,6 +28,7 @@ import org.springframework.web.socket.PingMessage;
  *   <li>Activity tracking ({@link #touchActivity}) for idle detection</li>
  *   <li>Periodic ping to keep WebSocket connections alive through CDN/LB</li>
  *   <li>Idle reaper that force-closes sessions idle beyond {@code idleTimeoutMinutes}</li>
+ *   <li>Propagates terminal activity to parent SSH session to maintain sliding TTL</li>
  * </ol>
  *
  * <h6>Backing store</h6>
@@ -45,12 +48,29 @@ import org.springframework.web.socket.PingMessage;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class TerminalSessionRegistry {
 
     private final TerminalSessionCache store;
     private final TerminalProperties props;
     private final TerminalEventPublisher eventPublisher;
+
+    /**
+     * Lazily resolved reference to the SSH connection cache. Breaks the circular dependency
+     * between SessionRegistry (depends on TerminalSessionRegistry for cascade) and
+     * TerminalSessionRegistry (needs SSH cache to renew parent TTL on terminal activity).
+     */
+    private final AtomicReference<SshConnectionCache> sessionRegistryRef = new AtomicReference<>();
+
+    public TerminalSessionRegistry(
+            TerminalSessionCache store,
+            TerminalProperties props,
+            TerminalEventPublisher eventPublisher,
+            SshConnectionCache sshConnectionCache) {
+        this.store = store;
+        this.props = props;
+        this.eventPublisher = eventPublisher;
+        this.sessionRegistryRef.set(sshConnectionCache);
+    }
 
     /**
      * Atomically checks the per-user session cap and, if under the limit, registers
@@ -107,7 +127,30 @@ public class TerminalSessionRegistry {
 
     public void touchActivity(String wsSessionId) {
         TerminalSession session = store.getIfPresent(wsSessionId);
-        if (session != null) session.touch();
+        if (session != null) {
+            session.touch();
+            // Propagate terminal activity to the parent SSH session to prevent
+            // TTL expiry while the user is actively using a terminal.
+            renewParentSessionTtl(session.sshSessionId());
+        }
+    }
+
+    /**
+     * Renews the TTL on the parent SSH session so that terminal activity
+     * keeps the underlying connection alive.
+     */
+    private void renewParentSessionTtl(String sshSessionId) {
+        try {
+            SshConnectionCache cache = sessionRegistryRef.get();
+            if (cache != null) {
+                RemoteConnection remote = cache.getIfPresent(sshSessionId);
+                if (remote != null && remote.getSession().isSlidingTtl()) {
+                    remote.getSession().renewTtl();
+                }
+            }
+        } catch (Exception e) {
+            log.trace("[terminal-registry] Failed to renew parent TTL for {}: {}", sshSessionId, e.getMessage());
+        }
     }
 
     public long countByOwner(UUID ownerId) {

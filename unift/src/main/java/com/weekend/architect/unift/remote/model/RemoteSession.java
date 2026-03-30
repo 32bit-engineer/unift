@@ -36,6 +36,12 @@ public class RemoteSession {
     /** The authenticated UniFT user who owns this session. */
     private final UUID ownerId;
 
+    /**
+     * The saved-host entry that was used to open this session, or {@code null}
+     * when the session was created via a direct (ad-hoc) connect call.
+     */
+    private final UUID savedHostId;
+
     /** Friendly alias for this connection. */
     private final String label;
 

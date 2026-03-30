@@ -113,7 +113,10 @@ CREATE TABLE saved_hosts (
   last_used   TIMESTAMP,
 
   strict_host_key_checking BOOLEAN NOT NULL DEFAULT FALSE,
-  expected_fingerprint     TEXT
+  expected_fingerprint     TEXT,
+
+  -- User's preferred workspace type for this host (drives sidebar + landing page on reconnect)
+  workspace_preference     VARCHAR(20) DEFAULT 'ssh'
 );
 
 ---

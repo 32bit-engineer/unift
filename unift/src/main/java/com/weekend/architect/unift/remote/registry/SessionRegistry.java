@@ -6,8 +6,10 @@ import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
+import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +46,11 @@ public class SessionRegistry {
 
     private final SessionMetricsStore metricsStore;
     private final TerminalSessionRegistry terminalSessionRegistry;
+    /**
+     * Evicts the cached Fabric8 KubernetesClient (+ any SSH port-forward tunnel) when
+     * the parent SSH session is closed. Injected lazily to avoid a circular dependency.
+     */
+    private final K8sClientPool k8sClientPool;
 
     /**
      * Registers a new (already-connected) session.
@@ -51,6 +58,36 @@ public class SessionRegistry {
     public void register(RemoteConnection connection) {
         store.put(connection.getSessionId(), connection);
         log.info("[registry] Registered session {}", connection.getSessionId());
+    }
+
+    /**
+     * Atomically checks the per-user session cap and, if under the limit, registers the
+     * given connection. Prevents the TOCTOU race where two concurrent openSession calls
+     * both pass the cap check and both register, exceeding the intended limit.
+     *
+     * @param connection the already-connected session to register
+     * @param ownerId    the user who owns this session
+     * @param maxSessions per-user session cap
+     * @return true if registered, false if cap would be exceeded
+     */
+    public synchronized boolean registerIfUnderCap(RemoteConnection connection, UUID ownerId, int maxSessions) {
+        long current = getByOwner(ownerId).size();
+        if (current >= maxSessions) {
+            log.warn(
+                    "[registry] Per-user session cap ({}) reached for user {} — rejecting session {}",
+                    maxSessions,
+                    ownerId,
+                    connection.getSessionId());
+            return false;
+        }
+        store.put(connection.getSessionId(), connection);
+        log.info(
+                "[registry] Registered session {} for user {} (now {}/{})",
+                connection.getSessionId(),
+                ownerId,
+                current + 1,
+                maxSessions);
+        return true;
     }
 
     /**
@@ -80,6 +117,8 @@ public class SessionRegistry {
         if (conn != null) {
             // Cascade first — clean WS close frame before the SSH transport drops.
             terminalSessionRegistry.closeAllBySshSession(sessionId, "ssh-session-removed");
+            // Tear down Fabric8 client + any SSH port-forward tunnel for this session.
+            k8sClientPool.evict(sessionId);
             try {
                 conn.close();
             } catch (Exception e) {
@@ -98,6 +137,17 @@ public class SessionRegistry {
                 .filter(c -> ownerId.equals(c.getSession().getOwnerId()))
                 .filter(c -> c.getSession().getState() == SessionState.ACTIVE)
                 .toList();
+    }
+
+    /**
+     * Returns the first active session that was opened from the given saved-host entry,
+     * or an empty Optional if no such session currently exists.
+     */
+    public Optional<RemoteConnection> findBySavedHostId(UUID savedHostId) {
+        return store.values().stream()
+                .filter(c -> savedHostId.equals(c.getSession().getSavedHostId()))
+                .filter(c -> c.getSession().getState() == SessionState.ACTIVE)
+                .findFirst();
     }
 
     /** Returns the approximate number of registered sessions. */
