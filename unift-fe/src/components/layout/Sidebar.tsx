@@ -154,21 +154,9 @@ function NavButton({
 // Static nav items for main sections after login
 const MAIN_NAV: NavItem[] = [
   { id: 'connection-hub',  label: 'Infrastructure',  icon: 'hub' },
-  { id: 'my-files',        label: 'Dashboard',      icon: 'folder' },
+  { id: 'my-files',        label: 'Dashboard',       icon: 'dashboard' },
   { id: 'remote-hosts',    label: 'Sessions',        icon: 'dns' },
-];
-
-const TRANSFERS_NAV: NavItem[] = [
-  { id: 'transfer-history', label: 'Active Transfers', icon: 'swap_vert' },
-  { id: 'transfer-log',     label: 'Transfer Log',     icon: 'history' },
-  { id: 'upload-sessions',  label: 'Upload Sessions',  icon: 'cloud_upload' },
-];
-
-const QUICK_ACCESS_NAV: NavItem[] = [
-  { id: 'recent',   label: 'Recent',   icon: 'history' },
-  { id: 'starred',  label: 'Starred',  icon: 'star',   badge: 3 },
-  { id: 'shared',   label: 'Shared',   icon: 'share' },
-  { id: 'trash',    label: 'Trash',    icon: 'delete' },
+  { id: 'transfer-history', label: 'Transfers',      icon: 'swap_vert' },
 ];
 
 // Dynamic workspace nav items — rendered when user is inside a session workspace
@@ -363,32 +351,6 @@ export function Sidebar({
         <SectionLabel>Main</SectionLabel>
         <div className="flex flex-col gap-0.5 px-1">
           {MAIN_NAV.map(item => (
-            <NavButton
-              key={item.id}
-              item={item}
-              isActive={activeItem === item.id}
-              onClick={() => onSelectItem(item.id)}
-            />
-          ))}
-        </div>
-
-        {/* QUICK ACCESS */}
-        <SectionLabel>Quick Access</SectionLabel>
-        <div className="flex flex-col gap-0.5 px-1">
-          {QUICK_ACCESS_NAV.map(item => (
-            <NavButton
-              key={item.id}
-              item={item}
-              isActive={activeItem === item.id}
-              onClick={() => onSelectItem(item.id)}
-            />
-          ))}
-        </div>
-
-        {/* TRANSFERS */}
-        <SectionLabel>Transfers</SectionLabel>
-        <div className="flex flex-col gap-0.5 px-1">
-          {TRANSFERS_NAV.map(item => (
             <NavButton
               key={item.id}
               item={item}

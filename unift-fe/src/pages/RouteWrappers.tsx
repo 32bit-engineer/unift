@@ -23,8 +23,10 @@ import { ConnectionHubPage } from './ConnectionHubPage';
 import { KineticWorkspacePage } from './KineticWorkspacePage';
 import { SavedHostsPage } from './SavedHostsPage';
 import { TransferHistoryPage } from './TransferHistoryPage';
-import { DockerDashboardPage, DockerContainersPage, DockerImagesPage } from './docker';
+import { DockerDashboardPage, DockerContainersPage, DockerImagesPage, DockerNetworksPage, DockerVolumesPage, DockerComposePage, DockerMonitoringPage, DockerLogsPage } from './docker';
 import { K8sDashboardPage, K8sPodsPage, K8sDeploymentsPage, K8sServicesPage, K8sNodesPage, K8sIngressPage, K8sStatefulSetsPage, K8sDaemonSetsPage, K8sConfigMapsPage } from './kubernetes';
+import { SshMonitoringPage } from './SshMonitoringPage';
+import { SshLogsPage } from './SshLogsPage';
 import type { UIHost } from './RemoteHostsManager/types';
 import type { SavedHost } from '@/components/layout';
 
@@ -51,6 +53,8 @@ export function DashboardRoute() {
       sessions={uiHosts}
       onNavigateToSessions={() => navigate('/sessions')}
       onNavigateToTransfers={() => navigate('/transfers/active')}
+      onNewConnection={() => navigate('/sessions')}
+      onOpenWorkspace={(sessionId) => navigate(`/workspace/${sessionId}`)}
     />
   );
 }
@@ -196,6 +200,7 @@ export function WorkspaceRoute() {
     <KineticWorkspacePage
       session={uiHost}
       onBack={() => navigate('/infrastructure')}
+      capabilitiesDetected={session.capabilitiesDetected}
     />
   );
 }
@@ -274,6 +279,57 @@ export function DockerImagesRoute() {
 
   if (!sessionId) return null;
   return <DockerImagesPage sessionId={sessionId} />;
+}
+
+export function DockerNetworksRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <DockerNetworksPage sessionId={sessionId} />;
+}
+
+export function DockerVolumesRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <DockerVolumesPage sessionId={sessionId} />;
+}
+
+export function DockerComposeRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <DockerComposePage sessionId={sessionId} />;
 }
 
 export function K8sDashboardRoute() {
@@ -427,4 +483,72 @@ export function K8sConfigMapsRoute() {
 
   if (!sessionId) return null;
   return <K8sConfigMapsPage sessionId={sessionId} />;
+}
+
+export function SshMonitoringRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <SshMonitoringPage sessionId={sessionId} />;
+}
+
+export function SshLogsRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <SshLogsPage sessionId={sessionId} />;
+}
+
+export function DockerMonitoringRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <DockerMonitoringPage sessionId={sessionId} />;
+}
+
+export function DockerLogsRoute() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+  const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
+
+  useEffect(() => {
+    if (!sessionId) {
+      navigate('/infrastructure');
+      return;
+    }
+    setActiveWorkspace(sessionId);
+  }, [sessionId, navigate, setActiveWorkspace]);
+
+  if (!sessionId) return null;
+  return <DockerLogsPage sessionId={sessionId} />;
 }

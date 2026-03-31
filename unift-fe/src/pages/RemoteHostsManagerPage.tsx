@@ -196,7 +196,8 @@ export function RemoteHostsManagerPage({
       onSessionsChange(
         activeSessions.map((s: SessionState) => ({
           sessionId:     s.sessionId,
-          name:          `${s.host}:${s.port}`,
+          name:          s.label ?? `${s.host}:${s.port}`,
+          label:         s.label,
           status:        s.state === 'ACTIVE' ? ('online' as const) : ('offline' as const),
           userAtIp:      `${s.username}@${s.host}`,
           protocol:      s.protocol,
@@ -377,8 +378,14 @@ export function RemoteHostsManagerPage({
       await remoteConnectionAPI.closeSession(sessionId);
       onSessionsChange(sessions.filter(h => h.sessionId !== sessionId));
       setError(null);
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to disconnect'));
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status === 404 || status === 410) {
+        onSessionsChange(sessions.filter(h => h.sessionId !== sessionId));
+        setError(null);
+      } else {
+        setError(getErrorMessage(err, 'Failed to disconnect'));
+      }
     } finally {
       setLoading(false);
     }

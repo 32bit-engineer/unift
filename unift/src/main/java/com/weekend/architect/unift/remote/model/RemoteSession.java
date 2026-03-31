@@ -3,7 +3,10 @@ package com.weekend.architect.unift.remote.model;
 import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import java.time.OffsetDateTime;
+import java.util.Collections;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Data;
@@ -68,6 +71,63 @@ public class RemoteSession {
      * {@code null} until detection completes.
      */
     private volatile String remoteOs;
+
+    /**
+     * The set of workspace types currently active for this session.
+     * Always contains "ssh" as the base workspace. Thread-safe via ConcurrentHashMap.
+     */
+    @Builder.Default
+    private final Set<String> activeWorkspaces = ConcurrentHashMap.newKeySet();
+
+    private static final Set<String> VALID_WORKSPACE_TYPES = Set.of("ssh", "docker", "kubernetes");
+
+    /** Call after construction to seed the default "ssh" workspace. */
+    public void initActiveWorkspaces() {
+        activeWorkspaces.add("ssh");
+    }
+
+    /**
+     * Activates a workspace type for this session.
+     *
+     * @param type one of "ssh", "docker", "kubernetes"
+     * @throws IllegalArgumentException if the type is not valid
+     */
+    public void activateWorkspace(String type) {
+        if (!VALID_WORKSPACE_TYPES.contains(type)) {
+            throw new IllegalArgumentException("Invalid workspace type: " + type
+                    + ". Valid types: " + VALID_WORKSPACE_TYPES);
+        }
+        activeWorkspaces.add(type);
+    }
+
+    /**
+     * Deactivates a workspace type for this session.
+     * The "ssh" workspace cannot be deactivated.
+     *
+     * @param type the workspace type to deactivate
+     * @throws IllegalArgumentException if the type is not valid
+     * @throws IllegalStateException    if attempting to deactivate "ssh"
+     */
+    public void deactivateWorkspace(String type) {
+        if (!VALID_WORKSPACE_TYPES.contains(type)) {
+            throw new IllegalArgumentException("Invalid workspace type: " + type
+                    + ". Valid types: " + VALID_WORKSPACE_TYPES);
+        }
+        if ("ssh".equals(type)) {
+            throw new IllegalStateException("Cannot deactivate the base SSH workspace");
+        }
+        activeWorkspaces.remove(type);
+    }
+
+    /** Returns an unmodifiable snapshot of the active workspace types. */
+    public Set<String> getActiveWorkspaces() {
+        return Collections.unmodifiableSet(Set.copyOf(activeWorkspaces));
+    }
+
+    /** Checks whether the given workspace type is currently active. */
+    public boolean isWorkspaceActive(String type) {
+        return activeWorkspaces.contains(type);
+    }
 
     public OffsetDateTime getExpiresAt() {
         return this.atomicExpiresAt.get();

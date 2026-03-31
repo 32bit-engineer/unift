@@ -63,9 +63,38 @@ export function K8sServicesPage({ sessionId }: K8sServicesPageProps) {
 
   if (loading && services.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-        <span className="material-symbols-rounded" style={{ fontSize: 28, marginRight: 10, animation: 'spin 1s linear infinite' }}>progress_activity</span>
-        Loading services...
+      <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+          {[0, 1, 2, 3].map(i => <div key={i} className="shimmer" style={{ borderRadius: 10, height: 80 }} />)}
+        </div>
+        <div style={{ background: 'var(--bg-card, #1b1b23)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="shimmer" style={{ height: 16, width: 180, borderRadius: 4 }} />
+            <div className="shimmer" style={{ height: 32, width: 140, borderRadius: 7 }} />
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {[140, 80, 100, 100, 70, 60].map((w, i) => (
+                  <th key={i} style={{ padding: '12px 14px' }}>
+                    <div className="shimmer" style={{ height: 10, width: w, borderRadius: 4 }} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }, (_, ri) => (
+                <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  {[150, 70, 110, 110, 60, 50].map((w, ci) => (
+                    <td key={ci} style={{ padding: '14px' }}>
+                      <div className="shimmer" style={{ height: 12, width: w, borderRadius: 4 }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -83,7 +112,7 @@ export function K8sServicesPage({ sessionId }: K8sServicesPageProps) {
   }
 
   return (
-    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto', height: '100%' }}>
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto' }}>
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
         <StatCard label="ACTIVE SERVICES" value={stats.total} accent="#4ade80" />
@@ -108,17 +137,21 @@ export function K8sServicesPage({ sessionId }: K8sServicesPageProps) {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <select
-              value={selectedNs}
-              onChange={(e) => setSelectedNs(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: 6, padding: '6px 10px', color: 'var(--text-primary)', fontSize: 12, outline: 'none', cursor: 'pointer',
-              }}
-            >
-              <option value="">All namespaces</option>
-              {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
-            </select>
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <select
+                value={selectedNs}
+                onChange={(e) => setSelectedNs(e.target.value)}
+                style={{
+                  appearance: 'none', background: '#13131E', border: '1px solid #1E1E2E',
+                  borderRadius: 7, padding: '7px 28px 7px 10px', color: 'var(--text-primary)',
+                  fontSize: 12, fontFamily: "'DM Mono', monospace", outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="">All namespaces</option>
+                {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
+              </select>
+              <span className="material-symbols-rounded" style={{ position: 'absolute', right: 6, fontSize: 14, color: '#5a6380', pointerEvents: 'none', lineHeight: 1 }}>expand_more</span>
+            </div>
             <button
               onClick={fetchServices}
               style={{ display: 'flex', alignItems: 'center', padding: 6, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
@@ -129,7 +162,8 @@ export function K8sServicesPage({ sessionId }: K8sServicesPageProps) {
           </div>
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 750 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               {['SERVICE NAME', 'TYPE', 'CLUSTER IP', 'EXTERNAL IP', 'PORTS', 'ACTIONS'].map((h) => (
@@ -189,10 +223,11 @@ export function K8sServicesPage({ sessionId }: K8sServicesPageProps) {
                   <button
                     onClick={() => setYamlModal({ kind: 'Service', namespace: svc.namespace, name: svc.name })}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                      background: 'rgba(124,109,250,0.1)', color: '#7C6DFA',
-                      fontSize: 11, fontWeight: 600,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '6px 12px', borderRadius: 7,
+                      border: '1px solid rgba(124,109,250,0.25)', cursor: 'pointer',
+                      background: 'rgba(124,109,250,0.07)', color: '#a78bfa',
+                      fontSize: 12, fontWeight: 500,
                     }}
                     title="Edit YAML"
                   >
@@ -211,6 +246,7 @@ export function K8sServicesPage({ sessionId }: K8sServicesPageProps) {
             )}
           </tbody>
         </table>
+        </div>
 
         {/* Pagination */}
         <div style={{

@@ -73,10 +73,10 @@ public class ConnectRequest {
 
     /**
      * If true, the SSH client will verify the server's host key against known_hosts.
-     * If false (default), it will skip verification (StrictHostKeyChecking=no).
+     * If true (default), host key is validated against a known fingerprint or known_hosts.
      */
     @Builder.Default
-    private boolean strictHostKeyChecking = false;
+    private boolean strictHostKeyChecking = true;
 
     /**
      * Optional: The expected SSH host key fingerprint (e.g. "SHA256:...", "MD5:...").

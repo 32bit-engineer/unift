@@ -43,6 +43,12 @@ public class CacheProperties {
     /** Per-session bandwidth / activity metrics. */
     private CacheSpec metrics = new CacheSpec(10_000L);
 
+    /** Fabric8 KubernetesClient pool — one entry per active SSH session with k8s. */
+    private CacheSpec k8sClient = new CacheSpec(500L);
+
+    /** docker-java DockerClient pool — one entry per active SSH session with Docker. */
+    private CacheSpec dockerClient = new CacheSpec(100L);
+
     /**
      * Configuration for a single cache instance.
      *

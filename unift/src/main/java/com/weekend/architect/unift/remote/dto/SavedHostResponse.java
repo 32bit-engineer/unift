@@ -38,7 +38,7 @@ public class SavedHostResponse {
 
     /**
      * User's preferred workspace type for this host.
-     * Values: {@code ssh}, {@code docker}, {@code kubernetes}. Defaults to {@code ssh}.
+     * Values: {@code ssh}, {@code kubernetes}. Defaults to {@code ssh}.
      */
     String workspacePreference;
 

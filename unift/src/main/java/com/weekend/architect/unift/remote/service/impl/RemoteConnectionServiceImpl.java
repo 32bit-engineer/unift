@@ -40,6 +40,7 @@ import java.io.InputStream;
 import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -90,6 +91,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 .slidingTtl(props.isSlidingTtl())
                 .state(SessionState.INITIALIZING)
                 .build();
+        session.initActiveWorkspaces();
 
         // 4. Create & connect
         RemoteConnection connection = connectionFactory.create(credentials, session);
@@ -136,7 +138,12 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
 
     @Override
     public void closeSession(String sessionId, UUID ownerId) {
-        RemoteConnection conn = sessionRegistry.require(sessionId);
+        Optional<RemoteConnection> maybeConn = sessionRegistry.find(sessionId);
+        if (maybeConn.isEmpty()) {
+            log.info("Session {} already closed or not found — no-op", sessionId);
+            return;
+        }
+        RemoteConnection conn = maybeConn.get();
         assertOwnership(conn, ownerId);
         transferRegistry.removeBySession(sessionId);
         sessionRegistry.remove(sessionId);
@@ -377,7 +384,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     private void tryDeletePartialFile(RemoteConnection conn, String sessionId, String remotePath) {
         try {
             conn.delete(remotePath);
-            log.info("[{}] ✓ Partial file '{}' removed after cancellation", sessionId, remotePath);
+            log.info("[{}] Partial file '{}' removed after cancellation", sessionId, remotePath);
         } catch (Exception e) {
             log.warn(
                     "[{}] Could not remove partial file '{}' after cancellation: {}",
@@ -434,6 +441,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                     .slidingTtl(props.isSlidingTtl())
                     .state(SessionState.INITIALIZING)
                     .build();
+            session.initActiveWorkspaces();
 
             // Create & connect
             RemoteConnection connection = connectionFactory.create(credentials, session);
@@ -661,6 +669,7 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 .expiresAt(s.getExpiresAt())
                 .homeDirectory(homeDir)
                 .remoteOs(s.getRemoteOs())
+                .activeWorkspaces(s.getActiveWorkspaces())
                 .build();
     }
 

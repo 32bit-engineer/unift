@@ -1,8 +1,10 @@
 // ─── KineticWorkspacePage ───────────────────────────────────────────────────
 // Full-screen workspace for an active SSH session.
-// On mount it checks for Docker on the remote host via a hidden terminal WS.
-// - Docker found → DockerModal (user can choose Docker workspace or SSH workspace)
-// - Docker absent (or user dismisses) → SSHWorkspace
+// When capabilitiesDetected is false (first visit), it probes Docker via a hidden
+// terminal WS and offers the Docker workspace if found. When capabilitiesDetected
+// is true (user already went through WorkspaceDetectionModal), detection is skipped
+// and the SSH workspace is shown immediately — avoiding the blank "checking"
+// state that appeared when returning from Docker workspace.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
@@ -17,6 +19,13 @@ type WorkspaceView = 'overview' | 'browser';
 interface KineticWorkspacePageProps {
   session: UIHost;
   onBack: () => void;
+  /**
+   * Set to true once AppLayout's WorkspaceDetectionModal has already run for
+   * this session. When true, KineticWorkspacePage skips its own Docker detection
+   * and renders the SSH workspace immediately, preventing a redundant "checking"
+   * blank state on every re-mount (e.g. when switching back from Docker workspace).
+   */
+  capabilitiesDetected?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -717,14 +726,18 @@ function SshWorkspace({
 
 // ─── KineticWorkspacePage ─────────────────────────────────────────────────────
 
-export function KineticWorkspacePage({ session, onBack }: KineticWorkspacePageProps) {
+export function KineticWorkspacePage({ session, onBack, capabilitiesDetected = false }: KineticWorkspacePageProps) {
   type WorkspaceMode = 'detecting' | 'docker-offer' | 'ssh';
 
   const navigate = useNavigate();
-  const [mode, setMode] = useState<WorkspaceMode>('detecting');
-  const dockerPhase = useDockerDetect(session.sessionId);
+  // When capabilities have already been determined by AppLayout.WorkspaceDetectionModal,
+  // skip the WS-based detection entirely and render the SSH workspace immediately.
+  // This prevents the blank "Checking server environment…" flash that occurred
+  // every time the user navigated back from a Docker workspace.
+  const [mode, setMode] = useState<WorkspaceMode>(capabilitiesDetected ? 'ssh' : 'detecting');
+  const dockerPhase = useDockerDetect(capabilitiesDetected ? null : session.sessionId);
 
-  // React to docker detection result
+  // React to docker detection result (only relevant when capabilitiesDetected is false)
   useEffect(() => {
     if (dockerPhase === 'checking') return;
     if (dockerPhase === 'present') {

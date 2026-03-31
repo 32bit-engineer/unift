@@ -29,15 +29,15 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "unift.terminal")
 public class TerminalProperties {
 
-    /** Maximum concurrent terminal sessions per authenticated user. Default: 3. */
-    private int maxSessionsPerUser = 1;
+    /** Maximum concurrent terminal sessions per authenticated user. Default: 3 */
+    private int maxSessionsPerUser = 3;
 
     /** Auto-close shells idle longer than this many minutes. Default: 15 min. */
     private int idleTimeoutMinutes = 15;
 
     /**
      * Global cap on concurrent terminal sessions across all users.
-     * Also used to size the bounded pipe-thread pool. Default: 50.
+     * Also used to size the bounded pipe-thread pool. Default: 5
      */
     private int maxConcurrentSessions = 5;
 

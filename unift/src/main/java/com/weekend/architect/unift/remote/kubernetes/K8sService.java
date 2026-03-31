@@ -56,8 +56,8 @@ public interface K8sService {
      */
     String getPodLogs(String sessionId, UUID userId, String namespace, String podName, int tailLines);
 
-    void streamPodLogs(String sessionId, UUID userId, String namespace, String podName,
-        int tailLines, SseEmitter emitter);
+    SseEmitter streamPodLogs(
+            String sessionId, UUID userId, String namespace, String podName, String container, int tailLines);
     /**
      * Deletes a pod (triggers re-creation by its controller).
      */
@@ -84,7 +84,6 @@ public interface K8sService {
 
     /** Lists nodes in the cluster. */
     NodePage listNodes(String sessionId, UUID userId);
-
 
     /** Lists ConfigMaps, optionally filtered by namespace. */
     ConfigMapPage listConfigMaps(String sessionId, UUID userId, String namespace);

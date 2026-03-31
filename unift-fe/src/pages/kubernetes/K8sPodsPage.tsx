@@ -9,7 +9,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
-import type { K8sPod, K8sNamespace } from '@/utils/remoteConnectionAPI';
+import type { K8sPod, K8sNamespace, K8sContainerStatus } from '@/utils/remoteConnectionAPI';
 import { K8sYamlModal } from './K8sYamlModal';
 import type { YamlModalTarget } from './K8sYamlModal';
 
@@ -28,7 +28,7 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [logsModal, setLogsModal] = useState<{ podName: string; namespace: string } | null>(null);
+  const [logsModal, setLogsModal] = useState<{ podName: string; namespace: string; containerName: string; containers: K8sContainerStatus[] } | null>(null);
   const [logsLines, setLogsLines] = useState<string[]>([]);
   const [streamState, setStreamState] = useState<'idle' | 'connecting' | 'live' | 'done' | 'error'>('idle');
   const streamStopRef = useRef<(() => void) | null>(null);
@@ -87,7 +87,12 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
     return { running, failed };
   }, [pods]);
 
-  const handleViewLogs = useCallback(async (podName: string, namespace: string) => {
+  const handleViewLogs = useCallback(async (
+    podName: string,
+    namespace: string,
+    containers: K8sContainerStatus[],
+    containerName: string,
+  ) => {
     // Stop any existing stream before opening a new one
     if (streamStopRef.current) {
       streamStopRef.current();
@@ -95,11 +100,12 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
     }
     setLogsLines([]);
     setStreamState('connecting');
-    setLogsModal({ podName, namespace });
+    setLogsModal({ podName, namespace, containerName, containers });
 
     const stop = await remoteConnectionAPI.streamK8sPodLogs(
       sessionId,
       podName,
+      containerName,
       namespace,
       200,
       (line) => setLogsLines((prev) => [...prev, line]),
@@ -109,6 +115,30 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
     streamStopRef.current = stop;
     setStreamState('live');
   }, [sessionId]);
+
+  const handleContainerSwitch = useCallback(async (containerName: string) => {
+    if (!logsModal) return;
+    if (streamStopRef.current) {
+      streamStopRef.current();
+      streamStopRef.current = null;
+    }
+    setLogsLines([]);
+    setStreamState('connecting');
+    setLogsModal((prev) => (prev ? { ...prev, containerName } : null));
+
+    const stop = await remoteConnectionAPI.streamK8sPodLogs(
+      sessionId,
+      logsModal.podName,
+      containerName,
+      logsModal.namespace,
+      200,
+      (line) => setLogsLines((prev) => [...prev, line]),
+      () => setStreamState('done'),
+      () => setStreamState('error'),
+    );
+    streamStopRef.current = stop;
+    setStreamState('live');
+  }, [sessionId, logsModal]);
 
   const handleDelete = async (podName: string, namespace: string) => {
     const key = `${namespace}/${podName}`;
@@ -135,9 +165,38 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
 
   if (loading && pods.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-        <span className="material-symbols-rounded" style={{ fontSize: 28, marginRight: 10, animation: 'spin 1s linear infinite' }}>progress_activity</span>
-        Loading pods...
+      <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div>
+          <div className="shimmer" style={{ height: 11, width: 120, borderRadius: 4, marginBottom: 8 }} />
+          <div className="shimmer" style={{ height: 26, width: 160, borderRadius: 6 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[150, 130].map((w, i) => <div key={i} className="shimmer" style={{ height: 36, width: w, borderRadius: 7 }} />)}
+        </div>
+        <div style={{ background: 'var(--bg-card, #1b1b23)', borderRadius: 12, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {[140, 100, 80, 90, 60, 50, 90].map((w, i) => (
+                  <th key={i} style={{ padding: '12px 14px' }}>
+                    <div className="shimmer" style={{ height: 10, width: w, borderRadius: 4 }} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }, (_, ri) => (
+                <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  {[150, 90, 70, 100, 50, 45, 80].map((w, ci) => (
+                    <td key={ci} style={{ padding: '14px' }}>
+                      <div className="shimmer" style={{ height: 12, width: w, borderRadius: 4 }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -155,7 +214,7 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
   }
 
   return (
-    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto', height: '100%' }}>
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto' }}>
       {/* Header */}
       <div>
         <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 4px', letterSpacing: 0.5 }}>RESOURCES &gt; PODS</p>
@@ -164,47 +223,39 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
 
       {/* Filters row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Namespace select */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px',
-          background: 'var(--bg-card, #1b1b23)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)',
-        }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: 0.5 }}>NAMESPACE:</span>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
           <select
             value={selectedNs}
             onChange={(e) => setSelectedNs(e.target.value)}
             style={{
-              background: 'transparent', border: 'none', color: 'var(--text-primary)',
-              fontSize: 13, fontWeight: 500, cursor: 'pointer', outline: 'none',
+              appearance: 'none', background: '#13131E', border: '1px solid #1E1E2E',
+              borderRadius: 7, padding: '7px 28px 7px 10px', color: 'var(--text-primary)',
+              fontSize: 12, fontFamily: "'DM Mono', monospace", outline: 'none', cursor: 'pointer',
             }}
           >
-            <option value="">All</option>
-            {namespaces.map((ns) => (
-              <option key={ns.name} value={ns.name}>{ns.name}</option>
-            ))}
+            <option value="">All namespaces</option>
+            {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
           </select>
+          <span className="material-symbols-rounded" style={{ position: 'absolute', right: 6, fontSize: 14, color: '#5a6380', pointerEvents: 'none', lineHeight: 1 }}>expand_more</span>
         </div>
 
-        {/* Status filter */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px',
-          background: 'var(--bg-card, #1b1b23)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)',
-        }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: 0.5 }}>STATUS:</span>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             style={{
-              background: 'transparent', border: 'none', color: 'var(--text-primary)',
-              fontSize: 13, fontWeight: 500, cursor: 'pointer', outline: 'none',
+              appearance: 'none', background: '#13131E', border: '1px solid #1E1E2E',
+              borderRadius: 7, padding: '7px 28px 7px 10px', color: 'var(--text-primary)',
+              fontSize: 12, fontFamily: "'DM Mono', monospace", outline: 'none', cursor: 'pointer',
             }}
           >
-            <option value="all">All Statuses</option>
+            <option value="all">All statuses</option>
             <option value="running">Running</option>
             <option value="pending">Pending</option>
             <option value="failed">Failed</option>
             <option value="succeeded">Succeeded</option>
           </select>
+          <span className="material-symbols-rounded" style={{ position: 'absolute', right: 6, fontSize: 14, color: '#5a6380', pointerEvents: 'none', lineHeight: 1 }}>expand_more</span>
         </div>
 
         <div style={{ flex: 1 }} />
@@ -222,6 +273,7 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
 
       {/* Table */}
       <div style={{ background: 'var(--bg-card, #1b1b23)', borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -270,7 +322,7 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <ViewLogsBtn
                         loading={streamState === 'connecting' && logsModal?.podName === pod.name}
-                        onClick={() => handleViewLogs(pod.name, pod.namespace)}
+                        onClick={() => handleViewLogs(pod.name, pod.namespace, pod.containers, pod.containers[0]?.name ?? '')}
                       />
                       <ActionBtn
                         icon="edit_note"
@@ -299,6 +351,7 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
             )}
           </tbody>
         </table>
+        </div>
 
         {/* Pagination */}
         <div style={{
@@ -382,7 +435,38 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
                       <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, padding: '2px 7px', borderRadius: 4, background: 'rgba(248,113,113,0.12)', color: '#f87171' }}>ERROR</span>
                     )}
                   </div>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>namespace: {logsModal.namespace}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>ns: {logsModal.namespace}</span>
+                    {logsModal.containers.length > 1 ? (
+                      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                        <select
+                          value={logsModal.containerName}
+                          onChange={(e) => handleContainerSwitch(e.target.value)}
+                          style={{
+                            appearance: 'none', background: '#0d0d18',
+                            border: '1px solid rgba(255,255,255,0.1)', borderRadius: 5,
+                            padding: '2px 22px 2px 8px', color: 'var(--text-primary)',
+                            fontSize: 11, fontFamily: "'DM Mono', monospace",
+                            outline: 'none', cursor: 'pointer',
+                          }}
+                        >
+                          {logsModal.containers.map((c) => (
+                            <option key={c.name} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                        <span
+                          className="material-symbols-rounded"
+                          style={{ position: 'absolute', right: 5, fontSize: 12, color: '#5a6380', pointerEvents: 'none', lineHeight: 1 }}
+                        >
+                          expand_more
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        container: {logsModal.containerName || '—'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -3,6 +3,7 @@ package com.weekend.architect.unift.remote.kubernetes;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.weekend.architect.unift.remote.core.RemoteShell;
+import com.weekend.architect.unift.remote.exception.RemoteConnectionException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +13,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * Resolves exec-based Kubernetes credentials on the remote SSH server.
@@ -54,9 +57,16 @@ import org.yaml.snakeyaml.Yaml;
 public class K8sExecTokenResolver {
 
     private static final String BACKWARD_SLASH_2 = "'\\''";
+    private static final String OUTER_QUOTE_ESCAPE = "'\"'\"'";
     private static final int REFRESH_BUFFER_SECONDS = 120;
 
     private final ObjectMapper objectMapper;
+
+    public Map<String, Object> loadConfig(String kubeconfigYaml) {
+        LoaderOptions loaderOptions = new LoaderOptions();
+        SafeConstructor safeConstructor = new SafeConstructor(loaderOptions);
+        return new Yaml(safeConstructor).load(kubeconfigYaml);
+    }
 
     /**
      * Inspects the kubeconfig for an exec credential provider on the current context's
@@ -69,7 +79,7 @@ public class K8sExecTokenResolver {
      */
     public Optional<ResolvedToken> resolve(String kubeconfigYaml, RemoteShell shell) {
         try {
-            Map<String, Object> config = new Yaml().load(kubeconfigYaml);
+            Map<String, Object> config = loadConfig(kubeconfigYaml);
 
             String currentContext = (String) config.get("current-context");
             if (currentContext == null) return Optional.empty();
@@ -142,7 +152,7 @@ public class K8sExecTokenResolver {
     @SuppressWarnings("unchecked")
     public String patchKubeconfigWithToken(String kubeconfigYaml, String token) {
         try {
-            Map<String, Object> config = new Yaml().load(kubeconfigYaml);
+            Map<String, Object> config = loadConfig(kubeconfigYaml);
             List<Map<String, Object>> users = (List<Map<String, Object>>) config.get("users");
             if (users != null) {
                 for (Map<String, Object> userEntry : users) {
@@ -202,6 +212,10 @@ public class K8sExecTokenResolver {
                 String name = env.get("name");
                 String value = env.get("value");
                 if (name != null && value != null) {
+                    if (!name.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                        throw new RemoteConnectionException(
+                                "Invalid env-var name in kubeconfig exec: " + truncate(name));
+                    }
                     inner.append(name)
                             .append("='")
                             .append(value.replace("'", BACKWARD_SLASH_2))
@@ -210,13 +224,18 @@ public class K8sExecTokenResolver {
             }
         }
 
-        inner.append(command);
+        // Single-quote the command path and each argument
+        inner.append("'").append(command.replace("'", BACKWARD_SLASH_2)).append("'");
         for (String arg : args) {
             inner.append(" '").append(arg.replace("'", BACKWARD_SLASH_2)).append("'");
         }
 
-        String innerEscaped = inner.toString().replace("'", BACKWARD_SLASH_2);
-        return "bash -l -c '" + innerEscaped + "' 2>/dev/null";
+        // Wrap in bash -l -c '...' for login-shell PATH resolution.
+        // Use '"'"' to escape inner single-quotes for the outer wrapper.
+        // This avoids the double-escape corruption that '\'' would cause
+        // (backslash is literal inside single-quotes, corrupting nested '\'' sequences).
+        String outerEscaped = inner.toString().replace("'", OUTER_QUOTE_ESCAPE);
+        return "bash -l -c '" + outerEscaped + "' 2>/dev/null";
     }
 
     /**

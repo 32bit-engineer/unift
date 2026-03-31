@@ -185,7 +185,6 @@ public final class K8sModels {
         private String message;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -206,7 +205,6 @@ public final class K8sModels {
         private List<ConfigMap> configMaps;
         private int total;
     }
-
 
     @Data
     @Builder
@@ -276,7 +274,6 @@ public final class K8sModels {
         private int total;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -300,7 +297,6 @@ public final class K8sModels {
         private int total;
     }
 
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -308,12 +304,12 @@ public final class K8sModels {
     public static class ResourceYaml {
         /** k8s kind string, e.g. "Deployment", "ConfigMap". */
         private String kind;
+
         private String namespace;
         private String name;
         /** Cleaned YAML ready to display in an editor (managedFields + status stripped). */
         private String yaml;
     }
-
 
     @Data
     @Builder
@@ -325,6 +321,7 @@ public final class K8sModels {
         private String changeCause;
         /** Container images in use at this revision. */
         private List<String> images;
+
         private String createdAt;
     }
 

@@ -50,7 +50,7 @@ public class SavedHost {
     /**
      * User's preferred workspace type for this host.
      * Drives which dedicated sidebar and landing page to show on reconnect.
-     * Values: {@code ssh}, {@code docker}, {@code kubernetes}. Defaults to {@code ssh}.
+     * Values: {@code ssh}, {@code kubernetes}. Defaults to {@code ssh}.
      */
     String workspacePreference;
 

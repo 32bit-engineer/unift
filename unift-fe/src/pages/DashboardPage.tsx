@@ -10,6 +10,8 @@ interface DashboardPageProps {
   sessions: UIHost[];
   onNavigateToSessions: () => void;
   onNavigateToTransfers: () => void;
+  onNewConnection?: () => void;
+  onOpenWorkspace?: (sessionId: string) => void;
 }
 
 // Formats bytes-per-second to a compact rate string (GB/MB/KB)
@@ -276,10 +278,14 @@ function SessionCard({
   host,
   analytics,
   loading,
+  onOpenWorkspace,
+  onViewDetails,
 }: {
   host: UIHost;
   analytics: SessionAnalyticsResponse | null;
   loading: boolean;
+  onOpenWorkspace?: () => void;
+  onViewDetails?: () => void;
 }) {
   const statusColor = host.status === 'online' ? '#4ade80' : host.status === 'warning' ? '#E07B39' : '#5a6380';
   const statusLabel = host.status === 'online' ? 'ONLINE' : host.status === 'warning' ? 'ISSUE' : 'IDLE';
@@ -287,43 +293,53 @@ function SessionCard({
   const region = analytics?.metadata?.region ?? 'unknown';
 
   return (
-    <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl p-4 flex flex-col gap-3 hover:border-[#1E1E2E] transition-colors">
+    <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl p-4 pb-14 flex flex-col gap-3 hover:border-[#1E1E2E] transition-colors relative">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[12px] font-semibold text-slate-200 truncate">{host.name.split(':')[0]}</p>
-          <p className="text-[10px] font-mono text-slate-600 mt-0.5">{ip}</p>
+          <p className="text-[10px] font-mono text-slate-600 mt-0.5">{ip} &middot; {host.protocol?.toUpperCase() ?? 'SSH'}</p>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <RegionBadge region={region} />
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: statusColor }} />
             <span className="text-[9px] font-bold font-mono" style={{ color: statusColor }}>{statusLabel}</span>
           </div>
+          <RegionBadge region={region} />
         </div>
       </div>
 
       {loading ? (
         <div className="h-8 w-full rounded shimmer" />
       ) : (
-        <Sparkline
-          data={analytics?.trafficAnalysis ?? []}
-          color="violet"
-        />
+        <div className="h-8 relative">
+          <Sparkline data={analytics?.trafficAnalysis ?? []} color="violet" />
+          <div className="absolute inset-0">
+            <Sparkline data={analytics?.trafficAnalysis ?? []} color="emerald" />
+          </div>
+        </div>
       )}
 
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[9px] text-slate-700 uppercase tracking-wider mb-0.5">Latency</p>
-          <p className="text-[11px] font-mono text-slate-300">
-            {analytics?.latency?.unavailable ? '--' : `${analytics?.latency?.avgMs?.toFixed(0) ?? '--'}ms`}
-          </p>
-        </div>
-        <div>
-          <p className="text-[9px] text-slate-700 uppercase tracking-wider mb-0.5">Down</p>
+          <p className="text-[9px] text-slate-700 uppercase tracking-wider mb-0.5">Download</p>
           <p className="text-[11px] font-mono text-violet-400">
             {analytics?.throughput?.currentDownloadBytesPerSec != null
               ? formatBps(analytics.throughput.currentDownloadBytesPerSec)
               : '--'}
+          </p>
+        </div>
+        <div>
+          <p className="text-[9px] text-slate-700 uppercase tracking-wider mb-0.5">Upload</p>
+          <p className="text-[11px] font-mono text-emerald-400">
+            {analytics?.throughput?.currentUploadBytesPerSec != null
+              ? formatBps(analytics.throughput.currentUploadBytesPerSec)
+              : '--'}
+          </p>
+        </div>
+        <div>
+          <p className="text-[9px] text-slate-700 uppercase tracking-wider mb-0.5">Latency</p>
+          <p className="text-[11px] font-mono text-slate-300">
+            {analytics?.latency?.unavailable ? '--' : `${analytics?.latency?.avgMs?.toFixed(0) ?? '--'}ms`}
           </p>
         </div>
         <div>
@@ -334,6 +350,22 @@ function SessionCard({
               : '--'}
           </p>
         </div>
+      </div>
+
+      <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+        <button
+          onClick={onViewDetails}
+          className="px-2.5 py-1 rounded text-[10px] font-semibold bg-[#1E1E2E] text-slate-400 border border-[#252D45] hover:text-slate-200 hover:border-slate-500 transition-colors cursor-pointer"
+        >
+          Details
+        </button>
+        <button
+          onClick={onOpenWorkspace}
+          className="px-2.5 py-1 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+          style={{ background: 'var(--color-primary)' }}
+        >
+          Open Workspace
+        </button>
       </div>
     </div>
   );
@@ -474,7 +506,7 @@ function buildActivityFeed(
   return items.sort((a, b) => order(a) - order(b)).slice(0, 8);
 }
 
-export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTransfers }: DashboardPageProps) {
+export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTransfers, onNewConnection, onOpenWorkspace }: DashboardPageProps) {
   const [analyticsMap, setAnalyticsMap]     = useState<Map<string, SessionAnalyticsResponse>>(new Map());
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [transferStats, setTransferStats]   = useState<TransferHistoryStatsResponse | null>(null);
@@ -589,6 +621,31 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
     <div className="flex-1 overflow-y-auto custom-scrollbar px-8 py-6 bg-[#0C0C14]">
       <div className="max-w-[1400px] mx-auto flex flex-col gap-6">
 
+        {/* Page header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-bold text-slate-100">Dashboard</h1>
+            <p className="text-[12px] text-slate-600 mt-0.5 font-mono">
+              {liveUpdates ? 'Auto-refreshing every 30s' : 'Live updates paused'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onNavigateToTransfers}
+              className="px-4 py-2 rounded-lg text-[12px] font-semibold bg-[#1E1E2E] text-slate-400 border border-[#252D45] hover:text-slate-200 hover:border-slate-500 transition-colors cursor-pointer"
+            >
+              Export Report
+            </button>
+            <button
+              onClick={onNewConnection}
+              className="px-4 py-2 rounded-lg text-[12px] font-semibold text-white transition-colors cursor-pointer"
+              style={{ background: 'var(--color-primary)' }}
+            >
+              New Connection
+            </button>
+          </div>
+        </div>
+
         {/* Stat cards row */}
         <div className="grid grid-cols-4 gap-4">
           <StatCard
@@ -631,8 +688,8 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
           {/* Active Connections */}
           <div className="bg-[#0F0F1A] border border-[#13131E] rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#13131E]">
-              <p className="text-sm font-semibold text-slate-200">Active Connections</p>
-              <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-slate-200">Active Sessions</p>
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => setLiveUpdates(v => !v)}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
@@ -642,13 +699,14 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
                   }`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${liveUpdates ? 'bg-emerald-400 animate-pulse' : 'bg-slate-700'}`} />
-                  Live Updates
+                  Live
                 </button>
                 <button
                   onClick={onNavigateToSessions}
-                  className="px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-[#1E1E2E] text-slate-400 border border-[#252D45] hover:text-slate-200 transition-colors cursor-pointer"
+                  className="text-[11px] font-semibold cursor-pointer hover:text-slate-200 transition-colors"
+                  style={{ color: 'var(--color-primary)' }}
                 >
-                  View All
+                  View all sessions &rarr;
                 </button>
               </div>
             </div>
@@ -658,20 +716,23 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
                 <span className="material-symbols-rounded text-4xl text-slate-800">hub</span>
                 <p className="text-[12px] text-slate-600">No active sessions</p>
                 <button
-                  onClick={onNavigateToSessions}
-                  className="mt-1 px-4 py-1.5 rounded-lg bg-[#1E1E2E] border border-[#252D45] text-[11px] text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors cursor-pointer"
+                  onClick={onNewConnection ?? onNavigateToSessions}
+                  className="mt-1 px-4 py-1.5 rounded-lg text-[11px] font-semibold text-white transition-colors cursor-pointer"
+                  style={{ background: 'var(--color-primary)' }}
                 >
-                  Connect a host
+                  New Connection
                 </button>
               </div>
             ) : (
-              <div className="p-4 grid grid-cols-3 gap-3">
+              <div className="p-4 grid grid-cols-2 gap-4">
                 {sessions.map(host => (
                   <SessionCard
                     key={host.sessionId}
                     host={host}
                     analytics={analyticsMap.get(host.sessionId) ?? null}
                     loading={analyticsLoading && !analyticsMap.has(host.sessionId)}
+                    onOpenWorkspace={() => onOpenWorkspace?.(host.sessionId)}
+                    onViewDetails={() => onNavigateToSessions()}
                   />
                 ))}
               </div>

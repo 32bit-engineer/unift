@@ -73,9 +73,38 @@ export function K8sDaemonSetsPage({ sessionId }: K8sDaemonSetsPageProps) {
 
   if (loading && daemonSets.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-        <span className="material-symbols-rounded" style={{ fontSize: 28, marginRight: 10, animation: 'spin 1s linear infinite' }}>progress_activity</span>
-        Loading DaemonSets...
+      <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div>
+          <div className="shimmer" style={{ height: 11, width: 180, borderRadius: 4, marginBottom: 8 }} />
+          <div className="shimmer" style={{ height: 26, width: 140, borderRadius: 6 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div className="shimmer" style={{ height: 36, width: 150, borderRadius: 7 }} />
+        </div>
+        <div style={{ background: 'var(--bg-card, #1b1b23)', borderRadius: 12, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {[140, 100, 60, 60, 55, 80, 80, 55, 70].map((w, i) => (
+                  <th key={i} style={{ padding: '12px 14px' }}>
+                    <div className="shimmer" style={{ height: 10, width: w, borderRadius: 4 }} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }, (_, ri) => (
+                <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  {[150, 90, 50, 50, 45, 70, 70, 45, 60].map((w, ci) => (
+                    <td key={ci} style={{ padding: '14px' }}>
+                      <div className="shimmer" style={{ height: 12, width: w, borderRadius: 4 }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -91,7 +120,7 @@ export function K8sDaemonSetsPage({ sessionId }: K8sDaemonSetsPageProps) {
   }
 
   return (
-    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto', height: '100%' }}>
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto' }}>
       {/* Header */}
       <div>
         <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 4px', letterSpacing: 0.5 }}>WORKLOADS &gt; DAEMONSETS</p>
@@ -100,15 +129,13 @@ export function K8sDaemonSetsPage({ sessionId }: K8sDaemonSetsPageProps) {
 
       {/* Filters */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--bg-card, #1b1b23)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: 0.5 }}>NAMESPACE:</span>
-          <select value={selectedNs} onChange={(e) => setSelectedNs(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: 13, fontWeight: 500, cursor: 'pointer', outline: 'none' }}>
-            <option value="">All</option>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <select value={selectedNs} onChange={(e) => setSelectedNs(e.target.value)} style={{ appearance: 'none', background: '#13131E', border: '1px solid #1E1E2E', borderRadius: 7, padding: '7px 28px 7px 10px', color: 'var(--text-primary)', fontSize: 12, fontFamily: "'DM Mono', monospace", outline: 'none', cursor: 'pointer' }}>
+            <option value="">All namespaces</option>
             {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
           </select>
+          <span className="material-symbols-rounded" style={{ position: 'absolute', right: 6, fontSize: 14, color: '#5a6380', pointerEvents: 'none', lineHeight: 1 }}>expand_more</span>
         </div>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{total} daemonsets</span>
         <button onClick={fetchDaemonSets} style={{ display: 'flex', alignItems: 'center', padding: 6, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', borderRadius: 6 }} title="Refresh">
           <span className="material-symbols-rounded" style={{ fontSize: 20 }}>refresh</span>
         </button>
@@ -116,7 +143,8 @@ export function K8sDaemonSetsPage({ sessionId }: K8sDaemonSetsPageProps) {
 
       {/* Table */}
       <div style={{ background: 'var(--bg-card, #1b1b23)', borderRadius: 12, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               {['NAME', 'NAMESPACE', 'DESIRED', 'CURRENT', 'READY', 'UP-TO-DATE', 'AVAILABLE', 'AGE', 'ACTIONS'].map((h) => (
@@ -177,6 +205,7 @@ export function K8sDaemonSetsPage({ sessionId }: K8sDaemonSetsPageProps) {
             )}
           </tbody>
         </table>
+        </div>
 
         {/* Pagination */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>

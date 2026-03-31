@@ -25,6 +25,14 @@ spring:
       # Write to a temp file once the in-memory threshold is exceeded.
       file-size-threshold: ${UPLOAD_MEM_THRESHOLD:2KB}
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:5000ms}
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -107,6 +115,10 @@ unift:
       max-size: ${UNIFT_CACHE_TRANSFER_MAX_SIZE:100000}
     metrics:
       max-size: ${UNIFT_CACHE_METRICS_MAX_SIZE:10000}
+    k8s-client:
+      max-size: ${UNIFT_CACHE_K8S_CLIENT_MAX_SIZE:500}
+    docker-client:
+      max-size: ${UNIFT_CACHE_DOCKER_CLIENT_MAX_SIZE:100}
 
   terminal:
     # Allowed WebSocket upgrade origins — mirrors the HTTP CORS list.

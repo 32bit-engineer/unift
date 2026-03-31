@@ -78,26 +78,29 @@ export function AppLayout() {
   useEffect(() => {
     if (!workspaceSessionId || !workspaceSession) return;
     if (workspaceSession.capabilitiesDetected) return;
-    if (showDetectionModal) return;
 
     // If the URL already points to a specific workspace type, the user reached here
-    // through a prior detection choice. Trust the URL and restore state without
-    // re-running detection or showing the modal (handles page-refresh on
-    // workspace routes where capabilitiesDetected resets to false on every fetch).
+    // through a prior detection choice (or via KineticWorkspacePage.DockerModal which
+    // navigates directly without calling handleDetectionComplete). Trust the URL,
+    // restore store state, and dismiss any stale detection modal — prevents the modal
+    // from re-appearing on top of the Docker/K8s dashboard.
     if (activeWorkspaceType === 'docker') {
       updateSessionCapabilities(workspaceSessionId, { docker: true });
       markCapabilitiesDetected(workspaceSessionId);
       setWorkspaceType(workspaceSessionId, 'docker');
+      if (showDetectionModal) setShowDetectionModal(null);
       return;
     }
     if (activeWorkspaceType === 'kubernetes') {
       updateSessionCapabilities(workspaceSessionId, { kubernetes: true });
       markCapabilitiesDetected(workspaceSessionId);
       setWorkspaceType(workspaceSessionId, 'kubernetes');
+      if (showDetectionModal) setShowDetectionModal(null);
       return;
     }
 
-    // Check if this session was opened via a saved host with a stored preference
+    // For SSH workspace routes, don't re-open the modal if it is already showing.
+    if (showDetectionModal) return;
     const savedHost = savedHostConfigs.find(h => h.activeSessionId === workspaceSessionId);
     if (savedHost?.workspacePreference && savedHost.workspacePreference !== 'ssh') {
       const pref = savedHost.workspacePreference;
@@ -132,6 +135,11 @@ export function AppLayout() {
       // Docker sidebar items
       if (path.includes('/docker/containers')) return 'ws-docker-containers';
       if (path.includes('/docker/images')) return 'ws-docker-images';
+      if (path.includes('/docker/networks')) return 'ws-docker-networks';
+      if (path.includes('/docker/volumes')) return 'ws-docker-volumes';
+      if (path.includes('/docker/compose')) return 'ws-docker-compose';
+      if (path.includes('/docker/monitoring')) return 'ws-docker-monitoring';
+      if (path.includes('/docker/logs')) return 'ws-docker-logs';
       if (path.includes('/docker')) return 'ws-docker-dashboard';
       // K8s sidebar items
       if (path.includes('/k8s/pods')) return 'ws-k8s-pods';
@@ -156,9 +164,20 @@ export function AppLayout() {
     return 'my-files';
   }, [location.pathname, workspaceSessionId]);
 
-  // Sidebar saved-host view derived from sessions
+  // Sidebar saved-host view derived from sessions.
+  // Label includes the active workspace type suffix for clarity.
+  const WORKSPACE_LABELS: Record<WorkspaceType, string> = {
+    ssh: 'SSH Workspace',
+    docker: 'Docker Workspace',
+    kubernetes: 'Kubernetes Workspace',
+  };
+
   const activeSessions: SavedHost[] = useMemo(
-    () => sessions.map(s => ({ id: s.sessionId, label: s.name, status: s.status })),
+    () => sessions.map(s => ({
+      id: s.sessionId,
+      label: `${s.name} - ${WORKSPACE_LABELS[s.workspaceType] ?? 'SSH Workspace'}`,
+      status: s.status,
+    })),
     [sessions],
   );
 
@@ -194,6 +213,11 @@ export function AppLayout() {
       'ws-docker-dashboard': `${wsBase}/docker`,
       'ws-docker-containers': `${wsBase}/docker/containers`,
       'ws-docker-images': `${wsBase}/docker/images`,
+      'ws-docker-networks': `${wsBase}/docker/networks`,
+      'ws-docker-volumes': `${wsBase}/docker/volumes`,
+      'ws-docker-compose': `${wsBase}/docker/compose`,
+      'ws-docker-monitoring': `${wsBase}/docker/monitoring`,
+      'ws-docker-logs': `${wsBase}/docker/logs`,
       // K8s
       'ws-k8s-dashboard': `${wsBase}/k8s`,
       'ws-k8s-pods': `${wsBase}/k8s/pods`,
@@ -264,7 +288,7 @@ export function AppLayout() {
   };
 
   // Handle detection modal completion
-  const handleDetectionComplete = useCallback((chosen: WorkspaceType, capabilities: { docker: boolean; kubernetes: boolean }) => {
+  const handleDetectionComplete = useCallback((chosen: WorkspaceType, capabilities: { docker: boolean; kubernetes: boolean }, selectedTypes?: WorkspaceType[]) => {
     const sid = showDetectionModal;
     if (!sid) return;
     setShowDetectionModal(null);
@@ -278,6 +302,16 @@ export function AppLayout() {
 
     // Update session workspace type
     setWorkspaceType(sid, chosen);
+
+    // Activate all selected workspace types on the backend
+    const types = selectedTypes ?? [chosen];
+    for (const type of types) {
+      if (type !== 'ssh') {
+        remoteConnectionAPI.activateWorkspace(sid, type).catch(() => {
+          // Best effort — non-blocking
+        });
+      }
+    }
 
     // Persist preference to saved host if connected via one
     const savedHost = savedHostConfigs.find(h => h.activeSessionId === sid);

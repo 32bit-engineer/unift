@@ -3,11 +3,12 @@ package com.weekend.architect.unift.remote.registry;
 import com.weekend.architect.unift.common.cache.namedcache.SshConnectionCache;
 import com.weekend.architect.unift.remote.analytics.SessionMetricsStore;
 import com.weekend.architect.unift.remote.core.RemoteConnection;
+import com.weekend.architect.unift.remote.docker.DockerClientPool;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
-import com.weekend.architect.unift.remote.docker.DockerClientPool;
 import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
+import com.weekend.architect.unift.remote.kubernetes.K8sLogStreamRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,6 +47,8 @@ public class SessionRegistry {
     private final SshConnectionCache store;
 
     private final SessionMetricsStore metricsStore;
+    private final TransferRegistry transferRegistry;
+    private final K8sLogStreamRegistry k8sLogStreamRegistry;
     private final TerminalSessionRegistry terminalSessionRegistry;
     /**
      * Evicts the cached Fabric8 KubernetesClient (+ any SSH port-forward tunnel) when
@@ -54,8 +57,8 @@ public class SessionRegistry {
     private final K8sClientPool k8sClientPool;
 
     /**
-     * Evicts the cached DockerClient (+ any socat bridge + SSH tunnel) when the parent
-     * SSH session is closed.
+     * Evicts the cached DockerClient (+ any SSH port-forward tunnel) when
+     * the parent SSH session is closed.
      */
     private final DockerClientPool dockerClientPool;
 
@@ -98,6 +101,23 @@ public class SessionRegistry {
     }
 
     /**
+     * Looks up the connection for the given session ID without throwing.
+     *
+     * @return the connection wrapped in an Optional, or empty if not registered or expired
+     */
+    public Optional<RemoteConnection> find(String sessionId) {
+        RemoteConnection conn = store.getIfPresent(sessionId);
+        if (conn == null) {
+            return Optional.empty();
+        }
+        if (conn.getSession().isExpired()) {
+            remove(sessionId);
+            return Optional.empty();
+        }
+        return Optional.of(conn);
+    }
+
+    /**
      * Retrieves the connection for the given session ID.
      *
      * @throws SessionNotFoundException if the session does not exist
@@ -122,12 +142,7 @@ public class SessionRegistry {
     public void remove(String sessionId) {
         RemoteConnection conn = store.remove(sessionId);
         if (conn != null) {
-            // Cascade first — clean WS close frame before the SSH transport drops.
-            terminalSessionRegistry.closeAllBySshSession(sessionId, "ssh-session-removed");
-            // Tear down Fabric8 client + any SSH port-forward tunnel for this session.
-            k8sClientPool.evict(sessionId);
-            // Tear down DockerClient + any socat bridge + SSH tunnel for this session.
-            dockerClientPool.evict(sessionId);
+            reapAllPoolsAndRegistries(sessionId);
             try {
                 conn.close();
             } catch (Exception e) {
@@ -138,6 +153,16 @@ public class SessionRegistry {
         }
     }
 
+    private void reapAllPoolsAndRegistries(String sessionId) {
+        // Cascade first — clean WS close frame before the SSH transport drops.
+        terminalSessionRegistry.closeAllBySshSession(sessionId, "ssh-session-removed");
+        // Tear down Fabric8 client + any SSH port-forward tunnel for this session.
+        k8sClientPool.evict(sessionId);
+        // Tear down Docker client + SSH tunnel for this session.
+        dockerClientPool.evict(sessionId);
+        k8sLogStreamRegistry.closeAllBySession(sessionId);
+        transferRegistry.removeBySession(sessionId);
+    }
     /**
      * Returns all active sessions owned by the given user.
      */

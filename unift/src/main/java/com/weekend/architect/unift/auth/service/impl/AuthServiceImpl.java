@@ -91,7 +91,7 @@ public class AuthServiceImpl implements AuthService {
                 .build();
 
         userRepository.save(user);
-        log.info("✓ User registered successfully: {} (ID: {})", request.getUsername(), user.getId());
+        log.info("User registered successfully: {} (ID: {})", request.getUsername(), user.getId());
         return buildAuthResponse(user, null);
     }
 
@@ -160,7 +160,7 @@ public class AuthServiceImpl implements AuthService {
             return new TokenInvalidException("Associated user not found");
         });
 
-        log.info("✓ Token refreshed for user: {}", user.getId());
+        log.info("Token refreshed for user: {}", user.getId());
         return buildAuthResponse(user, stored.getDeviceHint());
     }
 

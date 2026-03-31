@@ -62,9 +62,13 @@ dependencies {
 
 	// Java API Client for Docker
 	implementation 'com.github.docker-java:docker-java:3.7.1'
+	implementation 'com.github.docker-java:docker-java-transport-httpclient5:3.7.1'
 
 	// Caffeine in-process cache
 	implementation 'com.github.ben-manes.caffeine:caffeine'
+
+	// Redis — distributed cache backing for TransferCache (Lettuce client via Spring Boot auto-config)
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
 	// Swagger / OpenAPI
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2'

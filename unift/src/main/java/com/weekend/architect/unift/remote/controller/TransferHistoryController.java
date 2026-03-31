@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +54,7 @@ public class TransferHistoryController {
             responses = {@ApiResponse(responseCode = "200", description = "Transfer history page")})
     public ResponseEntity<List<TransferLogResponse>> listHistory(
             @Parameter(description = "0-based page index (default 0)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Page size, max 100 (default 20)") @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "Page size, max 100 (default 20)") @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @AuthenticationPrincipal UniFtUserDetails principal) {
         UUID userId = principal.user().getId();
         log.debug("[transfer-history] Listing history for user {} (page={}, size={})", userId, page, size);

@@ -7,14 +7,23 @@
  * Data source: DockerController.getOverview
  * via remoteConnectionAPI.getDockerOverview
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type {
   DockerOverview,
   DockerContainer,
   DockerContainerStats,
+  ContainerActionResult,
 } from '@/utils/remoteConnectionAPI';
+
+const REFRESH_INTERVALS = [
+  { label: 'Off', value: 0 },
+  { label: '5s', value: 5000 },
+  { label: '10s', value: 10000 },
+  { label: '30s', value: 30000 },
+  { label: '60s', value: 60000 },
+] as const;
 
 interface DockerDashboardPageProps {
   sessionId: string;
@@ -26,6 +35,9 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'cpu' | 'memory'>('name');
+  const [refreshInterval, setRefreshInterval] = useState(0);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const fetchOverview = useCallback(async () => {
     try {
@@ -43,6 +55,34 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
   useEffect(() => {
     fetchOverview();
   }, [fetchOverview]);
+
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (refreshInterval > 0) {
+      intervalRef.current = setInterval(fetchOverview, refreshInterval);
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [refreshInterval, fetchOverview]);
+
+  const handleContainerAction = useCallback(async (
+    containerId: string,
+    action: 'stop' | 'restart',
+  ) => {
+    setActionLoading(`${containerId}-${action}`);
+    try {
+      let result: ContainerActionResult;
+      if (action === 'stop') {
+        result = await remoteConnectionAPI.stopDockerContainer(sessionId, containerId);
+      } else {
+        result = await remoteConnectionAPI.restartDockerContainer(sessionId, containerId);
+      }
+      if (result.success) await fetchOverview();
+    } catch {
+      // Action failed
+    } finally {
+      setActionLoading(null);
+    }
+  }, [sessionId, fetchOverview]);
 
   const statsMap = useMemo(() => {
     const map = new Map<string, DockerContainerStats>();
@@ -223,6 +263,10 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
                   key={c.id}
                   container={c}
                   stats={statsMap.get(c.id)}
+                  actionLoading={actionLoading}
+                  onStop={() => handleContainerAction(c.id, 'stop')}
+                  onRestart={() => handleContainerAction(c.id, 'restart')}
+                  onLogs={() => navigate(`/workspace/${sessionId}/docker/containers`)}
                 />
               ))
             )}
@@ -263,7 +307,8 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
             </div>
             <div className="flex flex-col gap-2">
               <InfoRow label="Version" value={info.version ?? '-'} />
-              <InfoRow label="OS" value={info.serverOs ?? '-'} />
+              <InfoRow label="API" value={info.version ? `v${info.version.split('.').slice(0, 2).join('.')}` : '-'} />
+              <InfoRow label="OS / Arch" value={info.serverOs ?? '-'} />
               <InfoRow label="Storage" value={info.storageDriver ?? '-'} />
               <InfoRow label="Images" value={String(info.totalImages)} />
             </div>
@@ -319,10 +364,50 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
                 onClick={() => navigate(`/workspace/${sessionId}/docker/images`)}
               />
               <QuickAction
+                icon="hub"
+                label="Networks"
+                onClick={() => navigate(`/workspace/${sessionId}/docker/networks`)}
+              />
+              <QuickAction
+                icon="hard_drive"
+                label="Volumes"
+                onClick={() => navigate(`/workspace/${sessionId}/docker/volumes`)}
+              />
+              <QuickAction
                 icon="refresh"
                 label="Refresh Overview"
                 onClick={fetchOverview}
               />
+            </div>
+          </div>
+
+          {/* Auto Refresh */}
+          <div
+            className="rounded-lg p-4"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
+          >
+            <span
+              className="font-semibold uppercase tracking-[0.1em] block mb-3"
+              style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
+            >
+              Auto Refresh
+            </span>
+            <div className="flex items-center gap-1">
+              {REFRESH_INTERVALS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setRefreshInterval(opt.value)}
+                  className="px-2.5 py-1 rounded-md font-semibold cursor-pointer transition-colors"
+                  style={{
+                    fontSize: '10px',
+                    background: refreshInterval === opt.value ? 'var(--color-primary)' : 'transparent',
+                    color: refreshInterval === opt.value ? '#fff' : 'var(--color-text-muted)',
+                    border: refreshInterval === opt.value ? 'none' : '1px solid var(--color-border-muted)',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -452,9 +537,17 @@ function MemoryCard({ used, limit }: { used: number; limit: number }) {
 function ContainerCard({
   container,
   stats,
+  actionLoading,
+  onStop,
+  onRestart,
+  onLogs,
 }: {
   container: DockerContainer;
   stats?: DockerContainerStats;
+  actionLoading: string | null;
+  onStop: () => void;
+  onRestart: () => void;
+  onLogs: () => void;
 }) {
   const name = container.names.replace(/^\//, '');
   const uptime = container.status?.match(/Up\s+(.+)/i)?.[1] ?? container.status;
@@ -530,7 +623,73 @@ function ContainerCard({
           {stats ? formatMemShort(stats.memoryUsage) : '-'}
         </p>
       </div>
+
+      {/* Quick Actions */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <MiniActionButton
+          icon="stop"
+          title="Stop"
+          loading={actionLoading === `${container.id}-stop`}
+          onClick={onStop}
+        />
+        <MiniActionButton
+          icon="restart_alt"
+          title="Restart"
+          loading={actionLoading === `${container.id}-restart`}
+          onClick={onRestart}
+        />
+        <MiniActionButton
+          icon="description"
+          title="Logs"
+          loading={false}
+          onClick={onLogs}
+        />
+      </div>
     </div>
+  );
+}
+
+function MiniActionButton({
+  icon,
+  title,
+  loading,
+  onClick,
+}: {
+  icon: string;
+  title: string;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      disabled={loading}
+      title={title}
+      className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors disabled:opacity-40"
+      style={{ color: 'var(--color-text-muted)', background: 'transparent', border: 'none' }}
+      onMouseEnter={e => {
+        e.currentTarget.style.background = 'rgba(124,109,250,0.08)';
+        e.currentTarget.style.color = 'var(--color-primary)';
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = 'transparent';
+        e.currentTarget.style.color = 'var(--color-text-muted)';
+      }}
+    >
+      {loading ? (
+        <div
+          className="w-3 h-3 border-2 rounded-full animate-spin"
+          style={{ borderColor: 'var(--color-border-muted)', borderTopColor: 'var(--color-primary)' }}
+        />
+      ) : (
+        <span
+          className="material-symbols-rounded"
+          style={{ fontSize: '14px', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+        >
+          {icon}
+        </span>
+      )}
+    </button>
   );
 }
 

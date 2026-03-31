@@ -47,7 +47,7 @@ interface ConnectionHubPageProps {
 function deriveHostStatus(cfg: SavedHostResponse, activeSessions: SavedHost[]): HostStatus {
   const displayName = cfg.label ?? cfg.hostname;
   const match = activeSessions.find(
-    s => s.label === displayName || s.label === cfg.hostname,
+    s => s.label === displayName || s.label === cfg.hostname || s.label === `${cfg.hostname}:${cfg.port}`,
   );
   if (!match) return 'idle';
   if (match.status === 'online') return 'online';
@@ -1090,7 +1090,7 @@ export function ConnectionHubPage({
   const findActiveSessionId = (cfg: SavedHostResponse): string | null => {
     const displayName = cfg.label ?? cfg.hostname;
     const match = activeSessions.find(
-      s => s.status === 'online' && (s.label === displayName || s.label === cfg.hostname),
+      s => s.status === 'online' && (s.label === displayName || s.label === cfg.hostname || s.label === `${cfg.hostname}:${cfg.port}`),
     );
     return match?.id ?? null;
   };

@@ -1,1 +1,287 @@
-package com.weekend.architect.unift.remote.docker;import com.github.dockerjava.api.DockerClient;import com.github.dockerjava.core.DefaultDockerClientConfig;import com.github.dockerjava.core.DockerClientImpl;import com.github.dockerjava.jaxrs.JerseyDockerHttpClient;import com.github.dockerjava.transport.DockerHttpClient;import com.weekend.architect.unift.remote.core.PortForwardable;import com.weekend.architect.unift.remote.core.RemoteShell;import java.io.IOException;import java.net.InetSocketAddress;import java.net.Socket;import java.net.URI;import java.util.concurrent.ConcurrentHashMap;import lombok.extern.slf4j.Slf4j;import org.jspecify.annotations.Nullable;import org.springframework.stereotype.Component;/** * Manages {@link DockerClient} instances — one per active SSH session. * * <h3>Connection strategy</h3> * <ol> *   <li><b>Docker TCP</b> — if {@code $DOCKER_HOST} on the remote is a TCP URL, probe *       direct reachability from the UniFT host.  If unreachable, open an SSH *       port-forward tunnel and connect through it.</li> *   <li><b>Docker Unix socket</b> — the default.  Start a {@code socat} TCP bridge on *       the remote host (bound to 127.0.0.1 only) and SSH-tunnel that port locally. *       Requires {@code socat} to be installed on the remote server.</li> * </ol> * * <p>By using a real HTTP client (Apache HTTP Client 5) instead of the previous * SSH-exec approach, Docker API calls no longer share the same JSch channels that * power the interactive terminal — eliminating the channel-contention bug that caused * the Docker workspace to show a blank screen. * * <h3>Lifecycle</h3> * <p>Clients are built lazily on first use and cached for the life of the SSH session. * {@link #evict(String)} is called by * {@link com.weekend.architect.unift.remote.registry.SessionRegistry} when the SSH session closes, * tearing down the socat bridge and SSH tunnel. */@Slf4j@Componentpublic class DockerClientPool {    private static final int PROBE_TIMEOUT_MS = 3_000;    /** Reads the effective {@code DOCKER_HOST} env var on the remote host. */    private static final String DETECT_DOCKER_HOST_CMD =            "echo \"${DOCKER_HOST:-unix:///var/run/docker.sock}\"";    /**     * Starts a socat TCP bridge for the Docker Unix socket on the remote host.     *     * <p>Outputs either:     * <pre>     *   BRIDGE_PORT:&lt;port&gt;     *   BRIDGE_PID:&lt;pid&gt;     * </pre>     * or one of:     * <pre>     *   ERROR:no_socat  — socat binary not found     *   ERROR:no_socket — /var/run/docker.sock not found     *   ERROR:no_port   — could not find a free local port     *   ERROR:socat_failed — socat exited immediately     * </pre>     */    private static final String SOCAT_BRIDGE_CMD = String.join("; ",            "command -v socat >/dev/null 2>&1 || { echo ERROR:no_socat; exit 1; }",            "test -S /var/run/docker.sock || { echo ERROR:no_socket; exit 1; }",            "PORT=$(python3 -c \"import socket; s=socket.socket(); "                    + "s.bind(('127.0.0.1',0)); p=s.getsockname()[1]; s.close(); print(p)\" 2>/dev/null)",            "[ -z \"$PORT\" ] && { echo ERROR:no_port; exit 1; }",            "nohup socat TCP-LISTEN:$PORT,reuseaddr,fork,bind=127.0.0.1"                    + " UNIX-CONNECT:/var/run/docker.sock >/dev/null 2>&1 &",            "SOCAT_PID=$!",            "sleep 0.5",            "kill -0 $SOCAT_PID 2>/dev/null"                    + " && echo \"BRIDGE_PORT:$PORT\" && echo \"BRIDGE_PID:$SOCAT_PID\""                    + " || echo ERROR:socat_failed");    private final ConcurrentHashMap<String, DockerClientEntry> pool = new ConcurrentHashMap<>();    // ─── Public API ──────────────────────────────────────────────────────────    /**     * Returns the cached {@link DockerClient} for the session, building it on first call.     *     * @param sessionId SSH session ID     * @param shell     live SSH connection (must also implement {@link PortForwardable})     * @return a thread-safe DockerClient backed by an Apache HTTP Client 5 transport     * @throws DockerClientInitException if the client cannot be built     */    public DockerClient resolveForSession(String sessionId, RemoteShell shell) {        DockerClientEntry existing = pool.get(sessionId);        if (existing != null) return existing.client();        return pool.computeIfAbsent(sessionId, id -> buildFromSsh(id, shell)).client();    }    /**     * Closes the {@link DockerClient}, kills any socat bridge, and releases any SSH     * port-forward for the given session key.  Safe to call even if nothing was registered.     */    public void evict(String sessionId) {        DockerClientEntry entry = pool.remove(sessionId);        if (entry != null) safeClose(sessionId, entry);    }    // ─── Builders ────────────────────────────────────────────────────────────    private DockerClientEntry buildFromSsh(String sessionId, RemoteShell shell) {        log.info("[docker-pool] Building DockerClient for session {}", sessionId);        // 1. Detect Docker host on remote        String dockerHost;        try {            dockerHost = shell.executeCommand(DETECT_DOCKER_HOST_CMD).trim();            if (dockerHost.isEmpty()) dockerHost = "unix:///var/run/docker.sock";        } catch (Exception e) {            throw new DockerClientInitException("Failed to detect Docker host on remote SSH server", e);        }        log.info("[docker-pool] Remote DOCKER_HOST={} for session {}", dockerHost, sessionId);        // 2. Route by endpoint type        if (dockerHost.startsWith("tcp://")                || dockerHost.startsWith("http://")                || dockerHost.startsWith("https://")) {            return buildViaTcp(sessionId, shell, dockerHost);        } else {            // Default: unix:///var/run/docker.sock            return buildViaSocatBridge(sessionId, shell);        }    }    /** Connects via a Docker TCP endpoint — directly or through an SSH tunnel. */    private DockerClientEntry buildViaTcp(String sessionId, RemoteShell shell, String dockerHost) {        URI uri = URI.create(dockerHost);        String remoteApiHost = uri.getHost();        boolean tls = dockerHost.startsWith("https://");        int remoteApiPort = uri.getPort() == -1 ? (tls ? 2376 : 2375) : uri.getPort();        if (isReachable(remoteApiHost, remoteApiPort)) {            log.info("[docker-pool] Docker TCP {} directly reachable for session {}",                    dockerHost, sessionId);            DockerClient client =                    createDockerClient("tcp://" + remoteApiHost + ":" + remoteApiPort, tls);            return new DockerClientEntry(client, null, -1, null, null);        }        if (!(shell instanceof PortForwardable forwardable)) {            throw new DockerClientInitException(                    "Docker TCP at " + dockerHost + " is not directly reachable and the SSH connection "                            + "does not support port forwarding");        }        int localPort;        try {            localPort = forwardable.forwardLocalPort(remoteApiHost, remoteApiPort);            log.info("[docker-pool] SSH tunnel localhost:{} → {}:{} established for session {}",                    localPort, remoteApiHost, remoteApiPort, sessionId);        } catch (Exception e) {            throw new DockerClientInitException("Failed to open SSH tunnel to Docker TCP endpoint", e);        }        DockerClient client = createDockerClient("tcp://127.0.0.1:" + localPort, tls);        return new DockerClientEntry(client, forwardable, localPort, null, null);    }    /**     * Bridges the Docker Unix socket to a local TCP port via socat on the remote host,     * then SSH-tunnels that port to the UniFT server.     */    private DockerClientEntry buildViaSocatBridge(String sessionId, RemoteShell shell) {        log.info("[docker-pool] Starting socat bridge for Docker Unix socket (session {})", sessionId);        String output;        try {            output = shell.executeCommand(SOCAT_BRIDGE_CMD).trim();        } catch (Exception e) {            throw new DockerClientInitException("Failed to start socat bridge on remote host", e);        }        if (output.contains("ERROR:no_socat")) {            throw new DockerClientInitException(                    "Docker uses a Unix socket but 'socat' is not installed on the remote host. "                            + "Install it (e.g. 'apt install socat' / 'yum install socat'), "                            + "or configure Docker to also listen on TCP by adding "                            + "\"hosts\": [\"unix:///var/run/docker.sock\", \"tcp://127.0.0.1:2375\"] "                            + "to /etc/docker/daemon.json.");        }        if (output.contains("ERROR:no_socket")) {            throw new DockerClientInitException(                    "Docker socket /var/run/docker.sock not found. Is the Docker daemon running?");        }        if (output.contains("ERROR:")) {            throw new DockerClientInitException(                    "Failed to start socat bridge on remote host: " + output);        }        int bridgePort = parseIntField(output, "BRIDGE_PORT");        String socatPid = parseField(output, "BRIDGE_PID");        if (bridgePort <= 0 || socatPid == null) {            throw new DockerClientInitException(                    "Unexpected socat bridge output (no port/pid): " + output);        }        log.info("[docker-pool] socat bridge on remote port {} (PID {}) for session {}",                bridgePort, socatPid, sessionId);        if (!(shell instanceof PortForwardable forwardable)) {            killRemoteProcess(shell, socatPid);            throw new DockerClientInitException(                    "SSH connection does not support port forwarding — cannot tunnel socat bridge");        }        int localPort;        try {            localPort = forwardable.forwardLocalPort("127.0.0.1", bridgePort);            log.info("[docker-pool] SSH tunnel localhost:{} → remote:127.0.0.1:{} for session {}",                    localPort, bridgePort, sessionId);        } catch (Exception e) {            killRemoteProcess(shell, socatPid);            throw new DockerClientInitException("Failed to SSH-tunnel the socat bridge port", e);        }        DockerClient client = createDockerClient("tcp://127.0.0.1:" + localPort, false);        return new DockerClientEntry(client, forwardable, localPort, shell, socatPid);    }    private DockerClient createDockerClient(String dockerHostUrl, boolean tlsVerify) {        DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()                .withDockerHost(dockerHostUrl)                .withDockerTlsVerify(tlsVerify)                .build();        DockerHttpClient httpClient = new JerseyDockerHttpClient.Builder()                .dockerHost(config.getDockerHost())                .sslConfig(config.getSSLConfig())                .maxTotalConnections(10)                .maxPerRouteConnections(10)                .build();        return DockerClientImpl.getInstance(config, httpClient);    }    // ─── Cleanup ─────────────────────────────────────────────────────────────    private void safeClose(String sessionId, DockerClientEntry entry) {        // Kill socat bridge (if we started one)        if (entry.socatPid() != null && entry.shellForCleanup() != null) {            killRemoteProcess(entry.shellForCleanup(), entry.socatPid());            log.info("[docker-pool] socat (PID {}) killed for session {}", entry.socatPid(), sessionId);        }        // Release SSH tunnel        if (entry.portForwardable() != null && entry.localPort() > 0) {            entry.portForwardable().cancelPortForward(entry.localPort());            log.info("[docker-pool] SSH tunnel port {} released for session {}", entry.localPort(), sessionId);        }        // Close DockerClient        try {            entry.client().close();        } catch (Exception e) {            log.warn("[docker-pool] Error closing DockerClient for session {}: {}",                    sessionId, e.getMessage());        }    }    private void killRemoteProcess(RemoteShell shell, String pid) {        try {            shell.executeCommand("kill " + pid + " 2>/dev/null; true");        } catch (Exception e) {            log.warn("[docker-pool] Could not kill remote PID {}: {}", pid, e.getMessage());        }    }    // ─── Helpers ─────────────────────────────────────────────────────────────    private boolean isReachable(String host, int port) {        try (Socket socket = new Socket()) {            socket.connect(new InetSocketAddress(host, port), PROBE_TIMEOUT_MS);            return true;        } catch (IOException e) {            return false;        }    }    private int parseIntField(String output, String key) {        String val = parseField(output, key);        if (val == null) return -1;        try {            return Integer.parseInt(val);        } catch (NumberFormatException e) {            return -1;        }    }    private String parseField(String output, String key) {        for (String line : output.split("[\r\n]+")) {            line = line.trim();            if (line.startsWith(key + ":")) return line.substring(key.length() + 1).trim();        }        return null;    }    // ─── Inner types ─────────────────────────────────────────────────────────    record DockerClientEntry(            DockerClient client,            @Nullable PortForwardable portForwardable,            int localPort,            /** Shell used to kill the socat process on cleanup; null when not needed. */            @Nullable RemoteShell shellForCleanup,            /** PID of the socat bridge process on the remote host; null when not started. */            @Nullable String socatPid) {}    /** Thrown when a {@link DockerClient} cannot be initialised for a session. */    public static class DockerClientInitException extends RuntimeException {        public DockerClientInitException(String message) {            super(message);        }        public DockerClientInitException(String message, Throwable cause) {            super(message, cause);        }    }}
+package com.weekend.architect.unift.remote.docker;
+
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.core.DefaultDockerClientConfig;
+import com.github.dockerjava.core.DockerClientBuilder;
+import com.github.dockerjava.core.DockerClientImpl;
+import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
+import com.github.dockerjava.transport.DockerHttpClient;
+import com.weekend.architect.unift.remote.core.PortForwardable;
+import com.weekend.architect.unift.remote.core.RemoteConnection;
+import com.weekend.architect.unift.remote.core.RemoteShell;
+import jakarta.annotation.PreDestroy;
+import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+/**
+ * Manages docker-java {@link DockerClient} instances — one per active SSH session.
+ *
+ * <p>On the first Docker API call for a session, the pool:
+ * <ol>
+ *   <li>Looks up the session's SSH connection from {@link SessionRegistry}.</li>
+ *   <li>Opens an SSH local port-forward from {@code localhost:{randomPort}} to the
+ *       remote Docker daemon (TCP:2375 by default, with socket-bridge fallback).</li>
+ *   <li>Builds a {@link DockerClient} pointing at {@code tcp://127.0.0.1:{localPort}}.</li>
+ *   <li>Caches the entry in {@link DockerClientCache}.</li>
+ * </ol>
+ *
+ * <p>SSRF protection mirrors {@code K8sClientPool}: loopback, link-local, and
+ * site-local addresses are blocked when probing the remote Docker daemon port.
+ *
+ * @see DockerClientCache
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class DockerClientPool {
+
+    private static final int PROBE_TIMEOUT_MS = 3_000;
+    private static final int DEFAULT_DOCKER_TCP_PORT = 2375;
+    private static final int SOCAT_BRIDGE_PORT = 2376;
+    private static final Set<String> BLOCKED_HOSTS = Set.of("169.254.169.254", "fd00::ec2");
+
+    private final DockerClientCache dockerClientCache;
+
+    /**
+     * Returns the cached {@link DockerClient} for the session, building it on first call.
+     * The caller must supply the already-validated {@link RemoteConnection} so this pool
+     * does not depend on {@code SessionRegistry} (avoiding a circular bean dependency).
+     *
+     * @param sessionId  the SSH session identifier
+     * @param connection the live SSH connection (must implement RemoteShell and PortForwardable)
+     * @return a live DockerClient tunnelled to the remote daemon
+     */
+    public DockerClient resolveForSession(String sessionId, RemoteConnection connection) {
+        DockerClientEntry existing = dockerClientCache.getIfPresent(sessionId);
+        if (existing != null) {
+            return existing.client();
+        }
+        return dockerClientCache
+                .computeIfAbsent(sessionId, id -> buildFromSession(id, connection))
+                .client();
+    }
+
+    /**
+     * Closes the Docker client and tears down the SSH tunnel for the given session.
+     * Safe to call if the session was never tunnelled (no-op).
+     */
+    public void evict(String sessionId) {
+        DockerClientEntry entry = dockerClientCache.remove(sessionId);
+        if (entry != null) {
+            safeClose(sessionId, entry);
+        }
+    }
+
+    @PreDestroy
+    void shutdown() {
+        log.info("[docker-pool] Shutting down — closing all cached Docker clients");
+        for (var e : dockerClientCache.entries()) {
+            safeClose(e.getKey(), e.getValue());
+            dockerClientCache.remove(e.getKey());
+        }
+    }
+
+    private DockerClientEntry buildFromSession(String sessionId, RemoteConnection conn) {
+        log.info("[docker-pool] Building Docker client for session {}", sessionId);
+
+        if (!(conn instanceof RemoteShell shell)) {
+            throw new DockerClientInitException(
+                    "Session " + sessionId + " does not support remote command execution");
+        }
+        if (!(conn instanceof PortForwardable forwardable)) {
+            throw new DockerClientInitException(
+                    "Session " + sessionId + " does not support port forwarding");
+        }
+
+        // Determine the remote Docker daemon port by probing TCP 2375 first,
+        // falling back to starting a socat bridge on the remote host.
+        int remotePort = resolveRemoteDaemonPort(shell);
+
+        // Open SSH local port-forward: localhost:{auto} -> remote localhost:{remotePort}
+        int localPort;
+        try {
+            localPort = forwardable.forwardLocalPort("127.0.0.1", remotePort);
+            log.info("[docker-pool] SSH tunnel localhost:{} -> remote 127.0.0.1:{} for session {}",
+                    localPort, remotePort, sessionId);
+        } catch (Exception e) {
+            throw new DockerClientInitException("Failed to open SSH tunnel to Docker daemon", e);
+        }
+
+        // Build docker-java client pointing at the tunnel endpoint
+        DockerClient client;
+        try {
+            DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
+                    .withDockerHost("tcp://127.0.0.1:" + localPort)
+                    .build();
+
+            DockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()
+                .dockerHost(config.getDockerHost())
+                .sslConfig(config.getSSLConfig())
+                .maxConnections(100)
+                .connectionTimeout(Duration.ofSeconds(30))
+                .responseTimeout(Duration.ofSeconds(45))
+                .build();
+            client = DockerClientImpl.getInstance(config, httpClient);
+
+            // Verify the connection by pinging the daemon
+            client.pingCmd().exec();
+            log.info("[docker-pool] Docker client created and verified for session {}", sessionId);
+        } catch (Exception e) {
+            forwardable.cancelPortForward(localPort);
+            throw new DockerClientInitException("Failed to connect to Docker daemon via tunnel", e);
+        }
+
+        return new DockerClientEntry(client, forwardable, localPort, Instant.now());
+    }
+
+    /**
+     * Determines which port the Docker daemon is listening on at the remote host.
+     * Probes TCP 2375 first; if closed, verifies the Unix socket exists and that
+     * socat is available, then starts (or reuses) a socat bridge on port 2376.
+     */
+    private int resolveRemoteDaemonPort(RemoteShell shell) {
+        if (isRemotePortOpen(shell, DEFAULT_DOCKER_TCP_PORT)) {
+            log.info("[docker-pool] Docker daemon TCP port {} is open on remote host",
+                    DEFAULT_DOCKER_TCP_PORT);
+            return DEFAULT_DOCKER_TCP_PORT;
+        }
+
+        log.info("[docker-pool] TCP {} not open, running remote diagnostics",
+                DEFAULT_DOCKER_TCP_PORT);
+        String diagnostics = runRemoteDiagnostics(shell);
+
+        if (!diagnostics.contains("SOCKET_EXISTS")) {
+            throw new DockerClientInitException(
+                    "Docker daemon is not reachable: TCP port " + DEFAULT_DOCKER_TCP_PORT
+                            + " is not open and /var/run/docker.sock does not exist. "
+                            + "Ensure Docker is installed and running on the remote host.");
+        }
+        if (!diagnostics.contains("SOCAT_FOUND")) {
+            throw new DockerClientInitException(
+                    "Docker daemon listens on /var/run/docker.sock (Unix socket) "
+                            + "but 'socat' is not installed on the remote host. "
+                            + "Install socat (e.g., 'apt install socat' or 'yum install socat') "
+                            + "or configure Docker to listen on TCP (dockerd -H tcp://127.0.0.1:"
+                            + DEFAULT_DOCKER_TCP_PORT + ").");
+        }
+
+        return startSocatBridge(shell);
+    }
+
+    /**
+     * Single SSH round-trip to check Docker socket presence and socat availability.
+     */
+    private String runRemoteDiagnostics(RemoteShell shell) {
+        try {
+            return shell.executeCommand(
+                    "{ test -S /var/run/docker.sock && echo SOCKET_EXISTS || echo SOCKET_MISSING; }; "
+                            + "{ command -v socat >/dev/null 2>&1 && echo SOCAT_FOUND || echo SOCAT_MISSING; }");
+        } catch (Exception e) {
+            log.warn("[docker-pool] Remote diagnostics failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * Starts (or reuses) a socat bridge from TCP 2376 to the Docker Unix socket.
+     * Uses a single SSH exec channel for startup + retry-probe to minimise round-trips.
+     */
+    private int startSocatBridge(RemoteShell shell) {
+        int bridgePort = SOCAT_BRIDGE_PORT;
+
+        if (isRemotePortOpen(shell, bridgePort)) {
+            log.info("[docker-pool] Reusing existing socat bridge on remote port {}", bridgePort);
+            return bridgePort;
+        }
+
+        log.info("[docker-pool] Starting socat bridge: TCP {} -> /var/run/docker.sock", bridgePort);
+        try {
+            String result = shell.executeCommand(
+                    "nohup socat TCP-LISTEN:" + bridgePort
+                            + ",bind=127.0.0.1,fork,reuseaddr "
+                            + "UNIX-CONNECT:/var/run/docker.sock >/dev/null 2>&1 & "
+                            + "for i in 1 2 3 4 5 6; do sleep 0.5; "
+                            + "if bash -c '(echo >/dev/tcp/127.0.0.1/" + bridgePort
+                            + ") 2>/dev/null' 2>/dev/null; then "
+                            + "echo BRIDGE_READY; exit 0; fi; done; echo BRIDGE_FAILED");
+            if (result != null && result.contains("BRIDGE_READY")) {
+                log.info("[docker-pool] socat bridge verified on remote port {}", bridgePort);
+                return bridgePort;
+            }
+        } catch (Exception e) {
+            log.warn("[docker-pool] socat bridge startup failed: {}", e.getMessage());
+        }
+
+        throw new DockerClientInitException(
+                "socat bridge to /var/run/docker.sock was started but port " + bridgePort
+                        + " did not become reachable within 3 seconds. Verify the user has "
+                        + "read/write access to /var/run/docker.sock (e.g., is in the 'docker' group).");
+    }
+
+    /**
+     * Probes whether a TCP port is open on the remote host. Uses {@code bash -c /dev/tcp}
+     * as the primary strategy (explicit bash invocation, not dependent on login shell),
+     * with {@code nc -z} fallback for systems without bash.
+     */
+    private boolean isRemotePortOpen(RemoteShell shell, int port) {
+        try {
+            String result = shell.executeCommand(
+                    "if bash -c '(echo >/dev/tcp/127.0.0.1/" + port + ") 2>/dev/null' 2>/dev/null; then "
+                            + "echo OPEN; "
+                            + "elif nc -z -w2 127.0.0.1 " + port + " 2>/dev/null; then "
+                            + "echo OPEN; "
+                            + "else echo CLOSED; fi");
+            return result != null && result.trim().contains("OPEN");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void safeClose(String key, DockerClientEntry entry) {
+        try {
+            entry.close();
+            log.info("[docker-pool] Closed Docker client for session {}", key);
+        } catch (Exception e) {
+            log.warn("[docker-pool] Error closing Docker client for session {}: {}", key, e.getMessage());
+        }
+    }
+
+    /**
+     * Holds a live DockerClient together with the SSH tunnel metadata required
+     * to clean up when the session ends.
+     */
+    record DockerClientEntry(
+            DockerClient client,
+            PortForwardable tunnel,
+            int localPort,
+            Instant createdAt) implements AutoCloseable {
+
+        @Override
+        public void close() {
+            try {
+                client.close();
+            } catch (Exception ignored) {
+                // best-effort close
+            }
+            tunnel.cancelPortForward(localPort);
+        }
+    }
+
+    /**
+     * Thrown when a Docker client cannot be initialised for a session.
+     */
+    public static class DockerClientInitException extends RuntimeException {
+        public DockerClientInitException(String message) {
+            super(message);
+        }
+
+        public DockerClientInitException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+}

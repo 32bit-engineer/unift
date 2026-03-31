@@ -36,7 +36,7 @@ public class SshCredentialValidator implements CredentialValidator {
 
             case PASSWORD -> {
                 if (request.getPassword() == null || request.getPassword().isBlank()) {
-                    throw new CredentialValidationException("password is    required when authType=PASSWORD");
+                    throw new CredentialValidationException("password is required when authType=PASSWORD");
                 }
             }
             case PRIVATE_KEY -> {

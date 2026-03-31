@@ -39,6 +39,8 @@ export interface UISession {
   analytics?: SessionAnalyticsResponse;
   /** The active workspace type for this session (ssh, docker, kubernetes). */
   workspaceType: WorkspaceType;
+  /** All currently active workspace types for this session. */
+  activeWorkspaces: WorkspaceType[];
   /** The saved host ID that spawned this session, if any. Used for preference persistence. */
   savedHostId?: string;
   /** Whether capability detection has run for this session. */
@@ -65,6 +67,8 @@ interface ConnectionState {
   updateSessionAnalytics: (sessionId: string, analytics: SessionAnalyticsResponse) => void;
   setWorkspaceType: (sessionId: string, workspaceType: WorkspaceType) => void;
   markCapabilitiesDetected: (sessionId: string) => void;
+  activateWorkspace: (sessionId: string, type: WorkspaceType) => Promise<void>;
+  deactivateWorkspace: (sessionId: string, type: WorkspaceType) => Promise<void>;
 
   // Saved host actions
   fetchSavedHosts: () => Promise<void>;
@@ -77,6 +81,7 @@ interface ConnectionState {
 }
 
 function mapToUISession(raw: SessionState): UISession {
+  const rawWorkspaces = raw.activeWorkspaces ?? ['ssh'];
   return {
     sessionId: raw.sessionId,
     name: raw.label ?? `${raw.host}:${raw.port}`,
@@ -96,6 +101,7 @@ function mapToUISession(raw: SessionState): UISession {
       kubernetes: false,
     },
     workspaceType: 'ssh',
+    activeWorkspaces: rawWorkspaces as WorkspaceType[],
     capabilitiesDetected: false,
   };
 }
@@ -143,9 +149,18 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         activeWorkspaceSessionId:
           state.activeWorkspaceSessionId === sessionId ? null : state.activeWorkspaceSessionId,
       }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to close session';
-      set({ error: message });
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status === 404 || status === 410) {
+        set(state => ({
+          sessions: state.sessions.filter(s => s.sessionId !== sessionId),
+          activeWorkspaceSessionId:
+            state.activeWorkspaceSessionId === sessionId ? null : state.activeWorkspaceSessionId,
+        }));
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to close session';
+        set({ error: message });
+      }
     }
   },
 
@@ -204,6 +219,38 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         s.sessionId === sessionId ? { ...s, capabilitiesDetected: true } : s,
       ),
     }));
+  },
+
+  activateWorkspace: async (sessionId, type) => {
+    try {
+      const updated = await remoteConnectionAPI.activateWorkspace(sessionId, type);
+      set(state => ({
+        sessions: state.sessions.map(s =>
+          s.sessionId === sessionId
+            ? { ...s, activeWorkspaces: updated as WorkspaceType[] }
+            : s,
+        ),
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to activate workspace';
+      set({ error: message });
+    }
+  },
+
+  deactivateWorkspace: async (sessionId, type) => {
+    try {
+      const updated = await remoteConnectionAPI.deactivateWorkspace(sessionId, type);
+      set(state => ({
+        sessions: state.sessions.map(s =>
+          s.sessionId === sessionId
+            ? { ...s, activeWorkspaces: updated as WorkspaceType[] }
+            : s,
+        ),
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to deactivate workspace';
+      set({ error: message });
+    }
   },
 
   fetchSavedHosts: async () => {

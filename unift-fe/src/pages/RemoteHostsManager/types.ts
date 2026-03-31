@@ -8,6 +8,7 @@ export type { TransferStatusResponse };
 export interface UIHost {
   sessionId: string;
   name: string;
+  label?: string;
   status: 'online' | 'offline' | 'warning';
   userAtIp: string;
   protocol: string;

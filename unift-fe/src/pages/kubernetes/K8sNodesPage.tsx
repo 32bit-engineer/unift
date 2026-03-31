@@ -47,9 +47,22 @@ export function K8sNodesPage({ sessionId }: K8sNodesPageProps) {
 
   if (loading && nodes.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-        <span className="material-symbols-rounded" style={{ fontSize: 28, marginRight: 10, animation: 'spin 1s linear infinite' }}>progress_activity</span>
-        Loading nodes...
+      <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div className="shimmer" style={{ height: 26, width: 210, borderRadius: 6, marginBottom: 10 }} />
+            <div className="shimmer" style={{ height: 14, width: 280, borderRadius: 4 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 14 }}>
+            {[80, 90, 30].map((w, i) => <div key={i} className="shimmer" style={{ height: 18, width: w, borderRadius: 4 }} />)}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 340px', gap: 16 }}>
+          {[0, 1, 2].map(i => <div key={i} className="shimmer" style={{ height: 200, borderRadius: 12 }} />)}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+          {[0, 1, 2].map(i => <div key={i} className="shimmer" style={{ height: 120, borderRadius: 10 }} />)}
+        </div>
       </div>
     );
   }
@@ -67,7 +80,7 @@ export function K8sNodesPage({ sessionId }: K8sNodesPageProps) {
   }
 
   return (
-    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 22, overflow: 'auto', height: '100%' }}>
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 22, overflow: 'auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
@@ -194,10 +207,11 @@ function FeaturedNodeCard({ node, onViewYaml }: { node: K8sNode; onViewYaml: () 
           <button
             onClick={onViewYaml}
             style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: 'rgba(124,109,250,0.1)', color: '#7C6DFA',
-              fontSize: 11, fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 7,
+              border: '1px solid rgba(124,109,250,0.25)', cursor: 'pointer',
+              background: 'rgba(124,109,250,0.07)', color: '#a78bfa',
+              fontSize: 12, fontWeight: 500,
             }}
             title="View YAML"
           >
@@ -241,13 +255,16 @@ function CompactNodeCard({ node, onViewYaml }: { node: K8sNode; onViewYaml: () =
           <button
             onClick={onViewYaml}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 26, height: 26, borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: 'rgba(124,109,250,0.1)', color: '#7C6DFA',
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 8px', borderRadius: 6,
+              border: '1px solid rgba(124,109,250,0.2)', cursor: 'pointer',
+              background: 'rgba(124,109,250,0.06)', color: '#a78bfa',
+              fontSize: 11, fontWeight: 500,
             }}
             title="View YAML"
           >
-            <span className="material-symbols-rounded" style={{ fontSize: 13, fontVariationSettings: "'FILL' 0, 'wght' 300" }}>description</span>
+            <span className="material-symbols-rounded" style={{ fontSize: 12, fontVariationSettings: "'FILL' 0, 'wght' 300" }}>description</span>
+            YAML
           </button>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: ready ? '#4ade80' : '#f87171' }} />
         </div>

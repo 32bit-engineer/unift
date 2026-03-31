@@ -51,23 +51,21 @@ import io.fabric8.kubernetes.api.model.networking.v1.IngressTLS;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.VersionInfo;
 import io.fabric8.kubernetes.client.utils.Serialization;
-import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import io.fabric8.kubernetes.client.dsl.LogWatch;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
@@ -97,13 +95,23 @@ import org.yaml.snakeyaml.Yaml;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class K8sServiceImpl implements K8sService {
 
-    private final SessionRegistry sessionRegistry;
     private final K8sClientPool k8sClientPool;
+    private final ExecutorService virtualExecutor;
+    private final SessionRegistry sessionRegistry;
+    private final K8sLogStreamService k8sLogStreamService;
 
-    // ─── K8sService impl ─────────────────────────────────────────────────────
+    public K8sServiceImpl(
+            K8sClientPool k8sClientPool,
+            SessionRegistry sessionRegistry,
+            @Qualifier("virtualThreadExecutor") ExecutorService virtualExecutor,
+            K8sLogStreamService k8sLogStreamService) {
+        this.k8sClientPool = k8sClientPool;
+        this.sessionRegistry = sessionRegistry;
+        this.virtualExecutor = virtualExecutor;
+        this.k8sLogStreamService = k8sLogStreamService;
+    }
 
     @Override
     public boolean isKubectlAvailable(String sessionId, UUID userId) {
@@ -144,7 +152,7 @@ public class K8sServiceImpl implements K8sService {
 
         K8sClusterInfo clusterInfo = K8sClusterInfo.builder().available(false).build();
         try {
-            // ── Fan out all API calls in parallel ──────────────────────────────
+            // Fan out all API calls in parallel
             CompletableFuture<PodList> podsFuture = CompletableFuture.supplyAsync(() -> allNs
                     ? client.pods().inAnyNamespace().list()
                     : client.pods().inNamespace(namespace).list());
@@ -166,9 +174,11 @@ public class K8sServiceImpl implements K8sService {
             CompletableFuture<VersionInfo> versionFuture = CompletableFuture.supplyAsync(client::getKubernetesVersion);
 
             // Wait for all six futures concurrently
-            CompletableFuture.allOf(podsFuture, depsFuture, svcsFuture, nodesFuture, nsFuture, versionFuture)
-                    .join();
+            CompletableFuture<Void> combined = CompletableFuture.allOf(
+                            podsFuture, depsFuture, svcsFuture, nodesFuture, nsFuture, versionFuture)
+                    .orTimeout(15, TimeUnit.SECONDS);
 
+            combined.join();
 
             try {
                 VersionInfo v = versionFuture.join();
@@ -185,9 +195,12 @@ public class K8sServiceImpl implements K8sService {
                 log.warn("[k8s] Version fetch failed for session {}: {}", sessionId, e.getMessage());
             }
 
-            // ── Pods ───────────────────────────────────────────────────────────
+            // Cluster Pods
             PodList podList = podsFuture.join();
-            int totalPods = 0, runningPods = 0, pendingPods = 0, failedPods = 0;
+            int totalPods = 0;
+            int runningPods = 0;
+            int pendingPods = 0;
+            int failedPods = 0;
             List<Pod> recentPods = new ArrayList<>();
             if (podList.getItems() != null) {
                 for (var p : podList.getItems()) {
@@ -204,25 +217,26 @@ public class K8sServiceImpl implements K8sService {
                 }
             }
 
-            // ── Deployments ────────────────────────────────────────────────────
+            // Deployments
             int totalDeployments = depsFuture.join().getItems() != null
                     ? depsFuture.join().getItems().size()
                     : 0;
 
-            // ── Services ───────────────────────────────────────────────────────
+            // Services
             int totalServices = svcsFuture.join().getItems() != null
                     ? svcsFuture.join().getItems().size()
                     : 0;
 
-            // ── Nodes ──────────────────────────────────────────────────────────
+            // Nodes
             NodeList nodeList = nodesFuture.join();
-            int totalNodes = 0, readyNodes = 0;
+            int totalNodes = 0;
+            int readyNodes = 0;
             if (nodeList.getItems() != null) {
                 totalNodes = nodeList.getItems().size();
                 for (var n : nodeList.getItems()) if (isNodeReady(n)) readyNodes++;
             }
 
-            // ── Namespaces ─────────────────────────────────────────────────────
+            // Namespaces
             List<Namespace> namespaces = toNamespaces(nsFuture.join());
 
             return K8sOverview.builder()
@@ -295,34 +309,9 @@ public class K8sServiceImpl implements K8sService {
     }
 
     @Override
-    public void streamPodLogs(String sessionId, UUID userId, String namespace, String podName,
-            int tailLines, SseEmitter emitter) {
-        int safeTail = Math.max(1, Math.min(tailLines, 5_000));
-        String ns = resolveNamespace(namespace);
-        CompletableFuture.runAsync(() -> {
-            try (LogWatch watch = resolveClient(sessionId, userId)
-                    .pods()
-                    .inNamespace(ns)
-                    .withName(podName)
-                    .tailingLines(safeTail)
-                    .watchLog();
-                 BufferedReader reader = new BufferedReader(
-                         new InputStreamReader(watch.getOutput(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    emitter.send(SseEmitter.event().data(line));
-                }
-                emitter.complete();
-            } catch (IOException e) {
-                log.warn("[k8s] Log stream I/O error for {}/{}: {}", ns, podName, e.getMessage());
-                try { emitter.completeWithError(e); } catch (Exception ignored) {}
-            } catch (Exception e) {
-                log.warn("[k8s] Log stream error for {}/{}: {}", ns, podName, e.getMessage());
-                try { emitter.completeWithError(e); } catch (Exception ignored) {}
-            }
-        });
-        emitter.onTimeout(emitter::complete);
-        emitter.onError(ex -> emitter.complete());
+    public SseEmitter streamPodLogs(
+            String sessionId, UUID userId, String namespace, String podName, String container, int tailLines) {
+        return k8sLogStreamService.streamPodLogs(sessionId, userId, namespace, podName, container, tailLines);
     }
 
     @Override
@@ -467,7 +456,7 @@ public class K8sServiceImpl implements K8sService {
         }
     }
 
-    // ─── Session resolution ──────────────────────────────────────────────────
+    // Session resolution
 
     private KubernetesClient resolveClient(String sessionId, UUID userId) {
         RemoteConnection conn = sessionRegistry.require(sessionId);
@@ -480,7 +469,7 @@ public class K8sServiceImpl implements K8sService {
         return k8sClientPool.resolveForSession(sessionId, shell);
     }
 
-    // ─── SDK → domain model mappers ──────────────────────────────────────────
+    // ─SDK → domain model mappers ──────────────────────────────────────────
 
     private Pod toPod(io.fabric8.kubernetes.api.model.Pod p) {
         var meta = p.getMetadata();
@@ -648,7 +637,7 @@ public class K8sServiceImpl implements K8sService {
                 .toList();
     }
 
-    // ─── Utilities ────────────────────────────────────────────────────────────
+    // ─Utilities ────────
 
     private boolean isNodeReady(io.fabric8.kubernetes.api.model.Node node) {
         if (node.getStatus() == null || node.getStatus().getConditions() == null) return false;
@@ -678,7 +667,6 @@ public class K8sServiceImpl implements K8sService {
         return (namespace == null || namespace.isBlank()) ? "default" : namespace;
     }
 
-
     @Override
     public ConfigMapPage listConfigMaps(String sessionId, UUID userId, String namespace) {
         try {
@@ -688,8 +676,12 @@ public class K8sServiceImpl implements K8sService {
                     ? client.configMaps().inAnyNamespace().list()
                     : client.configMaps().inNamespace(namespace).list();
             List<ConfigMap> configMaps = list.getItems() != null
-                    ? list.getItems().stream().map(this::toConfigMap).toList() : List.of();
-            return ConfigMapPage.builder().configMaps(configMaps).total(configMaps.size()).build();
+                    ? list.getItems().stream().map(this::toConfigMap).toList()
+                    : List.of();
+            return ConfigMapPage.builder()
+                    .configMaps(configMaps)
+                    .total(configMaps.size())
+                    .build();
         } catch (Exception e) {
             log.warn("[k8s] Failed to list configmaps for session {}: {}", sessionId, e.getMessage());
             return ConfigMapPage.builder().configMaps(List.of()).total(0).build();
@@ -705,8 +697,12 @@ public class K8sServiceImpl implements K8sService {
                     ? client.network().v1().ingresses().inAnyNamespace().list()
                     : client.network().v1().ingresses().inNamespace(namespace).list();
             List<Ingress> ingresses = list.getItems() != null
-                    ? list.getItems().stream().map(this::toIngress).toList() : List.of();
-            return IngressPage.builder().ingresses(ingresses).total(ingresses.size()).build();
+                    ? list.getItems().stream().map(this::toIngress).toList()
+                    : List.of();
+            return IngressPage.builder()
+                    .ingresses(ingresses)
+                    .total(ingresses.size())
+                    .build();
         } catch (Exception e) {
             log.warn("[k8s] Failed to list ingresses for session {}: {}", sessionId, e.getMessage());
             return IngressPage.builder().ingresses(List.of()).total(0).build();
@@ -722,8 +718,12 @@ public class K8sServiceImpl implements K8sService {
                     ? client.apps().daemonSets().inAnyNamespace().list()
                     : client.apps().daemonSets().inNamespace(namespace).list();
             List<DaemonSet> daemonSets = list.getItems() != null
-                    ? list.getItems().stream().map(this::toDaemonSet).toList() : List.of();
-            return DaemonSetPage.builder().daemonSets(daemonSets).total(daemonSets.size()).build();
+                    ? list.getItems().stream().map(this::toDaemonSet).toList()
+                    : List.of();
+            return DaemonSetPage.builder()
+                    .daemonSets(daemonSets)
+                    .total(daemonSets.size())
+                    .build();
         } catch (Exception e) {
             log.warn("[k8s] Failed to list daemonsets for session {}: {}", sessionId, e.getMessage());
             return DaemonSetPage.builder().daemonSets(List.of()).total(0).build();
@@ -737,26 +737,38 @@ public class K8sServiceImpl implements K8sService {
             // Fabric8 7.x DaemonSetResource does not implement RollableScalableResource,
             // so .rolling().restart() is unavailable.  Patch the pod template annotation
             // instead — this is exactly what `kubectl rollout restart daemonset/name` does.
-            resolveClient(sessionId, userId).apps().daemonSets().inNamespace(ns).withName(name)
+            resolveClient(sessionId, userId)
+                    .apps()
+                    .daemonSets()
+                    .inNamespace(ns)
+                    .withName(name)
                     .edit(ds -> {
                         var meta = ds.getSpec().getTemplate().getMetadata();
                         if (meta.getAnnotations() == null) meta.setAnnotations(new HashMap<>());
-                        meta.getAnnotations().put("kubectl.kubernetes.io/restartedAt",
-                                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString());
+                        meta.getAnnotations()
+                                .put(
+                                        "kubectl.kubernetes.io/restartedAt",
+                                        java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
+                                                .toString());
                         return ds;
                     });
             return PodActionResult.builder()
-                    .podName(name).namespace(ns).action("restart")
-                    .success(true).message("daemonset.apps \"" + name + "\" restarted")
+                    .podName(name)
+                    .namespace(ns)
+                    .action("restart")
+                    .success(true)
+                    .message("daemonset.apps \"" + name + "\" restarted")
                     .build();
         } catch (Exception e) {
             return PodActionResult.builder()
-                    .podName(name).namespace(ns).action("restart")
-                    .success(false).message(e.getMessage())
+                    .podName(name)
+                    .namespace(ns)
+                    .action("restart")
+                    .success(false)
+                    .message(e.getMessage())
                     .build();
         }
     }
-
 
     @Override
     public StatefulSetPage listStatefulSets(String sessionId, UUID userId, String namespace) {
@@ -767,8 +779,12 @@ public class K8sServiceImpl implements K8sService {
                     ? client.apps().statefulSets().inAnyNamespace().list()
                     : client.apps().statefulSets().inNamespace(namespace).list();
             List<StatefulSet> statefulSets = list.getItems() != null
-                    ? list.getItems().stream().map(this::toStatefulSet).toList() : List.of();
-            return StatefulSetPage.builder().statefulSets(statefulSets).total(statefulSets.size()).build();
+                    ? list.getItems().stream().map(this::toStatefulSet).toList()
+                    : List.of();
+            return StatefulSetPage.builder()
+                    .statefulSets(statefulSets)
+                    .total(statefulSets.size())
+                    .build();
         } catch (Exception e) {
             log.warn("[k8s] Failed to list statefulsets for session {}: {}", sessionId, e.getMessage());
             return StatefulSetPage.builder().statefulSets(List.of()).total(0).build();
@@ -779,49 +795,72 @@ public class K8sServiceImpl implements K8sService {
     public PodActionResult restartStatefulSet(String sessionId, UUID userId, String namespace, String name) {
         String ns = resolveNamespace(namespace);
         try {
-            resolveClient(sessionId, userId).apps().statefulSets().inNamespace(ns).withName(name)
-                    .rolling().restart();
+            resolveClient(sessionId, userId)
+                    .apps()
+                    .statefulSets()
+                    .inNamespace(ns)
+                    .withName(name)
+                    .rolling()
+                    .restart();
             return PodActionResult.builder()
-                    .podName(name).namespace(ns).action("restart")
-                    .success(true).message("statefulset.apps \"" + name + "\" restarted")
+                    .podName(name)
+                    .namespace(ns)
+                    .action("restart")
+                    .success(true)
+                    .message("statefulset.apps \"" + name + "\" restarted")
                     .build();
         } catch (Exception e) {
             return PodActionResult.builder()
-                    .podName(name).namespace(ns).action("restart")
-                    .success(false).message(e.getMessage())
+                    .podName(name)
+                    .namespace(ns)
+                    .action("restart")
+                    .success(false)
+                    .message(e.getMessage())
                     .build();
         }
     }
 
     @Override
-    public PodActionResult scaleStatefulSet(String sessionId, UUID userId, String namespace, String name, int replicas) {
+    public PodActionResult scaleStatefulSet(
+            String sessionId, UUID userId, String namespace, String name, int replicas) {
         String ns = resolveNamespace(namespace);
         int safeReplicas = Math.max(0, Math.min(replicas, 100));
         try {
-            resolveClient(sessionId, userId).apps().statefulSets().inNamespace(ns).withName(name)
+            resolveClient(sessionId, userId)
+                    .apps()
+                    .statefulSets()
+                    .inNamespace(ns)
+                    .withName(name)
                     .scale(safeReplicas);
             return PodActionResult.builder()
-                    .podName(name).namespace(ns).action("scale")
-                    .success(true).message("statefulset.apps \"" + name + "\" scaled")
+                    .podName(name)
+                    .namespace(ns)
+                    .action("scale")
+                    .success(true)
+                    .message("statefulset.apps \"" + name + "\" scaled")
                     .build();
         } catch (Exception e) {
             return PodActionResult.builder()
-                    .podName(name).namespace(ns).action("scale")
-                    .success(false).message(e.getMessage())
+                    .podName(name)
+                    .namespace(ns)
+                    .action("scale")
+                    .success(false)
+                    .message(e.getMessage())
                     .build();
         }
     }
 
     @Override
-    public ResourceYaml getResourceYaml(String sessionId, UUID userId,
-            String kind, String namespace, String name) {
+    public ResourceYaml getResourceYaml(String sessionId, UUID userId, String kind, String namespace, String name) {
         String ns = resolveNamespace(namespace);
         try {
             KubernetesClient client = resolveClient(sessionId, userId);
             HasMetadata resource = fetchResource(client, kind, ns, name);
             if (resource == null) {
                 return ResourceYaml.builder()
-                        .kind(kind).namespace(ns).name(name)
+                        .kind(kind)
+                        .namespace(ns)
+                        .name(name)
                         .yaml("# Resource not found: " + kind + "/" + name)
                         .build();
             }
@@ -837,7 +876,9 @@ public class K8sServiceImpl implements K8sService {
         } catch (Exception e) {
             log.warn("[k8s] Failed to get YAML for {}/{}/{}: {}", kind, ns, name, e.getMessage());
             return ResourceYaml.builder()
-                    .kind(kind).namespace(ns).name(name)
+                    .kind(kind)
+                    .namespace(ns)
+                    .name(name)
                     .yaml("# Error fetching resource: " + e.getMessage())
                     .build();
         }
@@ -848,11 +889,12 @@ public class K8sServiceImpl implements K8sService {
         String resourceId = "unknown";
         try {
             KubernetesClient client = resolveClient(sessionId, userId);
-            KubernetesResource parsed = Serialization.unmarshal(
-                    new ByteArrayInputStream(yamlContent.getBytes(StandardCharsets.UTF_8)));
+            KubernetesResource parsed =
+                    Serialization.unmarshal(new ByteArrayInputStream(yamlContent.getBytes(StandardCharsets.UTF_8)));
             if (!(parsed instanceof HasMetadata hm)) {
                 return PodActionResult.builder()
-                        .action("apply").success(false)
+                        .action("apply")
+                        .success(false)
                         .message("YAML does not represent a valid Kubernetes resource")
                         .build();
             }
@@ -869,32 +911,38 @@ public class K8sServiceImpl implements K8sService {
         } catch (Exception e) {
             log.warn("[k8s] Failed to apply YAML for {}: {}", resourceId, e.getMessage());
             return PodActionResult.builder()
-                    .action("apply").success(false).message(e.getMessage())
+                    .action("apply")
+                    .success(false)
+                    .message(e.getMessage())
                     .build();
         }
     }
 
-
-
     @Override
-    public RolloutHistoryPage getRolloutHistory(String sessionId, UUID userId,
-            String namespace, String deploymentName) {
+    public RolloutHistoryPage getRolloutHistory(
+            String sessionId, UUID userId, String namespace, String deploymentName) {
         String ns = resolveNamespace(namespace);
         try {
             KubernetesClient client = resolveClient(sessionId, userId);
 
             // Get the deployment to find its UID and current revision
-            io.fabric8.kubernetes.api.model.apps.Deployment dep =
-                    client.apps().deployments().inNamespace(ns).withName(deploymentName).get();
+            io.fabric8.kubernetes.api.model.apps.Deployment dep = client.apps()
+                    .deployments()
+                    .inNamespace(ns)
+                    .withName(deploymentName)
+                    .get();
             if (dep == null) {
                 return RolloutHistoryPage.builder()
-                        .deploymentName(deploymentName).namespace(ns)
-                        .currentRevision(0).revisions(List.of()).build();
+                        .deploymentName(deploymentName)
+                        .namespace(ns)
+                        .currentRevision(0)
+                        .revisions(List.of())
+                        .build();
             }
 
             String depUid = dep.getMetadata().getUid();
-            int currentRevision = parseRevision(
-                    dep.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision");
+            int currentRevision =
+                    parseRevision(dep.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision");
 
             // Collect all ReplicaSets owned by this Deployment
             ReplicaSetList rsList = client.apps().replicaSets().inNamespace(ns).list();
@@ -903,16 +951,16 @@ public class K8sServiceImpl implements K8sService {
             if (rsList.getItems() != null) {
                 for (ReplicaSet rs : rsList.getItems()) {
                     if (!isOwnedBy(rs, depUid)) continue;
-                    int rev = parseRevision(
-                            rs.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision");
+                    int rev = parseRevision(rs.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision");
                     if (rev <= 0) continue;
 
-                    String changeCause = annotationOrNone(
-                            rs.getMetadata().getAnnotations(), "kubernetes.io/change-cause");
+                    String changeCause =
+                            annotationOrNone(rs.getMetadata().getAnnotations(), "kubernetes.io/change-cause");
 
                     // Collect container images for this revision
                     List<String> images = List.of();
-                    if (rs.getSpec() != null && rs.getSpec().getTemplate() != null
+                    if (rs.getSpec() != null
+                            && rs.getSpec().getTemplate() != null
                             && rs.getSpec().getTemplate().getSpec() != null
                             && rs.getSpec().getTemplate().getSpec().getContainers() != null) {
                         images = rs.getSpec().getTemplate().getSpec().getContainers().stream()
@@ -942,57 +990,68 @@ public class K8sServiceImpl implements K8sService {
         } catch (Exception e) {
             log.warn("[k8s] Failed to get rollout history for {}/{}: {}", ns, deploymentName, e.getMessage());
             return RolloutHistoryPage.builder()
-                    .deploymentName(deploymentName).namespace(ns)
-                    .currentRevision(0).revisions(List.of()).build();
+                    .deploymentName(deploymentName)
+                    .namespace(ns)
+                    .currentRevision(0)
+                    .revisions(List.of())
+                    .build();
         }
     }
 
     @Override
-    public PodActionResult undoRollout(String sessionId, UUID userId,
-            String namespace, String deploymentName, int revision) {
+    public PodActionResult undoRollout(
+            String sessionId, UUID userId, String namespace, String deploymentName, int revision) {
         String ns = resolveNamespace(namespace);
         try {
             KubernetesClient client = resolveClient(sessionId, userId);
 
-            io.fabric8.kubernetes.api.model.apps.Deployment dep =
-                    client.apps().deployments().inNamespace(ns).withName(deploymentName).get();
+            io.fabric8.kubernetes.api.model.apps.Deployment dep = client.apps()
+                    .deployments()
+                    .inNamespace(ns)
+                    .withName(deploymentName)
+                    .get();
             if (dep == null) {
                 return PodActionResult.builder()
-                        .podName(deploymentName).namespace(ns).action("rollback")
-                        .success(false).message("Deployment not found").build();
+                        .podName(deploymentName)
+                        .namespace(ns)
+                        .action("rollback")
+                        .success(false)
+                        .message("Deployment not found")
+                        .build();
             }
 
             String depUid = dep.getMetadata().getUid();
-            int currentRevision = parseRevision(
-                    dep.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision");
+            int currentRevision =
+                    parseRevision(dep.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision");
 
             // Find all RSes owned by this deployment, sorted by revision
             ReplicaSetList rsList = client.apps().replicaSets().inNamespace(ns).list();
             List<ReplicaSet> owned = new ArrayList<>();
             if (rsList.getItems() != null) {
                 for (ReplicaSet rs : rsList.getItems()) {
-                    if (isOwnedBy(rs, depUid) && parseRevision(
-                            rs.getMetadata().getAnnotations(),
-                            "deployment.kubernetes.io/revision") > 0) {
+                    if (isOwnedBy(rs, depUid)
+                            && parseRevision(rs.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision")
+                                    > 0) {
                         owned.add(rs);
                     }
                 }
             }
-            owned.sort(Comparator.comparingInt(rs ->
-                    parseRevision(rs.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision")));
+            owned.sort(Comparator.comparingInt(
+                    rs -> parseRevision(rs.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision")));
 
             // Resolve target revision: 0 means "previous"
             int targetRevision = (revision <= 0) ? currentRevision - 1 : revision;
             ReplicaSet targetRs = owned.stream()
-                    .filter(rs -> parseRevision(
-                            rs.getMetadata().getAnnotations(),
-                            "deployment.kubernetes.io/revision") == targetRevision)
+                    .filter(rs -> parseRevision(rs.getMetadata().getAnnotations(), "deployment.kubernetes.io/revision")
+                            == targetRevision)
                     .findFirst()
                     .orElse(null);
 
             if (targetRs == null) {
                 return PodActionResult.builder()
-                        .podName(deploymentName).namespace(ns).action("rollback")
+                        .podName(deploymentName)
+                        .namespace(ns)
+                        .action("rollback")
                         .success(false)
                         .message("No ReplicaSet found for revision " + targetRevision)
                         .build();
@@ -1001,32 +1060,34 @@ public class K8sServiceImpl implements K8sService {
             // Patch the deployment's pod template to match the target RS.
             // Use edit() so Fabric8 does a read-modify-write under the hood.
             final ReplicaSet finalTargetRs = targetRs;
-            client.apps().deployments().inNamespace(ns).withName(deploymentName)
-                    .edit(d -> {
-                        var template = finalTargetRs.getSpec().getTemplate();
-                        // Remove pod-template-hash — it's set by the controller, not by us
-                        if (template.getMetadata() != null && template.getMetadata().getLabels() != null) {
-                            template.getMetadata().getLabels().remove("pod-template-hash");
-                        }
-                        d.getSpec().setTemplate(template);
-                        return d;
-                    });
+            client.apps().deployments().inNamespace(ns).withName(deploymentName).edit(d -> {
+                var template = finalTargetRs.getSpec().getTemplate();
+                // Remove pod-template-hash — it's set by the controller, not by us
+                if (template.getMetadata() != null && template.getMetadata().getLabels() != null) {
+                    template.getMetadata().getLabels().remove("pod-template-hash");
+                }
+                d.getSpec().setTemplate(template);
+                return d;
+            });
 
             return PodActionResult.builder()
-                    .podName(deploymentName).namespace(ns).action("rollback")
+                    .podName(deploymentName)
+                    .namespace(ns)
+                    .action("rollback")
                     .success(true)
                     .message("deployment.apps \"" + deploymentName + "\" rolled back to revision " + targetRevision)
                     .build();
 
         } catch (Exception e) {
             return PodActionResult.builder()
-                    .podName(deploymentName).namespace(ns).action("rollback")
-                    .success(false).message(e.getMessage())
+                    .podName(deploymentName)
+                    .namespace(ns)
+                    .action("rollback")
+                    .success(false)
+                    .message(e.getMessage())
                     .build();
         }
     }
-
-
 
     private ConfigMap toConfigMap(io.fabric8.kubernetes.api.model.ConfigMap cm) {
         var meta = cm.getMetadata();
@@ -1057,8 +1118,7 @@ public class K8sServiceImpl implements K8sService {
                             svcName = p.getBackend().getService().getName();
                             if (p.getBackend().getService().getPort() != null) {
                                 var port = p.getBackend().getService().getPort();
-                                svcPort = port.getNumber() != null
-                                        ? String.valueOf(port.getNumber()) : port.getName();
+                                svcPort = port.getNumber() != null ? String.valueOf(port.getNumber()) : port.getName();
                             }
                         }
                         paths.add(IngressPath.builder()
@@ -1085,8 +1145,7 @@ public class K8sServiceImpl implements K8sService {
             }
         }
 
-        String className = (spec != null && spec.getIngressClassName() != null)
-                ? spec.getIngressClassName() : "";
+        String className = (spec != null && spec.getIngressClassName() != null) ? spec.getIngressClassName() : "";
 
         return Ingress.builder()
                 .name(meta != null ? meta.getName() : "")
@@ -1100,63 +1159,100 @@ public class K8sServiceImpl implements K8sService {
     }
 
     private DaemonSet toDaemonSet(io.fabric8.kubernetes.api.model.apps.DaemonSet ds) {
-        var meta   = ds.getMetadata();
+        var meta = ds.getMetadata();
         var status = ds.getStatus();
         return DaemonSet.builder()
                 .name(meta != null ? meta.getName() : "")
                 .namespace(meta != null ? meta.getNamespace() : "")
                 .age(meta != null ? meta.getCreationTimestamp() : "")
-                .desired(status != null && status.getDesiredNumberScheduled() != null
-                        ? status.getDesiredNumberScheduled() : 0)
-                .current(status != null && status.getCurrentNumberScheduled() != null
-                        ? status.getCurrentNumberScheduled() : 0)
-                .ready(status != null && status.getNumberReady() != null
-                        ? status.getNumberReady() : 0)
-                .upToDate(status != null && status.getUpdatedNumberScheduled() != null
-                        ? status.getUpdatedNumberScheduled() : 0)
-                .available(status != null && status.getNumberAvailable() != null
-                        ? status.getNumberAvailable() : 0)
+                .desired(
+                        status != null && status.getDesiredNumberScheduled() != null
+                                ? status.getDesiredNumberScheduled()
+                                : 0)
+                .current(
+                        status != null && status.getCurrentNumberScheduled() != null
+                                ? status.getCurrentNumberScheduled()
+                                : 0)
+                .ready(status != null && status.getNumberReady() != null ? status.getNumberReady() : 0)
+                .upToDate(
+                        status != null && status.getUpdatedNumberScheduled() != null
+                                ? status.getUpdatedNumberScheduled()
+                                : 0)
+                .available(status != null && status.getNumberAvailable() != null ? status.getNumberAvailable() : 0)
                 .labels(meta != null && meta.getLabels() != null ? meta.getLabels() : Map.of())
                 .build();
     }
 
     private StatefulSet toStatefulSet(io.fabric8.kubernetes.api.model.apps.StatefulSet ss) {
-        var meta   = ss.getMetadata();
-        var spec   = ss.getSpec();
+        var meta = ss.getMetadata();
+        var spec = ss.getSpec();
         var status = ss.getStatus();
         return StatefulSet.builder()
                 .name(meta != null ? meta.getName() : "")
                 .namespace(meta != null ? meta.getNamespace() : "")
                 .age(meta != null ? meta.getCreationTimestamp() : "")
                 .replicas(spec != null && spec.getReplicas() != null ? spec.getReplicas() : 0)
-                .readyReplicas(status != null && status.getReadyReplicas() != null
-                        ? status.getReadyReplicas() : 0)
+                .readyReplicas(status != null && status.getReadyReplicas() != null ? status.getReadyReplicas() : 0)
                 .serviceName(spec != null && spec.getServiceName() != null ? spec.getServiceName() : "")
                 .labels(meta != null && meta.getLabels() != null ? meta.getLabels() : Map.of())
                 .build();
     }
-
-
 
     /**
      * Fetches a named resource by kind string. Returns {@code null} for unknown kinds.
      */
     private HasMetadata fetchResource(KubernetesClient client, String kind, String namespace, String name) {
         return switch (kind.toLowerCase()) {
-            case "deployment"                     -> client.apps().deployments().inNamespace(namespace).withName(name).get();
-            case "statefulset"                    -> client.apps().statefulSets().inNamespace(namespace).withName(name).get();
-            case "daemonset"                      -> client.apps().daemonSets().inNamespace(namespace).withName(name).get();
-            case "replicaset"                     -> client.apps().replicaSets().inNamespace(namespace).withName(name).get();
-            case "pod"                            -> client.pods().inNamespace(namespace).withName(name).get();
-            case "service"                        -> client.services().inNamespace(namespace).withName(name).get();
-            case "configmap"                      -> client.configMaps().inNamespace(namespace).withName(name).get();
-            case "secret"                         -> client.secrets().inNamespace(namespace).withName(name).get();
-            case "ingress"                        -> client.network().v1().ingresses().inNamespace(namespace).withName(name).get();
-            case "persistentvolumeclaim", "pvc"   -> client.persistentVolumeClaims().inNamespace(namespace).withName(name).get();
-            case "serviceaccount"                 -> client.serviceAccounts().inNamespace(namespace).withName(name).get();
-            case "horizontalpodautoscaler", "hpa" -> client.autoscaling().v2().horizontalPodAutoscalers().inNamespace(namespace).withName(name).get();
-            case "namespace"                      -> client.namespaces().withName(name).get();
-            case "node"                           -> client.nodes().withName(name).get();
+            case "deployment" ->
+                client.apps()
+                        .deployments()
+                        .inNamespace(namespace)
+                        .withName(name)
+                        .get();
+            case "statefulset" ->
+                client.apps()
+                        .statefulSets()
+                        .inNamespace(namespace)
+                        .withName(name)
+                        .get();
+            case "daemonset" ->
+                client.apps().daemonSets().inNamespace(namespace).withName(name).get();
+            case "replicaset" ->
+                client.apps()
+                        .replicaSets()
+                        .inNamespace(namespace)
+                        .withName(name)
+                        .get();
+            case "pod" -> client.pods().inNamespace(namespace).withName(name).get();
+            case "service" ->
+                client.services().inNamespace(namespace).withName(name).get();
+            case "configmap" ->
+                client.configMaps().inNamespace(namespace).withName(name).get();
+            case "secret" ->
+                client.secrets().inNamespace(namespace).withName(name).get();
+            case "ingress" ->
+                client.network()
+                        .v1()
+                        .ingresses()
+                        .inNamespace(namespace)
+                        .withName(name)
+                        .get();
+            case "persistentvolumeclaim", "pvc" ->
+                client.persistentVolumeClaims()
+                        .inNamespace(namespace)
+                        .withName(name)
+                        .get();
+            case "serviceaccount" ->
+                client.serviceAccounts().inNamespace(namespace).withName(name).get();
+            case "horizontalpodautoscaler", "hpa" ->
+                client.autoscaling()
+                        .v2()
+                        .horizontalPodAutoscalers()
+                        .inNamespace(namespace)
+                        .withName(name)
+                        .get();
+            case "namespace" -> client.namespaces().withName(name).get();
+            case "node" -> client.nodes().withName(name).get();
             default -> null;
         };
     }
@@ -1189,11 +1285,8 @@ public class K8sServiceImpl implements K8sService {
         }
     }
 
-
-
     private boolean isOwnedBy(HasMetadata resource, String ownerUid) {
-        if (resource.getMetadata() == null || resource.getMetadata().getOwnerReferences() == null)
-            return false;
+        if (resource.getMetadata() == null || resource.getMetadata().getOwnerReferences() == null) return false;
         for (OwnerReference ref : resource.getMetadata().getOwnerReferences()) {
             if (ownerUid.equals(ref.getUid())) return true;
         }
@@ -1204,7 +1297,11 @@ public class K8sServiceImpl implements K8sService {
         if (annotations == null) return 0;
         String val = annotations.get(key);
         if (val == null) return 0;
-        try { return Integer.parseInt(val); } catch (NumberFormatException e) { return 0; }
+        try {
+            return Integer.parseInt(val);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private String annotationOrNone(Map<String, String> annotations, String key) {

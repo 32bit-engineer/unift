@@ -22,11 +22,9 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,9 +32,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * REST controller for Kubernetes cluster management.
@@ -54,13 +54,12 @@ public class K8sController {
 
     private final K8sService k8sService;
 
-    // ─── Cluster info ─────────────────────────────────────────────────────────
-
     @GetMapping("/status")
     @Operation(summary = "Check Kubernetes API server connectivity")
     public ResponseEntity<Map<String, Boolean>> checkKubectl(
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
-        boolean available = k8sService.isKubectlAvailable(sessionId, principal.user().getId());
+        boolean available =
+                k8sService.isKubectlAvailable(sessionId, principal.user().getId());
         return ResponseEntity.ok(Map.of("available", available));
     }
 
@@ -68,7 +67,8 @@ public class K8sController {
     @Operation(summary = "Get Kubernetes cluster version and name")
     public ResponseEntity<K8sClusterInfo> getClusterInfo(
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(k8sService.getClusterInfo(sessionId, principal.user().getId()));
+        return ResponseEntity.ok(
+                k8sService.getClusterInfo(sessionId, principal.user().getId()));
     }
 
     @GetMapping("/overview")
@@ -77,16 +77,17 @@ public class K8sController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.getOverview(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.getOverview(sessionId, principal.user().getId(), namespace));
     }
 
     @GetMapping("/namespaces")
     @Operation(summary = "List all namespaces")
     public ResponseEntity<List<Namespace>> listNamespaces(
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(k8sService.listNamespaces(sessionId, principal.user().getId()));
+        return ResponseEntity.ok(
+                k8sService.listNamespaces(sessionId, principal.user().getId()));
     }
-
 
     @GetMapping("/pods")
     @Operation(summary = "List pods, optionally filtered by namespace")
@@ -114,12 +115,11 @@ public class K8sController {
     public SseEmitter streamPodLogs(
             @PathVariable String sessionId,
             @PathVariable String podName,
+            @RequestHeader(value = "container", required = false, defaultValue = "") String containerName,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "default") String namespace,
             @RequestParam(defaultValue = "100") int tail) {
-        SseEmitter emitter = new SseEmitter(300_000L);
-        k8sService.streamPodLogs(sessionId, principal.user().getId(), namespace, podName, tail, emitter);
-        return emitter;
+        return k8sService.streamPodLogs(sessionId, principal.user().getId(), namespace, podName, containerName, tail);
     }
 
     @DeleteMapping("/pods/{podName}")
@@ -129,10 +129,9 @@ public class K8sController {
             @PathVariable String podName,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "default") String namespace) {
-        return ResponseEntity.ok(k8sService.deletePod(sessionId, principal.user().getId(), namespace, podName));
+        return ResponseEntity.ok(
+                k8sService.deletePod(sessionId, principal.user().getId(), namespace, podName));
     }
-
-    // ─── Deployments ──────────────────────────────────────────────────────────
 
     @GetMapping("/deployments")
     @Operation(summary = "List deployments")
@@ -140,7 +139,8 @@ public class K8sController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.listDeployments(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.listDeployments(sessionId, principal.user().getId(), namespace));
     }
 
     @PostMapping("/deployments/{deploymentName}/scale")
@@ -189,18 +189,15 @@ public class K8sController {
                 k8sService.undoRollout(sessionId, principal.user().getId(), namespace, deploymentName, revision));
     }
 
-    // ─── Services ─────────────────────────────────────────────────────────────
-
     @GetMapping("/services")
     @Operation(summary = "List services")
     public ResponseEntity<ServicePage> listServices(
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.listServices(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.listServices(sessionId, principal.user().getId(), namespace));
     }
-
-    // ─── ConfigMaps ───────────────────────────────────────────────────────────
 
     @GetMapping("/configmaps")
     @Operation(summary = "List ConfigMaps")
@@ -208,10 +205,9 @@ public class K8sController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.listConfigMaps(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.listConfigMaps(sessionId, principal.user().getId(), namespace));
     }
-
-    // ─── Ingresses ────────────────────────────────────────────────────────────
 
     @GetMapping("/ingresses")
     @Operation(summary = "List Ingresses (networking.k8s.io/v1)")
@@ -219,10 +215,9 @@ public class K8sController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.listIngresses(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.listIngresses(sessionId, principal.user().getId(), namespace));
     }
-
-    // ─── DaemonSets ───────────────────────────────────────────────────────────
 
     @GetMapping("/daemonsets")
     @Operation(summary = "List DaemonSets")
@@ -230,7 +225,8 @@ public class K8sController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.listDaemonSets(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.listDaemonSets(sessionId, principal.user().getId(), namespace));
     }
 
     @PostMapping("/daemonsets/{name}/restart")
@@ -244,15 +240,14 @@ public class K8sController {
                 k8sService.restartDaemonSet(sessionId, principal.user().getId(), namespace, name));
     }
 
-    // ─── StatefulSets ─────────────────────────────────────────────────────────
-
     @GetMapping("/statefulsets")
     @Operation(summary = "List StatefulSets")
     public ResponseEntity<StatefulSetPage> listStatefulSets(
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "") String namespace) {
-        return ResponseEntity.ok(k8sService.listStatefulSets(sessionId, principal.user().getId(), namespace));
+        return ResponseEntity.ok(
+                k8sService.listStatefulSets(sessionId, principal.user().getId(), namespace));
     }
 
     @PostMapping("/statefulsets/{name}/restart")
@@ -278,16 +273,13 @@ public class K8sController {
                 k8sService.scaleStatefulSet(sessionId, principal.user().getId(), namespace, name, replicas));
     }
 
-    // ─── Nodes ────────────────────────────────────────────────────────────────
-
     @GetMapping("/nodes")
     @Operation(summary = "List nodes")
     public ResponseEntity<NodePage> listNodes(
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(k8sService.listNodes(sessionId, principal.user().getId()));
+        return ResponseEntity.ok(
+                k8sService.listNodes(sessionId, principal.user().getId()));
     }
-
-    // ─── Generic resource YAML (view / edit) ─────────────────────────────────
 
     @GetMapping("/resources/{kind}/{namespace}/{name}/yaml")
     @Operation(summary = "Get the live YAML for any resource (status and managedFields stripped)")

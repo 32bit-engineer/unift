@@ -1,11 +1,20 @@
 package com.weekend.architect.unift.remote.controller;
 
+import static com.weekend.architect.unift.common.FileUtils.encodeFilenameRFC6266;
+
+import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
 import com.weekend.architect.unift.remote.dto.RenameRequest;
 import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
+import com.weekend.architect.unift.remote.docker.DockerClientPool;
+import com.weekend.architect.unift.remote.docker.DockerLogStreamRegistry;
+import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
+import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
+import com.weekend.architect.unift.remote.kubernetes.K8sLogStreamRegistry;
+import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.service.RemoteConnectionService;
 import com.weekend.architect.unift.security.UniFtUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +65,13 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 public class RemoteConnectionController {
 
     private final RemoteConnectionService service;
+    private final SessionRegistry sessionRegistry;
+    private final DockerClientPool dockerClientPool;
+    private final DockerLogStreamRegistry dockerLogStreamRegistry;
+    private final K8sClientPool k8sClientPool;
+    private final K8sLogStreamRegistry k8sLogStreamRegistry;
+
+    private static final Set<String> VALID_WORKSPACE_TYPES = Set.of("ssh", "docker", "kubernetes");
 
     @PostMapping("/test-connection")
     @Operation(
@@ -68,8 +85,10 @@ public class RemoteConnectionController {
                         content = @Content(schema = @Schema(implementation = TestConnectionResponse.class))),
                 @ApiResponse(responseCode = "400", description = "Invalid request", content = @Content)
             })
-    public ResponseEntity<TestConnectionResponse> testConnection(@Valid @RequestBody ConnectRequest request) {
-        log.info("Testing connection for {}:{} ({})", request.getHost(), request.getPort(), request.getProtocol());
+    public ResponseEntity<TestConnectionResponse> testConnection(@AuthenticationPrincipal UniFtUserDetails principal,
+        @Valid @RequestBody ConnectRequest request) {
+        UUID userId = principal.user().getId();
+        log.info("Testing connection for {}:{} ({}) as initiated by user: {}", request.getHost(), request.getPort(), request.getProtocol(), userId);
         TestConnectionResponse response = service.testConnection(request);
         log.info(
                 "Connection test {} for {}:{}",
@@ -142,7 +161,72 @@ public class RemoteConnectionController {
         return ResponseEntity.noContent().build();
     }
 
-    // Directory browsing endpoints
+    @GetMapping("/sessions/{sessionId}/workspaces")
+    @Operation(
+            summary = "List active workspaces",
+            description = "Returns the set of workspace types currently active for the session.")
+    public ResponseEntity<Set<String>> listWorkspaces(
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        var conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, principal.user().getId());
+        return ResponseEntity.ok(conn.getSession().getActiveWorkspaces());
+    }
+
+    @PostMapping("/sessions/{sessionId}/workspaces/{type}")
+    @Operation(
+            summary = "Activate a workspace type",
+            description = "Adds a workspace type to the session's active set. Valid types: ssh, docker, kubernetes.",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "Workspace activated; returns updated set"),
+                @ApiResponse(responseCode = "400", description = "Invalid workspace type", content = @Content),
+                @ApiResponse(responseCode = "404", description = "Session not found", content = @Content)
+            })
+    public ResponseEntity<Set<String>> activateWorkspace(
+            @PathVariable String sessionId,
+            @PathVariable String type,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        if (!VALID_WORKSPACE_TYPES.contains(type)) {
+            return ResponseEntity.badRequest().build();
+        }
+        var conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, principal.user().getId());
+        conn.getSession().activateWorkspace(type);
+        log.info("Activated workspace '{}' for session {}", type, sessionId);
+        return ResponseEntity.ok(conn.getSession().getActiveWorkspaces());
+    }
+
+    @DeleteMapping("/sessions/{sessionId}/workspaces/{type}")
+    @Operation(
+            summary = "Deactivate a workspace type",
+            description = "Removes a workspace type from the session. Cannot deactivate 'ssh'.",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "Workspace deactivated; returns updated set"),
+                @ApiResponse(responseCode = "400", description = "Cannot deactivate SSH or invalid type", content = @Content),
+                @ApiResponse(responseCode = "404", description = "Session not found", content = @Content)
+            })
+    public ResponseEntity<Set<String>> deactivateWorkspace(
+            @PathVariable String sessionId,
+            @PathVariable String type,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        if (!VALID_WORKSPACE_TYPES.contains(type)) {
+            return ResponseEntity.badRequest().build();
+        }
+        if ("ssh".equals(type)) {
+            return ResponseEntity.badRequest().build();
+        }
+        var conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, principal.user().getId());
+        conn.getSession().deactivateWorkspace(type);
+        if ("docker".equals(type)) {
+            dockerClientPool.evict(sessionId);
+            dockerLogStreamRegistry.closeAllBySession(sessionId);
+        } else if ("kubernetes".equals(type)) {
+            k8sClientPool.evict(sessionId);
+            k8sLogStreamRegistry.closeAllBySession(sessionId);
+        }
+        log.info("Deactivated workspace '{}' for session {}", type, sessionId);
+        return ResponseEntity.ok(conn.getSession().getActiveWorkspaces());
+    }
 
     @GetMapping("/sessions/{sessionId}/files")
     @Operation(
@@ -231,8 +315,10 @@ public class RemoteConnectionController {
         StreamingResponseBody stream =
                 service.downloadFile(sessionId, principal.user().getId(), decodedPath);
 
+        String encoded = encodeFilenameRFC6266(filename);
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(stream);
     }
@@ -363,5 +449,11 @@ public class RemoteConnectionController {
         log.info("Cancel requested for transfer {} in session {}", transferId, sessionId);
         service.cancelTransfer(sessionId, principal.user().getId(), transferId);
         return ResponseEntity.noContent().build();
+    }
+
+    private void assertOwnership(RemoteConnection conn, UUID requestingUser) {
+        if (!requestingUser.equals(conn.getSession().getOwnerId())) {
+            throw new SessionAccessDeniedException(conn.getSessionId());
+        }
     }
 }

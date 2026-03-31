@@ -17,6 +17,8 @@ interface K8sDeploymentsPageProps {
   sessionId: string;
 }
 
+const PAGE_SIZE = 10;
+
 export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   const [deployments, setDeployments] = useState<K8sDeployment[]>([]);
   const [total, setTotal] = useState(0);
@@ -24,6 +26,7 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   const [selectedNs, setSelectedNs] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [scaleDialog, setScaleDialog] = useState<{ name: string; namespace: string; current: number } | null>(null);
   const [scaleValue, setScaleValue] = useState(1);
@@ -51,13 +54,16 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   }, [sessionId, selectedNs]);
 
   useEffect(() => { fetchNamespaces(); }, [fetchNamespaces]);
-  useEffect(() => { fetchDeployments(); }, [fetchDeployments]);
+  useEffect(() => { fetchDeployments(); setPage(1); }, [fetchDeployments]);
 
   const stats = useMemo(() => {
     const totalReplicas = deployments.reduce((s, d) => s + d.replicas, 0);
     const readyReplicas = deployments.reduce((s, d) => s + d.readyReplicas, 0);
     return { totalReplicas, readyReplicas };
   }, [deployments]);
+
+  const totalPages = Math.max(1, Math.ceil(deployments.length / PAGE_SIZE));
+  const paginated = useMemo(() => deployments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [deployments, page]);
 
   const handleScale = async () => {
     if (!scaleDialog) return;
@@ -85,9 +91,38 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
 
   if (loading && deployments.length === 0) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-        <span className="material-symbols-rounded" style={{ fontSize: 28, marginRight: 10, animation: 'spin 1s linear infinite' }}>progress_activity</span>
-        Loading deployments...
+      <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+          {[0, 1, 2, 3].map(i => <div key={i} className="shimmer" style={{ borderRadius: 10, height: 80 }} />)}
+        </div>
+        <div style={{ background: 'var(--bg-card, #1b1b23)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="shimmer" style={{ height: 16, width: 200, borderRadius: 4 }} />
+            <div className="shimmer" style={{ height: 32, width: 150, borderRadius: 7 }} />
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {[140, 100, 70, 80, 50, 70, 90].map((w, i) => (
+                  <th key={i} style={{ padding: '12px 14px' }}>
+                    <div className="shimmer" style={{ height: 10, width: w, borderRadius: 4 }} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 6 }, (_, ri) => (
+                <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  {[150, 90, 60, 80, 45, 60, 70].map((w, ci) => (
+                    <td key={ci} style={{ padding: '14px' }}>
+                      <div className="shimmer" style={{ height: 12, width: w, borderRadius: 4 }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -105,7 +140,7 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   }
 
   return (
-    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto', height: '100%' }}>
+    <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 20, overflow: 'auto' }}>
       {/* Stat cards row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
         <StatCard label="TOTAL DEPLOYMENTS" value={total} />
@@ -121,17 +156,21 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
             Deployments in {selectedNs || 'all namespaces'}
           </h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <select
-              value={selectedNs}
-              onChange={(e) => setSelectedNs(e.target.value)}
-              style={{
-                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: 6, padding: '6px 10px', color: 'var(--text-primary)', fontSize: 12, outline: 'none', cursor: 'pointer',
-              }}
-            >
-              <option value="">All namespaces</option>
-              {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
-            </select>
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <select
+                value={selectedNs}
+                onChange={(e) => setSelectedNs(e.target.value)}
+                style={{
+                  appearance: 'none', background: '#13131E', border: '1px solid #1E1E2E',
+                  borderRadius: 7, padding: '7px 28px 7px 10px', color: 'var(--text-primary)',
+                  fontSize: 12, fontFamily: "'DM Mono', monospace", outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="">All namespaces</option>
+                {namespaces.map((ns) => <option key={ns.name} value={ns.name}>{ns.name}</option>)}
+              </select>
+              <span className="material-symbols-rounded" style={{ position: 'absolute', right: 6, fontSize: 14, color: '#5a6380', pointerEvents: 'none', lineHeight: 1 }}>expand_more</span>
+            </div>
             <button
               onClick={fetchDeployments}
               style={{ display: 'flex', alignItems: 'center', padding: 6, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
@@ -142,7 +181,8 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
           </div>
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               {['NAME', 'NAMESPACE', 'REPLICAS', 'STRATEGY', 'AGE', 'STATUS', 'ACTIONS'].map((h) => (
@@ -156,7 +196,7 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
             </tr>
           </thead>
           <tbody>
-            {deployments.map((dep) => {
+            {paginated.map((dep) => {
               const healthy = dep.readyReplicas >= dep.replicas && dep.replicas > 0;
               const crash = dep.readyReplicas === 0 && dep.replicas > 0;
               const statusLabel = crash ? 'CrashLoopBackOff' : healthy ? 'Running' : 'Progressing';
@@ -223,9 +263,19 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
             )}
           </tbody>
         </table>
+        </div>
 
-        <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: 12, color: 'var(--text-secondary)', letterSpacing: 0.5 }}>
-          SHOWING 1-{deployments.length} OF {total} DEPLOYMENTS
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            Page <strong style={{ color: 'var(--text-primary)' }}>{page}</strong> of {totalPages}
+          </span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <PageBtn label="chevron_left" disabled={page <= 1} onClick={() => setPage(page - 1)} />
+            <PageBtn label="chevron_right" disabled={page >= totalPages} onClick={() => setPage(page + 1)} />
+          </div>
         </div>
       </div>
 
@@ -319,6 +369,23 @@ function StatusPill({ status }: { status: string }) {
       <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />
       {status}
     </span>
+  );
+}
+
+function PageBtn({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg-card, #1b1b23)', border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 8, cursor: disabled ? 'default' : 'pointer',
+        color: disabled ? 'rgba(255,255,255,0.15)' : 'var(--text-primary)',
+      }}
+    >
+      <span className="material-symbols-rounded" style={{ fontSize: 20 }}>{label}</span>
+    </button>
   );
 }
 

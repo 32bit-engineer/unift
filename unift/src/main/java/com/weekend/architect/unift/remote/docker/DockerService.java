@@ -1,84 +1,117 @@
 package com.weekend.architect.unift.remote.docker;
 
-import com.weekend.architect.unift.remote.docker.DockerModels.ContainerActionResult;
-import com.weekend.architect.unift.remote.docker.DockerModels.ContainerPage;
-import com.weekend.architect.unift.remote.docker.DockerModels.ContainerStats;
-import com.weekend.architect.unift.remote.docker.DockerModels.DockerInfo;
-import com.weekend.architect.unift.remote.docker.DockerModels.DockerOverview;
-import com.weekend.architect.unift.remote.docker.DockerModels.ImagePage;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Service contract for Docker management via SSH exec.
- * All operations are executed on the remote host through
- * the Docker CLI over the session's SSH connection.
+ * Service interface for Docker container management via SSH tunnel.
+ * All operations execute Docker Engine API calls on the remote host
+ * through an SSH-tunnelled connection to the Docker daemon socket.
  */
 public interface DockerService {
 
-    /**
-     * Checks whether Docker is installed and accessible on the remote host.
-     *
-     * @param sessionId the active SSH session
-     * @param userId    the requesting user's ID (ownership check)
-     * @return true if {@code docker info} succeeds
-     */
+    // -- System --
+
+    /** Checks if the Docker daemon is reachable through the session's tunnel. */
     boolean isDockerAvailable(String sessionId, UUID userId);
 
-    /**
-     * Retrieves high-level Docker daemon info (version, container counts, etc.).
-     */
-    DockerInfo getDockerInfo(String sessionId, UUID userId);
+    /** Returns Docker daemon version, resource counts, and host info. */
+    DockerModels.DockerSystemInfo getDockerInfo(String sessionId, UUID userId);
 
-    /**
-     * Returns the Docker overview: info + running containers + live stats.
-     */
-    DockerOverview getOverview(String sessionId, UUID userId);
+    /** Returns a high-level overview: system info, running containers, live stats. */
+    DockerModels.DockerOverview getOverview(String sessionId, UUID userId);
 
-    /**
-     * Lists containers with optional filtering and pagination.
-     *
-     * @param all if true, includes stopped containers
-     */
-    ContainerPage listContainers(String sessionId, UUID userId, boolean all, int page, int pageSize);
+    // -- Containers --
 
-    /**
-     * Retrieves live stats for all running containers (single snapshot).
-     */
-    List<ContainerStats> getContainerStats(String sessionId, UUID userId);
+    /** Lists containers with pagination. Set {@code all=true} to include stopped. */
+    DockerModels.ContainerPage listContainers(String sessionId, UUID userId, boolean all, int page, int pageSize);
 
-    /**
-     * Starts a stopped container.
-     */
-    ContainerActionResult startContainer(String sessionId, UUID userId, String containerId);
+    /** Returns detailed inspection of a single container. */
+    DockerModels.ContainerDetail inspectContainer(String sessionId, UUID userId, String containerId);
 
-    /**
-     * Stops a running container.
-     */
-    ContainerActionResult stopContainer(String sessionId, UUID userId, String containerId);
+    /** Creates a new container from the given specification. */
+    DockerModels.CreateContainerResponse createContainer(
+            String sessionId, UUID userId, DockerModels.CreateContainerRequest request);
 
-    /**
-     * Restarts a container.
-     */
-    ContainerActionResult restartContainer(String sessionId, UUID userId, String containerId);
+    DockerModels.ContainerActionResult startContainer(String sessionId, UUID userId, String containerId);
 
-    /**
-     * Removes a stopped container.
-     */
-    ContainerActionResult removeContainer(String sessionId, UUID userId, String containerId);
+    DockerModels.ContainerActionResult stopContainer(String sessionId, UUID userId, String containerId);
 
-    /**
-     * Retrieves the last N lines of a container's logs.
-     */
-    String getContainerLogs(String sessionId, UUID userId, String containerId, int tailLines);
+    DockerModels.ContainerActionResult restartContainer(String sessionId, UUID userId, String containerId);
 
-    /**
-     * Lists Docker images on the remote host.
-     */
-    ImagePage listImages(String sessionId, UUID userId);
+    DockerModels.ContainerActionResult pauseContainer(String sessionId, UUID userId, String containerId);
 
-    /**
-     * Removes a Docker image by ID or repository:tag.
-     */
-    ContainerActionResult removeImage(String sessionId, UUID userId, String imageId);
+    DockerModels.ContainerActionResult unpauseContainer(String sessionId, UUID userId, String containerId);
+
+    DockerModels.ContainerActionResult removeContainer(
+            String sessionId, UUID userId, String containerId, boolean force);
+
+    DockerModels.ContainerActionResult renameContainer(
+            String sessionId, UUID userId, String containerId, String newName);
+
+    // -- Container Logs --
+
+    /** Returns the last {@code tail} lines of container logs. */
+    String getContainerLogs(String sessionId, UUID userId, String containerId, int tail, boolean timestamps);
+
+    /** Opens a live log stream for a container via SSE. */
+    SseEmitter streamContainerLogs(String sessionId, UUID userId, String containerId, int tail, boolean timestamps);
+
+    // -- Container Exec --
+
+    /** Runs a command inside a running container and returns its output. */
+    DockerModels.ExecStartResult execInContainer(String sessionId, UUID userId, DockerModels.ExecCreateRequest request);
+
+    // -- Stats --
+
+    /** Returns a point-in-time stats snapshot for all running containers. */
+    List<DockerModels.ContainerStats> getContainerStats(String sessionId, UUID userId);
+
+    /** Opens a live stats stream for a single container via SSE. */
+    SseEmitter streamContainerStats(String sessionId, UUID userId, String containerId);
+
+    // -- Images --
+
+    /** Lists all local images. */
+    DockerModels.ImagePage listImages(String sessionId, UUID userId);
+
+    /** Pulls an image from a registry, streaming progress via SSE. */
+    SseEmitter pullImage(String sessionId, UUID userId, DockerModels.PullImageRequest request);
+
+    DockerModels.ContainerActionResult removeImage(String sessionId, UUID userId, String imageId, boolean force);
+
+    DockerModels.ContainerActionResult tagImage(
+            String sessionId, UUID userId, String imageId, String repo, String tag);
+
+    /** Removes all dangling images. */
+    void pruneImages(String sessionId, UUID userId);
+
+    // -- Networks --
+
+    List<DockerModels.DockerNetwork> listNetworks(String sessionId, UUID userId);
+
+    DockerModels.DockerNetwork inspectNetwork(String sessionId, UUID userId, String networkId);
+
+    String createNetwork(String sessionId, UUID userId, DockerModels.CreateNetworkRequest request);
+
+    void removeNetwork(String sessionId, UUID userId, String networkId);
+
+    // -- Volumes --
+
+    List<DockerModels.DockerVolume> listVolumes(String sessionId, UUID userId);
+
+    DockerModels.DockerVolume inspectVolume(String sessionId, UUID userId, String volumeName);
+
+    DockerModels.DockerVolume createVolume(String sessionId, UUID userId, DockerModels.CreateVolumeRequest request);
+
+    void removeVolume(String sessionId, UUID userId, String volumeName);
+
+    // -- Compose --
+
+    /** Detects compose projects from container labels. */
+    List<DockerModels.ComposeProject> listComposeProjects(String sessionId, UUID userId);
+
+    /** Generates a docker-compose YAML file from the given service definitions. */
+    String generateComposeFile(String sessionId, UUID userId, DockerModels.ComposeFileRequest request);
 }

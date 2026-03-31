@@ -33,6 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -226,10 +227,26 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
             Process proc = pb.start();
 
             String output;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                output = reader.lines().reduce("", (a, b) -> a + "\n" + b);
+            try (
+                BufferedReader stdout = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+                BufferedReader stderr = new BufferedReader(new InputStreamReader(proc.getErrorStream()))
+            ) {
+                String out = stdout.lines().collect(Collectors.joining("\n"));
+                String err = stderr.lines().collect(Collectors.joining("\n"));
+
+                boolean finished = proc.waitFor(15, TimeUnit.SECONDS);
+
+                if (!finished) {
+                    proc.destroyForcibly();
+                    throw new RuntimeException("Process timed out");
+                }
+
+                if (proc.exitValue() != 0) {
+                    throw new RuntimeException("Process failed: " + err);
+                }
+
+                output = out;
             }
-            proc.waitFor(15, TimeUnit.SECONDS);
 
             // "5 packets transmitted, 3 received, 40% packet loss"
             Pattern p = Pattern.compile("(\\d+) packets? transmitted,\\s*(\\d+)\\s*(?:packets? )?received");

@@ -1,7 +1,7 @@
 // Workspace detection modal — shown after connecting to a session to detect
 // available capabilities (Docker, kubectl) and ask the user which dedicated
-// dashboard they want. Results are persisted to the saved host config so
-// reconnections restore the same workspace type automatically.
+// dashboards to activate. Results are persisted to the saved host config so
+// reconnections restore the same workspace types automatically.
 import { useState, useEffect, useCallback } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { WorkspaceType } from '@/utils/remoteConnectionAPI';
@@ -17,7 +17,7 @@ interface WorkspaceDetectionModalProps {
   sessionId: string;
   /** If set, skip detection and show the choice screen directly. */
   savedHostId?: string;
-  onComplete: (chosen: WorkspaceType, capabilities: DetectedCapabilities) => void;
+  onComplete: (chosen: WorkspaceType, capabilities: DetectedCapabilities, selectedTypes: WorkspaceType[]) => void;
   onSkip: () => void;
 }
 
@@ -60,9 +60,9 @@ export function WorkspaceDetectionModal({
     docker: false,
     kubernetes: false,
   });
-  const [selectedType, setSelectedType] = useState<WorkspaceType>('ssh');
+  // SSH is always selected; the user toggles docker/kubernetes on or off
+  const [selectedTypes, setSelectedTypes] = useState<Set<WorkspaceType>>(new Set(['ssh']));
 
-  // Run capability detection on mount
   useEffect(() => {
     let cancelled = false;
 
@@ -83,24 +83,21 @@ export function WorkspaceDetectionModal({
         const caps = { docker: dockerAvailable, kubernetes: k8sAvailable };
         setCapabilities(caps);
 
-        // If nothing detected beyond SSH, go straight to SSH workspace
         if (!dockerAvailable && !k8sAvailable) {
-          onComplete('ssh', caps);
+          onComplete('ssh', caps, ['ssh']);
           return;
         }
 
-        // Pre-select the most advanced capability
-        if (k8sAvailable) {
-          setSelectedType('kubernetes');
-        } else if (dockerAvailable) {
-          setSelectedType('docker');
-        }
+        // Pre-select all detected capabilities
+        const initial = new Set<WorkspaceType>(['ssh']);
+        if (dockerAvailable) initial.add('docker');
+        if (k8sAvailable) initial.add('kubernetes');
+        setSelectedTypes(initial);
 
         setPhase('choosing');
       } catch {
         if (!cancelled) {
-          // On detection failure, fall back to SSH
-          onComplete('ssh', { docker: false, kubernetes: false });
+          onComplete('ssh', { docker: false, kubernetes: false }, ['ssh']);
         }
       }
     }
@@ -109,10 +106,28 @@ export function WorkspaceDetectionModal({
     return () => { cancelled = true; };
   }, [sessionId, onComplete]);
 
+  const toggleType = useCallback((type: WorkspaceType) => {
+    if (type === 'ssh') return; // SSH is always active
+    setSelectedTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  }, []);
+
   const handleConfirm = useCallback(() => {
     setPhase('done');
-    onComplete(selectedType, capabilities);
-  }, [selectedType, capabilities, onComplete]);
+    const types = Array.from(selectedTypes);
+    // The primary workspace is the most advanced selected type
+    let primary: WorkspaceType = 'ssh';
+    if (selectedTypes.has('kubernetes')) primary = 'kubernetes';
+    else if (selectedTypes.has('docker')) primary = 'docker';
+    onComplete(primary, capabilities, types);
+  }, [selectedTypes, capabilities, onComplete]);
 
   // During detection, show a loading overlay
   if (phase === 'detecting') {
@@ -131,7 +146,7 @@ export function WorkspaceDetectionModal({
               Detecting capabilities...
             </p>
             <p className="text-xs mt-1" style={{ color: '#5a6380' }}>
-              Checking for Docker and Kubernetes on the remote host
+              This could take a few seconds, please wait.
             </p>
           </div>
         </div>
@@ -156,22 +171,25 @@ export function WorkspaceDetectionModal({
         {/* Header */}
         <div className="mb-5">
           <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-warm)' }}>
-            Choose your workspace
+            Choose your workspaces
           </h2>
           <p className="text-xs mt-1" style={{ color: '#5a6380' }}>
-            We detected additional capabilities on this host. Select your preferred dashboard.
+            We detected additional capabilities on this host. Toggle the dashboards you want active.
           </p>
         </div>
 
-        {/* Capability cards */}
+        {/* Capability cards — multi-select with toggles */}
         <div className="flex flex-col gap-2 mb-5">
           {availableCards.map(card => {
-            const isSelected = selectedType === card.type;
+            const isSelected = selectedTypes.has(card.type);
+            const isSSH = card.type === 'ssh';
             return (
               <button
                 key={card.type}
-                onClick={() => setSelectedType(card.type)}
-                className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all cursor-pointer
+                onClick={() => toggleType(card.type)}
+                disabled={isSSH}
+                className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all
+                  ${isSSH ? 'cursor-default opacity-80' : 'cursor-pointer'}
                   ${isSelected ? 'ring-1' : 'hover:bg-white/5'}`}
                 style={{
                   background: isSelected ? 'rgba(124,109,250,0.08)' : 'transparent',
@@ -198,23 +216,27 @@ export function WorkspaceDetectionModal({
                     style={{ color: isSelected ? 'var(--color-text-warm)' : '#a0a8c0' }}
                   >
                     {card.label}
+                    {isSSH && (
+                      <span className="ml-2 text-[10px] font-normal" style={{ color: '#5a6380' }}>
+                        (always active)
+                      </span>
+                    )}
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: '#5a6380' }}>
                     {card.description}
                   </p>
                 </div>
-                {isSelected && (
-                  <span
-                    className="material-symbols-rounded shrink-0"
-                    style={{
-                      fontSize: '20px',
-                      color: 'var(--color-primary)',
-                      fontVariationSettings: "'FILL' 1",
-                    }}
-                  >
-                    check_circle
-                  </span>
-                )}
+                {/* Toggle indicator */}
+                <span
+                  className="material-symbols-rounded shrink-0"
+                  style={{
+                    fontSize: '20px',
+                    color: isSelected ? 'var(--color-primary)' : '#3a3f55',
+                    fontVariationSettings: "'FILL' 1",
+                  }}
+                >
+                  {isSelected ? 'check_circle' : 'radio_button_unchecked'}
+                </span>
               </button>
             );
           })}
@@ -255,7 +277,7 @@ export function WorkspaceDetectionModal({
             onClick={handleConfirm}
             className="px-4 py-2 rounded text-xs font-medium cursor-pointer brand-gradient brand-gradient-hover text-white"
           >
-            Launch {TYPE_CARDS.find(c => c.type === selectedType)?.label}
+            Launch {selectedTypes.size > 1 ? `${selectedTypes.size} Workspaces` : 'SSH Workspace'}
           </button>
         </div>
       </div>

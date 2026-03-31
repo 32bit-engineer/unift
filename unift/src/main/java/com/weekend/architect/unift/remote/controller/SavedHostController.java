@@ -160,6 +160,5 @@ public class SavedHostController {
         return ResponseEntity.noContent().build();
     }
 
-    private static final java.util.Set<String> VALID_WORKSPACE_PREFERENCES =
-            java.util.Set.of("ssh", "docker", "kubernetes");
+    private static final java.util.Set<String> VALID_WORKSPACE_PREFERENCES = java.util.Set.of("ssh", "docker", "kubernetes");
 }

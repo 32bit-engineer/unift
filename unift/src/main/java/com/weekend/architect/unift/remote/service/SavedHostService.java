@@ -64,7 +64,7 @@ public interface SavedHostService {
 
     /**
      * Updates the workspace preference for a saved host.
-     * Valid values: {@code ssh}, {@code docker}, {@code kubernetes}.
+     * Valid values: {@code ssh}, {@code kubernetes}.
      *
      * @throws com.weekend.architect.unift.remote.exception.SavedHostNotFoundException
      *         if not found or not owned by {@code ownerId}

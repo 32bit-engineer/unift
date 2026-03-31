@@ -7,13 +7,15 @@
  * Data source: DockerController.listContainers + getContainerStats
  * via remoteConnectionAPI.listDockerContainers / getDockerContainerStats
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type {
   DockerContainer,
   DockerContainerStats,
   ContainerPage,
   ContainerActionResult,
+  ContainerDetail,
+  CreateContainerRequest,
 } from '@/utils/remoteConnectionAPI';
 
 interface DockerContainersPageProps {
@@ -56,6 +58,9 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
   const [sortMode, setSortMode] = useState<SortMode>('latest');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [inspectModal, setInspectModal] = useState<ContainerDetail | null>(null);
+  const [execModal, setExecModal] = useState<{ containerId: string; name: string } | null>(null);
 
   const fetchContainers = useCallback(async () => {
     try {
@@ -138,7 +143,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
 
   const handleAction = useCallback(async (
     containerId: string,
-    action: 'start' | 'stop' | 'restart' | 'remove',
+    action: 'start' | 'stop' | 'restart' | 'remove' | 'pause' | 'unpause',
   ) => {
     setActionLoading(`${containerId}-${action}`);
     try {
@@ -156,6 +161,12 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
         case 'remove':
           result = await remoteConnectionAPI.removeDockerContainer(sessionId, containerId);
           break;
+        case 'pause':
+          result = await remoteConnectionAPI.pauseDockerContainer(sessionId, containerId);
+          break;
+        case 'unpause':
+          result = await remoteConnectionAPI.unpauseDockerContainer(sessionId, containerId);
+          break;
       }
       if (result.success) {
         await fetchContainers();
@@ -170,6 +181,25 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
 
   const isActionLoading = (containerId: string, action: string) =>
     actionLoading === `${containerId}-${action}`;
+
+  const handleInspect = useCallback(async (containerId: string) => {
+    try {
+      const detail = await remoteConnectionAPI.inspectDockerContainer(sessionId, containerId);
+      setInspectModal(detail);
+    } catch {
+      // Inspect failed
+    }
+  }, [sessionId]);
+
+  const handleCreateContainer = useCallback(async (request: CreateContainerRequest) => {
+    try {
+      await remoteConnectionAPI.createDockerContainer(sessionId, request);
+      setShowCreate(false);
+      await fetchContainers();
+    } catch {
+      // Create failed
+    }
+  }, [sessionId, fetchContainers]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -190,7 +220,22 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
           </h1>
         </div>
 
-        {/* Status counters */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-4 py-2 rounded-md font-semibold cursor-pointer flex items-center gap-1.5"
+            style={{ fontSize: '12px', background: 'var(--color-primary)', color: '#fff' }}
+          >
+            <span
+              className="material-symbols-rounded"
+              style={{ fontSize: '16px', fontVariationSettings: "'FILL' 0, 'wght' 400" }}
+            >
+              add
+            </span>
+            Create Container
+          </button>
+
+          {/* Status counters */}
         <div
           className="flex items-center gap-6 px-5 py-2.5 rounded-md"
           style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
@@ -228,6 +273,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
               Critical
             </p>
           </div>
+        </div>
         </div>
       </div>
 
@@ -456,12 +502,29 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1">
                         {isRunning ? (
-                          <ActionButton
-                            icon="stop"
-                            title="Stop"
-                            loading={isActionLoading(c.id, 'stop')}
-                            onClick={() => handleAction(c.id, 'stop')}
-                          />
+                          <>
+                            <ActionButton
+                              icon="stop"
+                              title="Stop"
+                              loading={isActionLoading(c.id, 'stop')}
+                              onClick={() => handleAction(c.id, 'stop')}
+                            />
+                            {c.state.toLowerCase() === 'paused' ? (
+                              <ActionButton
+                                icon="play_arrow"
+                                title="Unpause"
+                                loading={isActionLoading(c.id, 'unpause')}
+                                onClick={() => handleAction(c.id, 'unpause')}
+                              />
+                            ) : (
+                              <ActionButton
+                                icon="pause"
+                                title="Pause"
+                                loading={isActionLoading(c.id, 'pause')}
+                                onClick={() => handleAction(c.id, 'pause')}
+                              />
+                            )}
+                          </>
                         ) : (
                           <ActionButton
                             icon="play_arrow"
@@ -476,6 +539,20 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
                           loading={isActionLoading(c.id, 'restart')}
                           onClick={() => handleAction(c.id, 'restart')}
                         />
+                        <ActionButton
+                          icon="info"
+                          title="Inspect"
+                          loading={false}
+                          onClick={() => handleInspect(c.id)}
+                        />
+                        {isRunning && (
+                          <ActionButton
+                            icon="terminal"
+                            title="Exec"
+                            loading={false}
+                            onClick={() => setExecModal({ containerId: c.id, name: c.names.replace(/^\//, '') })}
+                          />
+                        )}
                         <LogsButton sessionId={sessionId} containerId={c.id} containerName={c.names} />
                         <ActionButton
                           icon="delete"
@@ -547,6 +624,32 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
       {stats.length > 0 && (
         <BottomStatsBar stats={stats} />
       )}
+
+      {/* Create Container Modal */}
+      {showCreate && (
+        <CreateContainerModal
+          onClose={() => setShowCreate(false)}
+          onCreate={handleCreateContainer}
+        />
+      )}
+
+      {/* Inspect Modal */}
+      {inspectModal && (
+        <InspectModal
+          detail={inspectModal}
+          onClose={() => setInspectModal(null)}
+        />
+      )}
+
+      {/* Exec Modal */}
+      {execModal && (
+        <ExecModal
+          sessionId={sessionId}
+          containerId={execModal.containerId}
+          containerName={execModal.name}
+          onClose={() => setExecModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -615,24 +718,55 @@ function LogsButton({
   containerName: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [logs, setLogs] = useState('');
-  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logsLines, setLogsLines] = useState<string[]>([]);
+  const [streamState, setStreamState] = useState<'idle' | 'connecting' | 'live' | 'done' | 'error'>('idle');
+  const streamStopRef = useRef<(() => void) | null>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchLogs = useCallback(async () => {
-    setLoadingLogs(true);
-    try {
-      const res = await remoteConnectionAPI.getDockerContainerLogs(sessionId, containerId, 200);
-      setLogs(res.logs);
-    } catch {
-      setLogs('Failed to fetch container logs.');
-    } finally {
-      setLoadingLogs(false);
+  const startStream = useCallback(async () => {
+    if (streamStopRef.current) {
+      streamStopRef.current();
+      streamStopRef.current = null;
     }
+    setLogsLines([]);
+    setStreamState('connecting');
+
+    const stop = await remoteConnectionAPI.streamDockerContainerLogs(
+      sessionId,
+      containerId,
+      200,
+      true,
+      (line) => setLogsLines(prev => [...prev, line]),
+      () => setStreamState('done'),
+      () => setStreamState('error'),
+    );
+    streamStopRef.current = stop;
+    setStreamState('live');
   }, [sessionId, containerId]);
 
   useEffect(() => {
-    if (open) fetchLogs();
-  }, [open, fetchLogs]);
+    if (open) startStream();
+    return () => {
+      if (streamStopRef.current) {
+        streamStopRef.current();
+        streamStopRef.current = null;
+      }
+    };
+  }, [open, startStream]);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logsLines]);
+
+  const handleClose = useCallback(() => {
+    if (streamStopRef.current) {
+      streamStopRef.current();
+      streamStopRef.current = null;
+    }
+    setOpen(false);
+    setLogsLines([]);
+    setStreamState('idle');
+  }, []);
 
   if (!open) {
     return (
@@ -645,15 +779,16 @@ function LogsButton({
     );
   }
 
+  const stateLabel = streamState === 'live' ? 'LIVE' : streamState === 'connecting' ? 'CONNECTING' : streamState === 'done' ? 'ENDED' : streamState === 'error' ? 'ERROR' : '';
+  const stateColor = streamState === 'live' ? '#4ade80' : streamState === 'error' ? '#f87171' : '#facc15';
+
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 z-40"
         style={{ background: 'rgba(0,0,0,0.6)' }}
-        onClick={() => setOpen(false)}
+        onClick={handleClose}
       />
-      {/* Modal */}
       <div
         className="fixed inset-8 z-50 flex flex-col rounded-lg overflow-hidden"
         style={{ background: 'var(--color-bg-base)', border: '1px solid var(--color-border-muted)' }}
@@ -675,18 +810,26 @@ function LogsButton({
             >
               Logs — {containerName.replace(/^\//, '')}
             </span>
+            {stateLabel && (
+              <span
+                className="ml-2 px-2 py-0.5 rounded-full font-semibold uppercase tracking-[0.08em]"
+                style={{ fontSize: '9px', color: stateColor, background: `${stateColor}15` }}
+              >
+                {stateLabel}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={fetchLogs}
+              onClick={startStream}
               className="p-1 rounded cursor-pointer"
               style={{ color: 'var(--color-text-muted)' }}
-              title="Refresh logs"
+              title="Restart stream"
             >
               <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>refresh</span>
             </button>
             <button
-              onClick={() => setOpen(false)}
+              onClick={handleClose}
               className="p-1 rounded cursor-pointer"
               style={{ color: 'var(--color-text-muted)' }}
             >
@@ -695,21 +838,29 @@ function LogsButton({
           </div>
         </div>
         <div className="flex-1 overflow-auto p-4">
-          {loadingLogs ? (
+          {streamState === 'connecting' ? (
             <div className="flex items-center justify-center h-full">
               <div
                 className="w-5 h-5 border-2 rounded-full animate-spin"
                 style={{ borderColor: 'var(--color-border-muted)', borderTopColor: 'var(--color-primary)' }}
               />
             </div>
+          ) : logsLines.length === 0 ? (
+            <span
+              className="font-mono"
+              style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}
+            >
+              No logs available.
+            </span>
           ) : (
             <pre
               className="font-mono whitespace-pre-wrap"
               style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: '1.6' }}
             >
-              {logs || 'No logs available.'}
+              {logsLines.join('\n')}
             </pre>
           )}
+          <div ref={logsEndRef} />
         </div>
       </div>
     </>

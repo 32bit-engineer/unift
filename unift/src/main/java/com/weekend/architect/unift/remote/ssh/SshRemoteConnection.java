@@ -150,14 +150,14 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 };
 
         // Set host key checking based on user preference
-        if (credentials.isStrictHostKeyChecking()) {
+        if (!credentials.isStrictHostKeyChecking()) {
+            jschSession.setConfig("StrictHostKeyChecking", "no");
+        } else {
             jschSession.setConfig("StrictHostKeyChecking", "yes");
             if (!StringUtils.isBlank(credentials.getExpectedFingerprint())) {
-                // If a fingerprint is provided, use a custom repository to validate it
+                // Given fingerprint is provided, use a custom repository to validate it
                 jsch.setHostKeyRepository(new FingerprintHostKeyRepository(credentials.getExpectedFingerprint()));
             }
-        } else {
-            jschSession.setConfig("StrictHostKeyChecking", "no");
         }
         // Include keyboard-interactive so PAM-based servers (Ubuntu/Debian with UsePAM yes)
         // work alongside servers that use the plain "password" method.
@@ -214,8 +214,6 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     protected void preClose() {
         log.debug("[{}] Preparing to close SSH connection", session.getSessionId());
     }
-
-    // PortForwardable ─────────────────────────────────────────────────────────
 
     /**
      * Opens a local-to-remote port forward through the JSch session.
@@ -315,7 +313,32 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
 
     /**
      * Opens a short-lived exec channel on the existing SSH session, runs {@code command},
-     * reads stdout (up to 512 bytes / 5 s), and returns the trimmed result.
+     * reads stdout, and returns the trimmed result.
+     *
+     * <h6>Read strategy</h6>
+     * <p>JSch's {@code ChannelExec} delivers stdout via an internal
+     * {@code PipedInputStream}.  Two termination modes exist:
+     *
+     * <ol>
+     *   <li><b>Channel closes normally</b> — the remote shell exits, the SSH server
+     *       sends {@code SSH_MSG_CHANNEL_EOF} (which closes the pipe's write-side)
+     *       then {@code SSH_MSG_CHANNEL_CLOSE} ({@code exec.isClosed() == true}).
+     *       At that point a <em>blocking</em> {@code in.read()} will drain any
+     *       remaining buffered bytes and then return {@code -1}.</li>
+     *   <li><b>Channel stays open</b> — a backgrounder process (e.g. {@code socat})
+     *       inherits the channel's file descriptors and keeps it alive.  The echo
+     *       output arrives well before the deadline; the polling loop reads it via
+     *       {@code in.available()}.  When the deadline fires we return whatever
+     *       was collected.</li>
+     * </ol>
+     *
+     * <h6>Why not {@code !exec.isConnected()}?</h6>
+     * <p>{@code isConnected()} is cleared inside {@code disconnect()}, which also
+     * calls {@code io.close()} — closing the {@code PipedInputStream} itself.
+     * Attempting {@code in.available()} or {@code in.read()} after that returns 0
+     * or throws, silently losing any buffered data.  {@code isClosed()} is set by
+     * the SSH {@code CLOSE} packet handler <em>before</em> {@code disconnect()} runs,
+     * so the pipe is still readable.
      *
      * @param command shell command to execute on the remote host
      * @return trimmed stdout, or an empty string if the command produced no output
@@ -324,22 +347,45 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         ChannelExec exec = (ChannelExec) jschSession.openChannel("exec");
         try {
             exec.setCommand(command);
-            exec.setErrStream(null); // discard stderr
+            exec.setErrStream(null);
             InputStream in = exec.getInputStream();
             exec.connect(props.getChannelTimeoutMs());
 
-            byte[] buf = new byte[512];
+            byte[] buf = new byte[4096];
             StringBuilder sb = new StringBuilder();
-            int n;
-            long deadline = System.currentTimeMillis() + 30_000L;
-            while ((n = in.read(buf)) != -1 && System.currentTimeMillis() < deadline) {
-                sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+            long deadline = System.currentTimeMillis() + Math.max(props.getChannelTimeoutMs(), 30_000L);
+
+            while (!exec.isClosed()) {
+                if (System.currentTimeMillis() > deadline) break;
+                while (in.available() > 0) {
+                    int n = in.read(buf, 0, buf.length);
+                    if (n < 0) break;
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
+
+            if (exec.isClosed()) {
+                int n;
+                while ((n = in.read(buf, 0, buf.length)) != -1) {
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            } else {
+                while (in.available() > 0) {
+                    int n = in.read(buf, 0, buf.length);
+                    if (n <= 0) break;
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            }
+
             return sb.toString().trim();
         } finally {
-            if (exec.isConnected()) {
-                exec.disconnect();
-            }
+            exec.disconnect();
         }
     }
 

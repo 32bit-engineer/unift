@@ -8,21 +8,22 @@ import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
  * Manages Fabric8 {@link KubernetesClient} instances — one per active SSH session.
  *
- * <h3>Exec credential support (EKS / GKE / AKS)</h3>
+ * <h6>Exec credential support (EKS / GKE / AKS)</h6>
  * <p>Managed-cluster kubeconfigs use an {@code exec} section that spawns a local CLI
  * ({@code aws eks get-token}, {@code gke-gcloud-auth-plugin}, …) to obtain a
  * short-lived bearer token.  Fabric8 would try to run this command on the UniFT server
@@ -35,14 +36,14 @@ import org.springframework.stereotype.Component;
  * {@link #resolveForSession} call the expiry is checked; if fewer than 2 minutes
  * remain the entry is evicted and rebuilt (re-running the exec command on SSH).
  *
- * <h3>Network reachability</h3>
+ * <h6>Network reachability</h6>
  * <ol>
  *   <li><b>Direct</b> — API server URL in the kubeconfig is reachable from the UniFT host.</li>
  *   <li><b>SSH tunnel</b> — API server only reachable from within the SSH server;
  *       a JSch local port-forward is opened and the master URL is rewritten.</li>
  * </ol>
  *
- * <h3>Future direct-kubeconfig path</h3>
+ * <h6>Future direct-kubeconfig path</h6>
  * <p>Call {@link #registerDirect(String, String)} when a user uploads a kubeconfig
  * directly (no SSH).  Same pool, same {@code K8sServiceImpl}.
  */
@@ -57,28 +58,30 @@ public class K8sClientPool {
             + " || cat /root/.kube/config 2>/dev/null"
             + " || cat /etc/kubernetes/admin.conf 2>/dev/null";
 
+    private static final Set<String> BLOCKED_HOSTS = Set.of("169.254.169.254", "fd00::ec2");
+
+    private final K8sClientCache k8sClientCache;
+
     private final K8sExecTokenResolver execTokenResolver;
-
-    private final ConcurrentHashMap<String, K8sClientEntry> pool = new ConcurrentHashMap<>();
-
-    // ─── Public API ──────────────────────────────────────────────────────────
 
     /**
      * Returns the cached Fabric8 client for the session, building it on first call.
      * If the exec bearer token is about to expire it is refreshed transparently.
      */
     public KubernetesClient resolveForSession(String sessionId, RemoteShell shell) {
-        K8sClientEntry existing = pool.get(sessionId);
+        K8sClientEntry existing = k8sClientCache.getIfPresent(sessionId);
         if (existing != null) {
             if (!existing.isTokenExpiringOrExpired()) {
                 return existing.client();
             }
             // Token expiring — evict the old entry and fall through to rebuild
             log.info("[k8s-pool] Exec token expiring for session {}, refreshing client...", sessionId);
-            pool.remove(sessionId);
+            k8sClientCache.remove(sessionId);
             safeClose(sessionId, existing);
         }
-        return pool.computeIfAbsent(sessionId, id -> buildFromSsh(id, shell)).client();
+        return k8sClientCache
+                .computeIfAbsent(sessionId, id -> buildFromSsh(id, shell))
+                .client();
     }
 
     /**
@@ -86,18 +89,17 @@ public class K8sClientPool {
      * Used by the future "direct kubeconfig" feature — no SSH involved.
      */
     public KubernetesClient registerDirect(String clientKey, String kubeconfig) {
-        K8sClientEntry old = pool.put(clientKey, buildEntry(clientKey, kubeconfig, null, null));
+        K8sClientEntry old = k8sClientCache.getIfPresent(clientKey);
+        k8sClientCache.put(clientKey, buildEntry(clientKey, kubeconfig, null, null));
         if (old != null) safeClose(clientKey, old);
-        return pool.get(clientKey).client();
+        return k8sClientCache.getIfPresent(clientKey).client();
     }
 
     /** Closes the client + any SSH port-forward for the given key. Safe if absent. */
     public void evict(String key) {
-        K8sClientEntry entry = pool.remove(key);
+        K8sClientEntry entry = k8sClientCache.remove(key);
         if (entry != null) safeClose(key, entry);
     }
-
-    // ─── Builders ────────────────────────────────────────────────────────────
 
     private K8sClientEntry buildFromSsh(String sessionId, RemoteShell shell) {
         log.info("[k8s-pool] Building Fabric8 client for session {}", sessionId);
@@ -172,6 +174,8 @@ public class K8sClientPool {
             if (tunnel != null) {
                 config = new ConfigBuilder(config)
                         .withMasterUrl("https://127.0.0.1:" + tunnel.localPort())
+                        .withCaCertData(config.getCaCertData())        // retain CA from kubeconfig for chain validation
+                        .withDisableHostnameVerification(true)          // tunnel endpoint is 127.0.0.1; CN won't match — disable hostname check only
                         .build();
             }
             KubernetesClient client =
@@ -187,12 +191,20 @@ public class K8sClientPool {
         }
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-
     private boolean isReachable(String host, int port) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), PROBE_TIMEOUT_MS);
-            return true;
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            if (addr.isLoopbackAddress()
+                    || addr.isLinkLocalAddress()
+                    || addr.isSiteLocalAddress()
+                    || BLOCKED_HOSTS.contains(addr.getHostAddress())) {
+                log.warn("[k8s-pool] isReachable blocked SSRF-risk host: {}", host);
+                return false;
+            }
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(addr, port), PROBE_TIMEOUT_MS);
+                return true;
+            }
         } catch (IOException e) {
             return false;
         }
@@ -206,8 +218,6 @@ public class K8sClientPool {
             log.warn("[k8s-pool] Error closing Fabric8 client for key {}: {}", key, e.getMessage());
         }
     }
-
-    // ─── Inner types ─────────────────────────────────────────────────────────
 
     record K8sClientEntry(
             KubernetesClient client,
@@ -226,7 +236,7 @@ public class K8sClientPool {
         public void close() {
             try {
                 client.close();
-            } catch (Exception ignored) {
+            } catch (Exception exp) {
             }
             if (tunnel != null) tunnel.close();
         }

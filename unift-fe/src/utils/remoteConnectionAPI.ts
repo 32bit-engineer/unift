@@ -38,6 +38,8 @@ export interface SessionState {
   homeDirectory?: string;
   /** Detected OS name, e.g. "Ubuntu 22.04.3 LTS". null if detection failed. */
   remoteOs?: string;
+  /** Workspace types currently active for this session (always includes "ssh"). */
+  activeWorkspaces?: string[];
 }
 
 export interface DirectoryListingResponse {
@@ -314,6 +316,222 @@ export interface ImagePage {
   total: number;
 }
 
+export interface ContainerDetail {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  platform: string;
+  created: string;
+  restartCount: number;
+  env: string[];
+  cmd: string[];
+  ports: Record<string, string>;
+  mounts: Array<{ type: string; source: string; destination: string; mode: string }>;
+  networkMode: string;
+  networks: Record<string, { ipAddress: string; gateway: string }>;
+  restartPolicy: string;
+  labels: Record<string, string>;
+}
+
+export interface CreateContainerRequest {
+  image: string;
+  name?: string;
+  env?: string[];
+  ports?: Record<string, string>;
+  volumes?: string[];
+  restartPolicy?: string;
+  networkMode?: string;
+  cmd?: string[];
+}
+
+export interface CreateContainerResponse {
+  containerId: string;
+  warnings: string[];
+}
+
+export interface ExecCreateRequest {
+  containerId: string;
+  cmd: string[];
+  attachStdout?: boolean;
+  attachStderr?: boolean;
+}
+
+export interface ExecStartResult {
+  output: string;
+  exitCode: number;
+}
+
+export interface ContainerStats {
+  containerId: string;
+  name: string;
+  cpuPercent: string;
+  memoryUsage: string;
+  memoryLimit: string;
+  memoryPercent: string;
+  networkIo: string;
+  blockIo: string;
+  pids: number;
+}
+
+export interface PullImageProgress {
+  status: string;
+  id?: string;
+  progress?: string;
+  progressDetail?: { current?: number; total?: number };
+}
+
+export interface DockerNetwork {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  internal: boolean;
+  ipam: { subnet?: string; gateway?: string };
+  containers: Record<string, { name: string; ipv4Address: string }>;
+  labels: Record<string, string>;
+  created: string;
+}
+
+export interface DockerVolume {
+  name: string;
+  driver: string;
+  mountpoint: string;
+  scope: string;
+  labels: Record<string, string>;
+  created: string;
+  usageData?: { size: number; refCount: number };
+}
+
+export interface ComposeProject {
+  name: string;
+  status: string;
+  configFiles: string;
+  services: string[];
+  containerCount: number;
+}
+
+export interface ComposeServiceDef {
+  image: string;
+  ports?: string[];
+  environment?: Record<string, string>;
+  volumes?: string[];
+  depends_on?: string[];
+}
+
+export interface ComposeFileRequest {
+  projectName: string;
+  services: Record<string, ComposeServiceDef>;
+}
+
+interface RawDockerInfo {
+  available: boolean;
+  version: string;
+  apiVersion?: string;
+  os?: string;
+  arch?: string;
+  totalContainers: number;
+  runningContainers: number;
+  stoppedContainers: number;
+  pausedContainers: number;
+  totalImages: number;
+  storageDriver: string;
+}
+
+interface RawDockerContainer {
+  id: string;
+  name?: string;
+  image: string;
+  imageId?: string;
+  state: string;
+  status: string;
+  ports?: string[];
+  createdAt: string;
+  sizeRw?: number | null;
+  sizeRootFs?: number | null;
+  networks?: string[];
+}
+
+interface RawDockerStats {
+  containerId: string;
+  name: string;
+  cpuPercent: number;
+  memoryUsage: number;
+  memoryLimit: number;
+  memoryPercent: number;
+  networkRx: number;
+  networkTx: number;
+  blockRead: number;
+  blockWrite: number;
+  pids: number;
+}
+
+interface RawDockerOverview {
+  info: RawDockerInfo;
+  runningContainers: RawDockerContainer[];
+  stats: RawDockerStats[];
+}
+
+interface RawDockerImage {
+  id: string;
+  repoTags?: string[];
+  size: number;
+  created: string;
+  labels?: Record<string, string>;
+}
+
+interface RawImagePage {
+  images: RawDockerImage[];
+  total: number;
+}
+
+interface RawContainerDetail {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  platform?: string;
+  env?: string[];
+  command?: string;
+  ports?: string[];
+  mounts?: string[];
+  networkSettings?: Record<string, unknown>;
+  restartPolicy?: string;
+}
+
+interface RawCreateContainerResponse {
+  id: string;
+  warnings?: string[];
+}
+
+interface RawDockerNetwork {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  internal: boolean;
+  containers?: Record<string, string>;
+  ipam?: Record<string, unknown>;
+}
+
+interface RawDockerVolume {
+  name: string;
+  driver: string;
+  mountpoint: string;
+  scope?: string;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+interface RawComposeProject {
+  name: string;
+  status: string;
+  configFiles: string;
+  services: number;
+}
+
 // -- Kubernetes types --
 
 export interface K8sClusterInfo {
@@ -508,6 +726,172 @@ export interface StatefulSetPage {
   total: number;
 }
 
+function formatDockerBytes(bytes: number | null | undefined): string {
+  const safeBytes = Math.max(0, bytes ?? 0);
+  if (safeBytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(safeBytes) / Math.log(1024)), units.length - 1);
+  const value = safeBytes / Math.pow(1024, index);
+  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatDockerPercent(value: number | null | undefined): string {
+  const safeValue = Number.isFinite(value) ? Number(value) : 0;
+  return `${safeValue.toFixed(1)}%`;
+}
+
+function normalizeDockerInfo(info: RawDockerInfo): DockerInfo {
+  const osPart = info.os?.trim() ?? '';
+  const archPart = info.arch?.trim() ?? '';
+  const serverOs = [osPart, archPart].filter(Boolean).join(' / ');
+
+  return {
+    available: info.available,
+    version: info.version,
+    totalContainers: info.totalContainers,
+    runningContainers: info.runningContainers,
+    stoppedContainers: info.stoppedContainers,
+    pausedContainers: info.pausedContainers,
+    totalImages: info.totalImages,
+    serverOs,
+    storageDriver: info.storageDriver,
+  };
+}
+
+function normalizeDockerContainer(container: RawDockerContainer): DockerContainer {
+  return {
+    id: container.id,
+    names: container.name ?? '',
+    image: container.image,
+    state: container.state,
+    status: container.status,
+    ports: container.ports?.join(', ') ?? '',
+    createdAt: container.createdAt,
+    size: formatDockerBytes(container.sizeRootFs ?? container.sizeRw),
+    networks: container.networks?.join(', ') ?? '',
+  };
+}
+
+function normalizeDockerStats(stats: RawDockerStats): DockerContainerStats {
+  return {
+    containerId: stats.containerId,
+    name: stats.name,
+    cpuPercent: formatDockerPercent(stats.cpuPercent),
+    memoryUsage: `${formatDockerBytes(stats.memoryUsage)} / ${formatDockerBytes(stats.memoryLimit)}`,
+    memoryLimit: formatDockerBytes(stats.memoryLimit),
+    memoryPercent: formatDockerPercent(stats.memoryPercent),
+    networkIo: `${formatDockerBytes(stats.networkRx)} / ${formatDockerBytes(stats.networkTx)}`,
+    blockIo: `${formatDockerBytes(stats.blockRead)} / ${formatDockerBytes(stats.blockWrite)}`,
+  };
+}
+
+function splitRepoTag(repoTag: string | undefined): { repository: string; tag: string } {
+  if (!repoTag) return { repository: '<none>', tag: '<none>' };
+  const slashIndex = repoTag.lastIndexOf('/');
+  const colonIndex = repoTag.lastIndexOf(':');
+  if (colonIndex > slashIndex) {
+    return {
+      repository: repoTag.slice(0, colonIndex),
+      tag: repoTag.slice(colonIndex + 1),
+    };
+  }
+  return { repository: repoTag, tag: 'latest' };
+}
+
+function normalizeDockerImage(image: RawDockerImage): DockerImage[] {
+  const tags = image.repoTags && image.repoTags.length > 0 ? image.repoTags : ['<none>:<none>'];
+  return tags.map((repoTag) => {
+    const parsed = splitRepoTag(repoTag);
+    return {
+      id: image.id,
+      repository: parsed.repository,
+      tag: parsed.tag,
+      size: formatDockerBytes(image.size),
+      createdAt: image.created,
+      createdSince: image.created,
+    };
+  });
+}
+
+function normalizeContainerDetail(detail: RawContainerDetail): ContainerDetail {
+  const ports = (detail.ports ?? []).reduce<Record<string, string>>((acc, port, index) => {
+    acc[`port-${index + 1}`] = port;
+    return acc;
+  }, {});
+  const mounts = (detail.mounts ?? []).map((mount) => {
+    const [source = '', destination = ''] = mount.split(':', 2);
+    return { type: 'bind', source, destination, mode: '' };
+  });
+
+  return {
+    id: detail.id,
+    name: detail.name,
+    image: detail.image,
+    state: detail.state,
+    status: detail.status,
+    platform: detail.platform ?? '',
+    created: '',
+    restartCount: 0,
+    env: detail.env ?? [],
+    cmd: detail.command ? detail.command.split(' ') : [],
+    ports,
+    mounts,
+    networkMode: '',
+    networks: {},
+    restartPolicy: detail.restartPolicy ?? '',
+    labels: {},
+  };
+}
+
+function normalizeDockerNetwork(network: RawDockerNetwork): DockerNetwork {
+  const containers = Object.entries(network.containers ?? {}).reduce<Record<string, { name: string; ipv4Address: string }>>(
+    (acc, [id, ipv4Address]) => {
+      acc[id] = { name: id, ipv4Address };
+      return acc;
+    },
+    {},
+  );
+  const ipamConfig = Array.isArray(network.ipam?.Config)
+    ? (network.ipam?.Config as Array<Record<string, string>>)[0]
+    : undefined;
+
+  return {
+    id: network.id,
+    name: network.name,
+    driver: network.driver,
+    scope: network.scope,
+    internal: network.internal,
+    ipam: {
+      subnet: ipamConfig?.Subnet,
+      gateway: ipamConfig?.Gateway,
+    },
+    containers,
+    labels: {},
+    created: '',
+  };
+}
+
+function normalizeDockerVolume(volume: RawDockerVolume): DockerVolume {
+  return {
+    name: volume.name,
+    driver: volume.driver,
+    mountpoint: volume.mountpoint,
+    scope: volume.scope ?? '',
+    labels: volume.labels ?? {},
+    created: volume.createdAt ?? '',
+  };
+}
+
+function normalizeComposeProject(project: RawComposeProject): ComposeProject {
+  return {
+    name: project.name,
+    status: project.status,
+    configFiles: project.configFiles,
+    services: Array.from({ length: project.services }, (_, index) => `service-${index + 1}`),
+    containerCount: project.services,
+  };
+}
+
 const BASE = '/api/remote';
 const HOSTS_BASE = '/api/hosts';
 const STREAM_BASE = '/api/stream';
@@ -526,6 +910,18 @@ export const remoteConnectionAPI = {
 
   closeSession: (sessionId: string) =>
     apiClient.delete<void>(`${BASE}/sessions/${sessionId}`),
+
+  /** Activates a workspace type for the session. Returns the updated set. */
+  activateWorkspace: (sessionId: string, type: WorkspaceType) =>
+    apiClient.post<string[]>(`${BASE}/sessions/${sessionId}/workspaces/${type}`),
+
+  /** Deactivates a workspace type for the session. Returns the updated set. */
+  deactivateWorkspace: (sessionId: string, type: WorkspaceType) =>
+    apiClient.delete<string[]>(`${BASE}/sessions/${sessionId}/workspaces/${type}`),
+
+  /** Returns the set of workspace types currently active for the session. */
+  getActiveWorkspaces: (sessionId: string) =>
+    apiClient.get<string[]>(`${BASE}/sessions/${sessionId}/workspaces`),
 
   listDirectory: (sessionId: string, path?: string) => {
     const query = path ? `?path=${encodeURIComponent(path)}` : '';
@@ -755,21 +1151,38 @@ export const remoteConnectionAPI = {
 
   /** Returns Docker daemon info (version, container/image counts, OS). */
   getDockerInfo: (sessionId: string) =>
-    apiClient.get<DockerInfo>(`${BASE}/sessions/${sessionId}/docker/info`),
+    apiClient
+      .get<RawDockerInfo>(`${BASE}/sessions/${sessionId}/docker/info`)
+      .then(normalizeDockerInfo),
 
   /** Returns Docker overview: info + running containers + live stats. */
   getDockerOverview: (sessionId: string) =>
-    apiClient.get<DockerOverview>(`${BASE}/sessions/${sessionId}/docker/overview`),
+    apiClient
+      .get<RawDockerOverview>(`${BASE}/sessions/${sessionId}/docker/overview`)
+      .then((overview) => ({
+        info: normalizeDockerInfo(overview.info),
+        runningContainers: overview.runningContainers.map(normalizeDockerContainer),
+        stats: overview.stats.map(normalizeDockerStats),
+      })),
 
   /** Lists Docker containers with optional pagination. */
   listDockerContainers: (sessionId: string, all = true, page = 0, pageSize = 20) =>
-    apiClient.get<ContainerPage>(
-      `${BASE}/sessions/${sessionId}/docker/containers?all=${all}&page=${page}&pageSize=${pageSize}`,
-    ),
+    apiClient
+      .get<{ containers: RawDockerContainer[]; total: number; page: number; pageSize: number }>(
+        `${BASE}/sessions/${sessionId}/docker/containers?all=${all}&page=${page}&pageSize=${pageSize}`,
+      )
+      .then((res) => ({
+        containers: res.containers.map(normalizeDockerContainer),
+        total: res.total,
+        page: res.page,
+        pageSize: res.pageSize,
+      })),
 
   /** Returns live stats for all running containers. */
   getDockerContainerStats: (sessionId: string) =>
-    apiClient.get<DockerContainerStats[]>(`${BASE}/sessions/${sessionId}/docker/containers/stats`),
+    apiClient
+      .get<RawDockerStats[]>(`${BASE}/sessions/${sessionId}/docker/containers/stats`)
+      .then((stats) => stats.map(normalizeDockerStats)),
 
   /** Starts a stopped container. */
   startDockerContainer: (sessionId: string, containerId: string) =>
@@ -793,11 +1206,294 @@ export const remoteConnectionAPI = {
 
   /** Lists all Docker images on the remote host. */
   listDockerImages: (sessionId: string) =>
-    apiClient.get<ImagePage>(`${BASE}/sessions/${sessionId}/docker/images`),
+    apiClient
+      .get<RawImagePage>(`${BASE}/sessions/${sessionId}/docker/images`)
+      .then((res) => {
+        const images = res.images.flatMap(normalizeDockerImage);
+        return {
+          images,
+          total: images.length,
+        };
+      }),
 
   /** Removes a Docker image from the remote host. */
   removeDockerImage: (sessionId: string, imageId: string) =>
     apiClient.delete<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/images/${imageId}`),
+
+  /** Inspects a container for detailed configuration. */
+  inspectDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient
+      .get<RawContainerDetail>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}`)
+      .then(normalizeContainerDetail),
+
+  /** Creates a new container from an image. */
+  createDockerContainer: (sessionId: string, request: CreateContainerRequest) =>
+    apiClient
+      .post<RawCreateContainerResponse>(`${BASE}/sessions/${sessionId}/docker/containers`, request)
+      .then((res) => ({
+        containerId: res.id,
+        warnings: res.warnings ?? [],
+      })),
+
+  /** Pauses a running container. */
+  pauseDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient.post<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}/pause`),
+
+  /** Unpauses a paused container. */
+  unpauseDockerContainer: (sessionId: string, containerId: string) =>
+    apiClient.post<ContainerActionResult>(`${BASE}/sessions/${sessionId}/docker/containers/${containerId}/unpause`),
+
+  /** Renames a container. */
+  renameDockerContainer: (sessionId: string, containerId: string, newName: string) =>
+    apiClient.patch<ContainerActionResult>(
+      `${BASE}/sessions/${sessionId}/docker/containers/${containerId}/rename?name=${encodeURIComponent(newName)}`,
+    ),
+
+  /** Executes a command inside a running container. */
+  execInContainer: (sessionId: string, request: ExecCreateRequest) =>
+    apiClient.post<ExecStartResult>(
+      `${BASE}/sessions/${sessionId}/docker/containers/${request.containerId}/exec`,
+      request,
+    ),
+
+  /**
+   * Streams container logs via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamDockerContainerLogs: async (
+    sessionId: string,
+    containerId: string,
+    tail: number,
+    timestamps: boolean,
+    onLine: (line: string) => void,
+    onComplete: () => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const { API_BASE_URL } = await import('@/config/api.config');
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/${containerId}/logs/stream?tail=${tail}&timestamps=${timestamps}`;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { onComplete(); break; }
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() ?? '';
+          for (const part of parts) {
+            if (part.startsWith('data:')) onLine(part.slice(5).trimStart());
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        onError(err instanceof Error ? err.message : 'Stream failed');
+      }
+    })();
+    return () => controller.abort();
+  },
+
+  /**
+   * Streams live container stats via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamDockerContainerStats: async (
+    sessionId: string,
+    containerId: string,
+    onData: (stats: ContainerStats) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const { API_BASE_URL } = await import('@/config/api.config');
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/${containerId}/stats/stream`;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() ?? '';
+          for (const part of parts) {
+            if (part.startsWith('data:')) {
+              try {
+                const parsed = JSON.parse(part.slice(5).trimStart()) as RawDockerStats;
+                const normalized = normalizeDockerStats(parsed);
+                onData({
+                  ...normalized,
+                  pids: parsed.pids,
+                });
+              } catch { /* skip non-JSON lines */ }
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        onError(err instanceof Error ? err.message : 'Stream failed');
+      }
+    })();
+    return () => controller.abort();
+  },
+
+  /**
+   * Pulls a Docker image with streaming progress via SSE.
+   * Returns a stop function to abort.
+   */
+  pullDockerImage: async (
+    sessionId: string,
+    repository: string,
+    tag: string,
+    onProgress: (p: PullImageProgress) => void,
+    onComplete: () => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const { API_BASE_URL } = await import('@/config/api.config');
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/images/pull?repository=${encodeURIComponent(repository)}&tag=${encodeURIComponent(tag)}`;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ repository, tag }),
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { onComplete(); break; }
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() ?? '';
+          for (const part of parts) {
+            if (part.startsWith('data:')) {
+              try {
+                const parsed = JSON.parse(part.slice(5).trimStart()) as PullImageProgress;
+                onProgress(parsed);
+              } catch { /* skip non-JSON lines */ }
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        onError(err instanceof Error ? err.message : 'Pull failed');
+      }
+    })();
+    return () => controller.abort();
+  },
+
+  /** Tags a Docker image with a new repository:tag. */
+  tagDockerImage: (sessionId: string, imageId: string, repo: string, tag: string) =>
+    apiClient.post<ContainerActionResult>(
+      `${BASE}/sessions/${sessionId}/docker/images/${imageId}/tag?repo=${encodeURIComponent(repo)}&tag=${encodeURIComponent(tag)}`,
+      {},
+    ),
+
+  /** Removes unused Docker images. */
+  pruneDockerImages: (sessionId: string) =>
+    apiClient.post<void>(`${BASE}/sessions/${sessionId}/docker/images/prune`, {}),
+
+  /** Lists Docker networks. */
+  listDockerNetworks: (sessionId: string) =>
+    apiClient
+      .get<RawDockerNetwork[]>(`${BASE}/sessions/${sessionId}/docker/networks`)
+      .then((networks) => networks.map(normalizeDockerNetwork)),
+
+  /** Inspects a Docker network. */
+  inspectDockerNetwork: (sessionId: string, networkId: string) =>
+    apiClient
+      .get<RawDockerNetwork>(`${BASE}/sessions/${sessionId}/docker/networks/${networkId}`)
+      .then(normalizeDockerNetwork),
+
+  /** Creates a Docker network. */
+  createDockerNetwork: (sessionId: string, name: string, driver: string) =>
+    apiClient.post<{ id: string }>(`${BASE}/sessions/${sessionId}/docker/networks`, { name, driver }),
+
+  /** Removes a Docker network. */
+  removeDockerNetwork: (sessionId: string, networkId: string) =>
+    apiClient.delete<void>(`${BASE}/sessions/${sessionId}/docker/networks/${networkId}`),
+
+  /** Lists Docker volumes. */
+  listDockerVolumes: (sessionId: string) =>
+    apiClient
+      .get<RawDockerVolume[]>(`${BASE}/sessions/${sessionId}/docker/volumes`)
+      .then((volumes) => volumes.map(normalizeDockerVolume)),
+
+  /** Inspects a Docker volume. */
+  inspectDockerVolume: (sessionId: string, volumeName: string) =>
+    apiClient
+      .get<RawDockerVolume>(`${BASE}/sessions/${sessionId}/docker/volumes/${volumeName}`)
+      .then(normalizeDockerVolume),
+
+  /** Creates a Docker volume. */
+  createDockerVolume: (sessionId: string, name: string, driver: string) =>
+    apiClient
+      .post<RawDockerVolume>(`${BASE}/sessions/${sessionId}/docker/volumes`, { name, driver })
+      .then(normalizeDockerVolume),
+
+  /** Removes a Docker volume. */
+  removeDockerVolume: (sessionId: string, volumeName: string) =>
+    apiClient.delete<void>(`${BASE}/sessions/${sessionId}/docker/volumes/${volumeName}`),
+
+  /** Lists Docker Compose projects detected from running containers. */
+  listDockerComposeProjects: (sessionId: string) =>
+    apiClient
+      .get<RawComposeProject[]>(`${BASE}/sessions/${sessionId}/docker/compose/projects`)
+      .then((projects) => projects.map(normalizeComposeProject)),
+
+  /** Generates a Docker Compose YAML from current running containers or a request. */
+  generateDockerComposeFile: async (sessionId: string, request: ComposeFileRequest): Promise<string> => {
+    const token = tokenStorage.getAccess();
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/compose/generate`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        projectName: request.projectName,
+        services: Object.entries(request.services).map(([name, service]) => ({
+          name,
+          image: service.image,
+          ports: service.ports,
+          environment: service.environment,
+          volumes: service.volumes,
+          dependsOn: service.depends_on,
+        })),
+      }),
+    });
+    if (!response.ok) throw new Error(`Generate failed: ${response.status}`);
+    const payload = (await response.json()) as { yaml?: string };
+    return payload.yaml ?? '';
+  },
 
   // -- Kubernetes --
 
@@ -885,6 +1581,7 @@ export const remoteConnectionAPI = {
   streamK8sPodLogs: async (
     sessionId: string,
     podName: string,
+    container: string,
     namespace = 'default',
     tail = 100,
     onLine: (line: string) => void,
@@ -898,7 +1595,10 @@ export const remoteConnectionAPI = {
     (async () => {
       try {
         const res = await fetch(url, {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            'container': container, // container name 
+          },
           signal: controller.signal,
         });
         if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
