@@ -67,17 +67,17 @@ export const XTERM_OPTIONS = {
   rows: 24,
   cols: 80,
   fontSize: 12,
-  fontFamily: 'IBM Plex Mono, monospace',
+  fontFamily: 'DM Mono, monospace',
   theme: {
-    background: '#11141C', // recessed
+    background: '#0C0C14', // recessed
     foreground: '#E2E8F0', // text-warm
-    cursor: '#4F8EF7',     // primary
-    selection: 'rgba(79, 142, 247, 0.3)', // primary with alpha
+    cursor: '#7C6DFA',     // primary
+    selection: 'rgba(124, 109, 250, 0.3)', // primary with alpha
     black: '#0a0e14',
     red: '#f87171',
     green: '#4ade80',
     yellow: '#facc15',
-    blue: '#4F8EF7',
+    blue: '#7C6DFA',
     magenta: '#d946ef',
     cyan: '#06b6d4',
     white: '#e2e8f0',
@@ -87,7 +87,7 @@ export const XTERM_OPTIONS = {
     brightYellow: '#fde047',
     brightBlue: '#60a5fa',
     brightMagenta: '#f0abfc',
-    brightCyan: '#22d3ee',
+    brightCyan: '#26A69A',
     brightWhite: '#f1f5f9',
   },
   cursorBlink: true,

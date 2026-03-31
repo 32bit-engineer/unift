@@ -39,6 +39,7 @@ public class SshConnectRequestAssembler implements ConnectRequestAssembler {
                 .passphrase(decryptedPassphrase)
                 .strictHostKeyChecking(host.isStrictHostKeyChecking())
                 .expectedFingerprint(host.getExpectedFingerprint())
+                .savedHostId(host.getId())
                 .build();
     }
 }

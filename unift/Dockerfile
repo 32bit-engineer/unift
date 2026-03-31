@@ -1,25 +1,17 @@
-FROM openjdk:24-ea-jdk-slim AS builder
-
-# Install Gradle manually
-ENV GRADLE_VERSION=8.7
-
-RUN apt-get update && apt-get install -y curl unzip \
-  && curl -sLO https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
-  && unzip gradle-${GRADLE_VERSION}-bin.zip -d /opt \
-  && ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/bin/gradle
+FROM eclipse-temurin:24-jdk-alpine AS builder
 
 WORKDIR /app
 
-# Copy everything needed for the wrapper to work
 COPY gradlew .
 COPY gradle/wrapper gradle/wrapper
-COPY . .
+COPY build.gradle settings.gradle ./
+RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
 
-RUN chmod +x gradlew
-RUN ./gradlew clean build -x test
+COPY . .
+RUN ./gradlew clean build -x test --no-daemon
 
 # Runtime image
-FROM openjdk:24-ea-jdk-slim
+FROM eclipse-temurin:24-jre-alpine
 WORKDIR /app
 COPY --from=builder /app/build/libs/*.jar app.jar
 CMD ["java", "-jar", "app.jar"]

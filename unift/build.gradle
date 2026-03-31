@@ -37,7 +37,7 @@ dependencies {
 
 	// jackson dependency for afterburner and object mapping
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
-	implementation 'com.fasterxml.jackson.module:jackson-module-afterburner:2.20.0'
+	implementation 'com.fasterxml.jackson.module:jackson-module-afterburner'
 
 	implementation 'org.springframework.kafka:spring-kafka'
 
@@ -57,11 +57,26 @@ dependencies {
 	// SSH / SFTP — modern maintained JSch fork
 	implementation 'com.github.mwiede:jsch:0.2.21'
 
+	// Kubernetes Java SDK — direct REST calls to k8s API server (replaces kubectl-over-SSH)
+	implementation 'io.fabric8:kubernetes-client:7.3.1'
+
+	// Java API Client for Docker
+	implementation 'com.github.docker-java:docker-java:3.7.1'
+	implementation 'com.github.docker-java:docker-java-transport-httpclient5:3.7.1'
+
+	// Caffeine in-process cache
+	implementation 'com.github.ben-manes.caffeine:caffeine'
+
+	// Redis — distributed cache backing for TransferCache (Lettuce client via Spring Boot auto-config)
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
 	// Swagger / OpenAPI
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2'
 
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
+
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
 	annotationProcessor 'org.projectlombok:lombok'
 

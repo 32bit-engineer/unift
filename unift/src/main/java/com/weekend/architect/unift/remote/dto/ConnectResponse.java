@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import java.time.OffsetDateTime;
+import java.util.Set;
 import lombok.Builder;
 import lombok.Value;
 
@@ -31,4 +32,7 @@ public class ConnectResponse {
      * Populated after successful connect; {@code null} if detection failed.
      */
     String remoteOs;
+
+    /** The workspace types currently active for this session (always includes "ssh"). */
+    Set<String> activeWorkspaces;
 }

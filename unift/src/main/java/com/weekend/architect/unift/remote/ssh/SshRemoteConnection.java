@@ -16,6 +16,7 @@ import com.weekend.architect.unift.common.utils.StringUtils;
 import com.weekend.architect.unift.remote.config.RemoteConnectionProperties;
 import com.weekend.architect.unift.remote.core.AbstractRemoteConnection;
 import com.weekend.architect.unift.remote.core.CancellationToken;
+import com.weekend.architect.unift.remote.core.PortForwardable;
 import com.weekend.architect.unift.remote.core.RemoteShell;
 import com.weekend.architect.unift.remote.core.TransferProgressCallback;
 import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
@@ -51,19 +52,19 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Uses the <a href="https://github.com/mwiede/jsch">mwiede/jsch</a> fork of JSch
  * for SSH transport and SFTP file operations.
  *
- * <h2>Thread-safety</h2>
+ * <h6>Thread-safety</h6>
  * <p>A single {@link ChannelSftp} is kept open for the lifetime of the session.
  * All SFTP operations are {@code synchronized} on the channel instance to prevent
  * concurrent access from multiple request threads.
  *
- * <h2>Connection lifecycle</h2>
+ * <h6>Connection lifecycle</h6>
  * <pre>
  *   doConnect() → open JSch Session → open ChannelSftp
  *   doClose()   → disconnect ChannelSftp → disconnect Session
  * </pre>
  */
 @Slf4j
-public class SshRemoteConnection extends AbstractRemoteConnection implements RemoteShell {
+public class SshRemoteConnection extends AbstractRemoteConnection implements RemoteShell, PortForwardable {
 
     /** POSIX path separator — remote hosts are always Unix-like. */
     private static final String PATH_SEP = "/";
@@ -149,14 +150,14 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 };
 
         // Set host key checking based on user preference
-        if (credentials.isStrictHostKeyChecking()) {
+        if (!credentials.isStrictHostKeyChecking()) {
+            jschSession.setConfig("StrictHostKeyChecking", "no");
+        } else {
             jschSession.setConfig("StrictHostKeyChecking", "yes");
             if (!StringUtils.isBlank(credentials.getExpectedFingerprint())) {
-                // If a fingerprint is provided, use a custom repository to validate it
+                // Given fingerprint is provided, use a custom repository to validate it
                 jsch.setHostKeyRepository(new FingerprintHostKeyRepository(credentials.getExpectedFingerprint()));
             }
-        } else {
-            jschSession.setConfig("StrictHostKeyChecking", "no");
         }
         // Include keyboard-interactive so PAM-based servers (Ubuntu/Debian with UsePAM yes)
         // work alongside servers that use the plain "password" method.
@@ -215,6 +216,41 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
+     * Opens a local-to-remote port forward through the JSch session.
+     * Passing {@code 0} lets the OS pick a free port; the bound port is returned.
+     *
+     * <p>Used by {@code K8sClientPool} to tunnel Kubernetes API traffic when the
+     * API server is not directly reachable from the UniFT host.
+     */
+    @Override
+    public int forwardLocalPort(String remoteHost, int remotePort) throws Exception {
+        if (jschSession == null || !jschSession.isConnected()) {
+            throw new IllegalStateException("SSH session is not connected");
+        }
+        int assignedPort = jschSession.setPortForwardingL(0, remoteHost, remotePort);
+        log.info(
+                "[{}] SSH port forward established: localhost:{} → {}:{}",
+                session.getSessionId(),
+                assignedPort,
+                remoteHost,
+                remotePort);
+        return assignedPort;
+    }
+
+    /** Tears down a port forward previously opened by {@link #forwardLocalPort}. */
+    @Override
+    public void cancelPortForward(int localPort) {
+        if (jschSession == null || !jschSession.isConnected()) return;
+        try {
+            jschSession.delPortForwardingL(localPort);
+            log.info("[{}] SSH port forward on localhost:{} released", session.getSessionId(), localPort);
+        } catch (Exception e) {
+            log.warn(
+                    "[{}] Failed to release port forward on {}: {}", session.getSessionId(), localPort, e.getMessage());
+        }
+    }
+
+    /**
      * Detects the remote OS by running a short exec command over the existing SSH session.
      *
      * <p>Strategy (in order):
@@ -252,8 +288,57 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
+     * Public implementation of {@link RemoteShell#executeCommand} — delegates to
+     * the internal {@link #runCommand} after asserting the session is active.
+     * Used by the analytics layer for system-metric probes.
+     */
+    @Override
+    public String executeCommand(String command) throws Exception {
+        assertActive();
+        return runCommand(command);
+    }
+
+    /**
+     * Returns the first entry of the configured SSH client-to-server cipher preference
+     * list (e.g. {@code "chacha20-poly1305@openssh.com"}).  This approximates the
+     * actually-negotiated cipher; JSch does not expose the negotiated value via a
+     * public API.  Returns {@code null} when the session is not yet connected.
+     */
+    public String getCipherName() {
+        if (jschSession == null) return null;
+        String list = jschSession.getConfig("cipher.c2s");
+        if (list == null || list.isBlank()) return null;
+        return list.split(",")[0].trim();
+    }
+
+    /**
      * Opens a short-lived exec channel on the existing SSH session, runs {@code command},
-     * reads stdout (up to 512 bytes / 5 s), and returns the trimmed result.
+     * reads stdout, and returns the trimmed result.
+     *
+     * <h6>Read strategy</h6>
+     * <p>JSch's {@code ChannelExec} delivers stdout via an internal
+     * {@code PipedInputStream}.  Two termination modes exist:
+     *
+     * <ol>
+     *   <li><b>Channel closes normally</b> — the remote shell exits, the SSH server
+     *       sends {@code SSH_MSG_CHANNEL_EOF} (which closes the pipe's write-side)
+     *       then {@code SSH_MSG_CHANNEL_CLOSE} ({@code exec.isClosed() == true}).
+     *       At that point a <em>blocking</em> {@code in.read()} will drain any
+     *       remaining buffered bytes and then return {@code -1}.</li>
+     *   <li><b>Channel stays open</b> — a backgrounder process (e.g. {@code socat})
+     *       inherits the channel's file descriptors and keeps it alive.  The echo
+     *       output arrives well before the deadline; the polling loop reads it via
+     *       {@code in.available()}.  When the deadline fires we return whatever
+     *       was collected.</li>
+     * </ol>
+     *
+     * <h6>Why not {@code !exec.isConnected()}?</h6>
+     * <p>{@code isConnected()} is cleared inside {@code disconnect()}, which also
+     * calls {@code io.close()} — closing the {@code PipedInputStream} itself.
+     * Attempting {@code in.available()} or {@code in.read()} after that returns 0
+     * or throws, silently losing any buffered data.  {@code isClosed()} is set by
+     * the SSH {@code CLOSE} packet handler <em>before</em> {@code disconnect()} runs,
+     * so the pipe is still readable.
      *
      * @param command shell command to execute on the remote host
      * @return trimmed stdout, or an empty string if the command produced no output
@@ -262,22 +347,45 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         ChannelExec exec = (ChannelExec) jschSession.openChannel("exec");
         try {
             exec.setCommand(command);
-            exec.setErrStream(null); // discard stderr
+            exec.setErrStream(null);
             InputStream in = exec.getInputStream();
             exec.connect(props.getChannelTimeoutMs());
 
-            byte[] buf = new byte[512];
+            byte[] buf = new byte[4096];
             StringBuilder sb = new StringBuilder();
-            int n;
-            long deadline = System.currentTimeMillis() + 5_000L;
-            while ((n = in.read(buf)) != -1 && System.currentTimeMillis() < deadline) {
-                sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+            long deadline = System.currentTimeMillis() + Math.max(props.getChannelTimeoutMs(), 30_000L);
+
+            while (!exec.isClosed()) {
+                if (System.currentTimeMillis() > deadline) break;
+                while (in.available() > 0) {
+                    int n = in.read(buf, 0, buf.length);
+                    if (n < 0) break;
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
+
+            if (exec.isClosed()) {
+                int n;
+                while ((n = in.read(buf, 0, buf.length)) != -1) {
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            } else {
+                while (in.available() > 0) {
+                    int n = in.read(buf, 0, buf.length);
+                    if (n <= 0) break;
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+            }
+
             return sb.toString().trim();
         } finally {
-            if (exec.isConnected()) {
-                exec.disconnect();
-            }
+            exec.disconnect();
         }
     }
 

@@ -9,12 +9,9 @@ interface TerminalPanelProps {
   terminalMinimized: boolean;
   terminalHeight: number;
   terminalSessionId: string | undefined;
-  activeSessions: UIHost[];
   onResizeMouseDown: (e: React.MouseEvent) => void;
-  onSessionChange: (sessionId: string) => void;
   onClose: () => void;
   onToggleMinimize: () => void;
-  onOpen: () => void;
 }
 
 export function TerminalPanel({
@@ -23,47 +20,69 @@ export function TerminalPanel({
   terminalMinimized,
   terminalHeight,
   terminalSessionId,
-  activeSessions,
   onResizeMouseDown,
-  onSessionChange,
   onClose,
   onToggleMinimize,
-  onOpen,
 }: TerminalPanelProps) {
   return (
     <>
-      {/* IDE Terminal panel — visible when open and not minimized */}
-      {terminalOpen && !terminalMinimized && (
+      {/* Terminal panel body — always mounted when open to keep WS session alive */}
+      {terminalOpen && (
         <>
-          {/* Drag handle — drag up to expand, drag down to shrink */}
+          {/* Drag handle — hidden when minimized */}
+          {!terminalMinimized && (
+            <div
+              className="shrink-0 h-1.5 hover:bg-[#7C6DFA]/30 cursor-ns-resize transition-colors"
+              style={{ background: 'transparent' }}
+              onMouseDown={onResizeMouseDown}
+              title="Drag to resize terminal"
+            />
+          )}
+
+          {/* Panel container — height 0 hides the UI but keeps the Terminal mounted */}
           <div
-            className="shrink-0 h-1.5 hover:bg-[#4F8EF7]/30 cursor-ns-resize transition-colors"
-            style={{ background: 'transparent' }}
-            onMouseDown={onResizeMouseDown}
-            title="Drag to resize terminal"
-          />
-          <div
-            className="shrink-0 flex flex-col overflow-hidden border border-[#2E3348] rounded-t"
-            style={{ height: terminalHeight }}
+            className="shrink-0 flex flex-col overflow-hidden"
+            style={{
+              height: terminalMinimized ? 0 : terminalHeight,
+              border: terminalMinimized ? 'none' : '1px solid #1E1E2E',
+              borderRadius: '4px 4px 0 0',
+            }}
           >
-            {/* Terminal header — host info */}
-            <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-[#11141C] border-b border-[#2E3348]">
-              <span className="material-symbols-outlined text-[#4F8EF7]" style={{ fontSize: '13px' }}>
+            {/* Terminal header — host info + minimize + close */}
+            <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-[#0C0C14] border-b border-[#1E1E2E]">
+              <span className="material-symbols-rounded text-[#7C6DFA]" style={{ fontSize: '13px' }}>
                 terminal
               </span>
               {terminalSessionId ? (
                 <>
-                  <span className="text-[11px] font-mono text-slate-300">
+                  <span className="text-code">
                     {sessions.find(s => s.sessionId === terminalSessionId)?.userAtIp ?? 'remote'}
                   </span>
-                  <span className="text-[10px] font-mono text-slate-600 ml-1">
+                  <span className="text-micro text-muted ml-1">
                     ({sessions.find(s => s.sessionId === terminalSessionId)?.protocol ?? ''})
                   </span>
                   <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80] ml-1" title="Connected" />
                 </>
               ) : (
-                <span className="text-[11px] font-mono text-slate-500">No session selected</span>
+                <span className="text-meta text-muted">No session selected</span>
               )}
+              <div className="flex-1" />
+              {/* Minimize — collapses the panel but keeps the WS session alive */}
+              <button
+                onClick={onToggleMinimize}
+                className="p-1 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                title="Minimize (session stays connected)"
+              >
+                <Icon name="remove" className="text-slate-500 hover:text-slate-300 text-sm" />
+              </button>
+              {/* Close — ends the terminal session */}
+              <button
+                onClick={onClose}
+                className="p-1 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                title="Close terminal"
+              >
+                <Icon name="close" className="text-slate-500 hover:text-slate-300 text-sm" />
+              </button>
             </div>
 
             {terminalSessionId ? (
@@ -75,10 +94,10 @@ export function TerminalPanel({
                 onStateChange={() => {}}
               />
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center gap-2 bg-[#161923]">
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 bg-[#0F0F1A]">
                 <Icon name="terminal" className="text-3xl text-slate-600" />
-                <span className="text-xs font-mono text-slate-500">
-                  Select an online session above to open a terminal
+                <span className="text-meta text-muted">
+                  Open a terminal from the file browser toolbar
                 </span>
               </div>
             )}
@@ -86,51 +105,32 @@ export function TerminalPanel({
         </>
       )}
 
-      {/* Terminal tab bar — always visible at bottom */}
+      {/* Status bar — always visible at bottom; acts as restore pill when minimized */}
       <div
         className="shrink-0 h-8 flex items-center gap-1 px-2 border-t"
-        style={{ background: '#161923', borderColor: '#2E3348' }}
+        style={{ background: '#0F0F1A', borderColor: '#1E1E2E' }}
       >
         <button
-          onClick={() => terminalOpen ? onToggleMinimize() : onOpen()}
-          className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
-            terminalOpen
-              ? 'text-[#4F8EF7] bg-[#4F8EF7]/10'
-              : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+          onClick={terminalOpen && terminalMinimized ? onToggleMinimize : undefined}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded text-micro transition-colors ${
+            !terminalOpen
+              ? 'text-muted cursor-default'
+              : terminalMinimized
+              ? 'text-secondary hover:text-primary hover:bg-white/5 cursor-pointer'
+              : 'text-accent bg-[#7C6DFA]/10 cursor-default'
           }`}
         >
           <Icon name="terminal" className="text-sm" />
           Terminal
-          {terminalOpen && (
-            <Icon name={terminalMinimized ? 'expand_less' : 'expand_more'} className="text-xs" />
+          {terminalOpen && terminalMinimized && (
+            <Icon name="expand_less" className="text-xs" />
           )}
         </button>
 
-        {terminalOpen && (
-          <>
-            <div className="w-px h-4 bg-[#2E3348]" />
-            {activeSessions.length > 0 ? (
-              <select
-                value={terminalSessionId}
-                onChange={e => onSessionChange(e.target.value)}
-                className="h-6 bg-[#1E2130] border border-[#2E3348] rounded px-2 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-[#4F8EF7]/40 cursor-pointer appearance-none pr-5"
-                style={{ color: '#CBD5E1' }}
-              >
-                {activeSessions.map(s => (
-                  <option key={s.sessionId} value={s.sessionId} style={{ color: '#CBD5E1', background: '#1E2130' }}>
-                    {s.userAtIp}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-[11px] font-mono text-slate-500 px-2">No active sessions</span>
-            )}
-          </>
-        )}
-
         <div className="flex-1" />
 
-        {terminalOpen && (
+        {/* Close button shown in status bar only when panel is minimized */}
+        {terminalOpen && terminalMinimized && (
           <button
             onClick={onClose}
             className="p-1 hover:bg-white/5 rounded transition-colors cursor-pointer"
@@ -143,3 +143,6 @@ export function TerminalPanel({
     </>
   );
 }
+
+
+

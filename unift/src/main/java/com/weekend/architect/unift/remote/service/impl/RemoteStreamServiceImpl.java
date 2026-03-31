@@ -41,7 +41,7 @@ public class RemoteStreamServiceImpl implements RemoteStreamService {
 
         log.debug("[{}] Opening SFTP stream ← '{}'", sessionId, remotePath);
         InputStream stream = conn.download(remotePath, (transferred, total) -> {});
-        log.debug("[{}] ✓ SFTP stream opened ← '{}'", sessionId, remotePath);
+        log.debug("[{}] SFTP stream opened ← '{}'", sessionId, remotePath);
         return stream;
     }
 }

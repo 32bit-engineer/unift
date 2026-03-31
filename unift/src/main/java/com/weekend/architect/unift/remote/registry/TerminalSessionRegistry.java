@@ -1,6 +1,9 @@
 package com.weekend.architect.unift.remote.registry;
 
+import com.weekend.architect.unift.common.cache.namedcache.SshConnectionCache;
+import com.weekend.architect.unift.common.cache.namedcache.TerminalSessionCache;
 import com.weekend.architect.unift.remote.config.TerminalProperties;
+import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.model.TerminalSession;
 import com.weekend.architect.unift.remote.service.TerminalEventPublisher;
 import java.io.IOException;
@@ -8,8 +11,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,47 +21,60 @@ import org.springframework.web.socket.PingMessage;
 /**
  * Global in-memory registry of all active WebSocket terminal sessions.
  *
- * <h2>Responsibilities</h2>
+ * <h6>Responsibilities</h6>
  * <ol>
  *   <li>Atomic per-user session cap enforcement ({@link #registerIfUnderCap})</li>
  *   <li>Idempotent removal with guaranteed shell cleanup ({@link #remove})</li>
  *   <li>Activity tracking ({@link #touchActivity}) for idle detection</li>
  *   <li>Periodic ping to keep WebSocket connections alive through CDN/LB</li>
  *   <li>Idle reaper that force-closes sessions idle beyond {@code idleTimeoutMinutes}</li>
+ *   <li>Propagates terminal activity to parent SSH session to maintain sliding TTL</li>
  * </ol>
  *
- * <h2>Thread-safety</h2>
- * <p>The backing map is a {@link ConcurrentHashMap}.  {@link #registerIfUnderCap} uses a
- * {@code synchronized} block to make the count-check + put atomic; all other operations
- * are individually atomic and safe for concurrent use.
+ * <h6>Backing store</h6>
+ * <p>Uses an injected {@link TerminalSessionCache} (Caffeine-backed by default,
+ * bounded to 10,000 entries).  No auto-TTL — the {@link #reapAndPing()} scheduler
+ * owns eviction based on idle time.
  *
- * <h2>Concurrency model for WebSocket sends</h2>
- * <p>Both the pipe thread (reading shell stdout) and this registry's ping task send frames
- * to the same {@link org.springframework.web.socket.WebSocketSession}.  Callers <strong>must</strong>
- * pass a {@link org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator}-wrapped
- * session when creating a {@link TerminalSession} so that concurrent sends are serialized safely.
+ * <h6>Thread-safety</h6>
+ * <p>Delegated to {@link TerminalSessionCache}.  {@link #registerIfUnderCap} uses a
+ * {@code synchronized} block to serialise the count-check + put and prevent TOCTOU.
+ *
+ * <h6>Concurrency model for WebSocket sends</h6>
+ * <p>Both the pipe thread and the ping task send frames to the same
+ * {@link org.springframework.web.socket.WebSocketSession}.  Callers <em>must</em>
+ * wrap sessions with
+ * {@link org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator}.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class TerminalSessionRegistry {
 
-    /** wsSessionId → live terminal session */
-    private final ConcurrentHashMap<String, TerminalSession> store = new ConcurrentHashMap<>();
-
+    private final TerminalSessionCache store;
     private final TerminalProperties props;
     private final TerminalEventPublisher eventPublisher;
 
     /**
+     * Lazily resolved reference to the SSH connection cache. Breaks the circular dependency
+     * between SessionRegistry (depends on TerminalSessionRegistry for cascade) and
+     * TerminalSessionRegistry (needs SSH cache to renew parent TTL on terminal activity).
+     */
+    private final AtomicReference<SshConnectionCache> sessionRegistryRef = new AtomicReference<>();
+
+    public TerminalSessionRegistry(
+            TerminalSessionCache store,
+            TerminalProperties props,
+            TerminalEventPublisher eventPublisher,
+            SshConnectionCache sshConnectionCache) {
+        this.store = store;
+        this.props = props;
+        this.eventPublisher = eventPublisher;
+        this.sessionRegistryRef.set(sshConnectionCache);
+    }
+
+    /**
      * Atomically checks the per-user session cap and, if under the limit, registers
      * the given terminal session.
-     *
-     * <p>The count-check and put are serialized via a {@code synchronized} block on
-     * {@code this} to prevent a TOCTOU race where two concurrent connection attempts
-     * from the same user both pass the cap check and both get registered.
-     *
-     * @param session the newly created terminal session
-     * @return {@code true} if registered; {@code false} if the per-user cap was exceeded
      */
     public synchronized boolean registerIfUnderCap(TerminalSession session) {
         long current = countByOwner(session.ownerId());
@@ -81,32 +96,18 @@ public class TerminalSessionRegistry {
         return true;
     }
 
-    /**
-     * Returns the terminal session for the given WebSocket session ID.
-     *
-     * @param wsSessionId Spring WebSocket session ID
-     */
     public Optional<TerminalSession> get(String wsSessionId) {
-        return Optional.ofNullable(store.get(wsSessionId));
+        return Optional.ofNullable(store.getIfPresent(wsSessionId));
     }
 
     /**
-     * Removes the terminal session from the registry, closes the underlying shell,
-     * and publishes a {@code terminal.session.closed} Kafka event.
-     *
-     * <p>Idempotent — safe to call multiple times (e.g., from both the pipe thread
-     * {@code finally} block and {@code afterConnectionClosed}).
-     *
-     * @param wsSessionId Spring WebSocket session ID
-     * @param reason      human-readable close reason for the audit event
+     * Removes the session, closes the underlying shell, and publishes a Kafka event.
+     * Idempotent.
      */
     public void remove(String wsSessionId, String reason) {
         TerminalSession session = store.remove(wsSessionId);
-        if (session == null) {
-            return; // already removed — idempotent
-        }
+        if (session == null) return;
 
-        // Close the JSch ChannelShell; suppress exceptions so cleanup always finishes
         try {
             session.shellSession().close();
         } catch (Exception e) {
@@ -124,55 +125,55 @@ public class TerminalSessionRegistry {
                 reason);
     }
 
-    /**
-     * Resets the idle timer for the given WebSocket session.
-     * Called on every inbound input message and on every pong frame received.
-     *
-     * @param wsSessionId Spring WebSocket session ID
-     */
     public void touchActivity(String wsSessionId) {
-        TerminalSession session = store.get(wsSessionId);
+        TerminalSession session = store.getIfPresent(wsSessionId);
         if (session != null) {
             session.touch();
+            // Propagate terminal activity to the parent SSH session to prevent
+            // TTL expiry while the user is actively using a terminal.
+            renewParentSessionTtl(session.sshSessionId());
         }
     }
 
     /**
-     * Returns the number of active terminal sessions owned by the given user.
+     * Renews the TTL on the parent SSH session so that terminal activity
+     * keeps the underlying connection alive.
      */
+    private void renewParentSessionTtl(String sshSessionId) {
+        try {
+            SshConnectionCache cache = sessionRegistryRef.get();
+            if (cache != null) {
+                RemoteConnection remote = cache.getIfPresent(sshSessionId);
+                if (remote != null && remote.getSession().isSlidingTtl()) {
+                    remote.getSession().renewTtl();
+                }
+            }
+        } catch (Exception e) {
+            log.trace("[terminal-registry] Failed to renew parent TTL for {}: {}", sshSessionId, e.getMessage());
+        }
+    }
+
     public long countByOwner(UUID ownerId) {
         return store.values().stream().filter(s -> ownerId.equals(s.ownerId())).count();
     }
 
-    /** Returns all active terminal sessions — used for admin/diagnostic endpoints. */
     public List<TerminalSession> all() {
         return List.copyOf(store.values());
     }
 
-    /** Returns the total number of active terminal sessions across all users. */
     public int size() {
-        return store.size();
+        return (int) store.estimatedSize();
     }
 
     /**
-     * Closes every terminal WebSocket session whose parent SSH session matches
-     * {@code sshSessionId}. Called by {@link SessionRegistry} whenever an SSH
-     * session is torn down so that terminal sub-sessions are never left dangling.
-     *
-     * <p>The matching sessions are collected into a snapshot list first to avoid
-     * mutating the {@link ConcurrentHashMap} while iterating over its values.
-     *
-     * @param sshSessionId the SSH session that was closed
-     * @param reason       human-readable reason forwarded to the WS close frame and audit log
+     * Closes every terminal session whose parent SSH session matches {@code sshSessionId}.
      */
     public void closeAllBySshSession(String sshSessionId, String reason) {
         List<TerminalSession> affected = store.values().stream()
                 .filter(s -> sshSessionId.equals(s.sshSessionId()))
                 .toList();
 
-        if (affected.isEmpty()) {
-            return;
-        }
+        if (affected.isEmpty()) return;
 
         log.info(
                 "[terminal-registry] Closing {} terminal session(s) because SSH session {} was closed (reason: {})",
@@ -181,7 +182,6 @@ public class TerminalSessionRegistry {
                 reason);
 
         for (TerminalSession session : affected) {
-            // Notify the browser so it can show a "connection lost" message instead of hanging.
             try {
                 session.wsSession().close(new CloseStatus(4000, "SSH session closed: " + reason));
             } catch (IOException e) {
@@ -190,35 +190,21 @@ public class TerminalSessionRegistry {
                         session.wsSessionId(),
                         e.getMessage());
             }
-            // Clean up shell + publish Kafka event
             remove(session.wsSessionId(), "ssh-session-closed");
         }
     }
 
     /**
      * Runs every {@code unift.terminal.reaper-interval-ms} (default: 30 s).
-     *
-     * <p>Two jobs in one pass:
-     * <ol>
-     *   <li><b>Ping</b> — sends a WebSocket {@link PingMessage} to every active session.
-     *       Browsers auto-respond with a Pong; the {@code handlePongMessage} override in
-     *       {@code TerminalWebSocketHandler} calls {@link #touchActivity}.
-     *       If the send itself fails (dead TCP connection), the session is removed immediately.</li>
-     *   <li><b>Reap</b> — closes sessions whose {@code idleDuration()} exceeds
-     *       {@code idleTimeoutMinutes}.  A session that is sending pongs stays alive;
-     *       a zombie session that stopped responding will be idle-reaped.</li>
-     * </ol>
+     * Sends a WebSocket ping to every session and reaps idle sessions.
      */
     @Scheduled(fixedDelayString = "${unift.terminal.reaper-interval-ms:30000}")
     public void reapAndPing() {
-        if (store.isEmpty()) {
-            return;
-        }
+        if (store.estimatedSize() == 0) return;
 
         Duration idleLimit = Duration.ofMinutes(props.getIdleTimeoutMinutes());
 
         for (TerminalSession session : store.values()) {
-            // --- Send ping to keep the connection alive through CDN/LB ---
             if (session.wsSession().isOpen()) {
                 try {
                     session.wsSession().sendMessage(new PingMessage());
@@ -228,11 +214,10 @@ public class TerminalSessionRegistry {
                             session.wsSessionId(),
                             e.getMessage());
                     remove(session.wsSessionId(), "ping-failed");
-                    continue; // already removed, skip idle check
+                    continue;
                 }
             }
 
-            // --- Reap idle sessions ---
             if (session.idleDuration().compareTo(idleLimit) > 0) {
                 log.info(
                         "[terminal-reaper] Closing idle session {} for user {} (idle: {} min)",

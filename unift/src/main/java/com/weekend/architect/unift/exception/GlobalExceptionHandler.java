@@ -9,6 +9,7 @@ import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
 import com.weekend.architect.unift.remote.exception.UploadCancelledException;
+import com.weekend.architect.unift.remote.exception.UploadSessionNotFoundException;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -143,10 +144,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage()));
     }
 
+    @ExceptionHandler(UploadSessionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUploadSessionNotFound(UploadSessionNotFoundException ex) {
+        log.warn("Upload session not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage()));
+    }
+
     @ExceptionHandler(RemotePermissionDeniedException.class)
     public ResponseEntity<ErrorResponse> handleRemotePermissionDenied(RemotePermissionDeniedException ex) {
         log.warn("Remote permission denied: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody(HttpStatus.FORBIDDEN, ex.getMessage()));
+    }
+
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedOperation(UnsupportedOperationException ex) {
+        log.warn("Unsupported operation: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage()));
     }
 
     /** Catch-all for any other remote-connection failure (connect errors, transfer errors, browse errors). */

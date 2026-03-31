@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,6 +32,13 @@ public class ConnectRequest {
      * Returned back in the ConnectResponse.
      */
     private String label;
+
+    /**
+     * Optional: The saved-host ID this session originates from.
+     * Populated automatically when connecting via {@code POST /api/hosts/{id}/connect}.
+     * Used to correlate active sessions back to their saved-host entry.
+     */
+    private UUID savedHostId;
 
     @NotBlank(message = "host is required")
     private String host;
@@ -65,10 +73,10 @@ public class ConnectRequest {
 
     /**
      * If true, the SSH client will verify the server's host key against known_hosts.
-     * If false (default), it will skip verification (StrictHostKeyChecking=no).
+     * If true (default), host key is validated against a known fingerprint or known_hosts.
      */
     @Builder.Default
-    private boolean strictHostKeyChecking = false;
+    private boolean strictHostKeyChecking = true;
 
     /**
      * Optional: The expected SSH host key fingerprint (e.g. "SHA256:...", "MD5:...").

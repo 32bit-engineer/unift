@@ -1,2 +1,10 @@
 export { Sidebar } from './Sidebar';
 export type { NavItem, SavedHost } from './Sidebar';
+export { AppLayout } from './AppLayout';
+export { ProtectedRoute, PublicOnlyRoute } from './RouteGuards';
+export { SidebarShell, SectionLabel, NavButton, SessionIndicator, WorkspaceTypeSwitcher } from './SidebarShell';
+export type { NavItem as ShellNavItem } from './SidebarShell';
+export { SshWorkspaceSidebar } from './SshWorkspaceSidebar';
+export { DockerWorkspaceSidebar } from './DockerWorkspaceSidebar';
+export { K8sWorkspaceSidebar } from './K8sWorkspaceSidebar';
+export { WorkspaceDetectionModal } from './WorkspaceDetectionModal';

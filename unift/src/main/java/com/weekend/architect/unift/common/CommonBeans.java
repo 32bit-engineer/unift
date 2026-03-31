@@ -60,6 +60,6 @@ public class CommonBeans {
 
     @Bean(name = "platformThreadExecutor")
     public ExecutorService platformThreadExecutorService() {
-        return Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        return Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors()));
     }
 }

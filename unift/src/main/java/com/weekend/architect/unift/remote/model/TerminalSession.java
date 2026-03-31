@@ -13,7 +13,7 @@ import org.springframework.web.socket.WebSocketSession;
  * <p>{@code lastActivityAt} uses an {@link AtomicReference} so the reaper thread
  * and the WebSocket I/O threads can both update it without locking the entire record.
  *
- * <h2>Lifecycle</h2>
+ * <h6>Lifecycle</h6>
  * <pre>
  *   afterConnectionEstablished  → TerminalSession.create() → register in TerminalSessionRegistry
  *   handleTextMessage / pong    → touch() updates lastActivityAt

@@ -1,5 +1,7 @@
 package com.weekend.architect.unift.remote.controller;
 
+import static com.weekend.architect.unift.common.FileUtils.encodeFilenameRFC6266;
+
 import com.weekend.architect.unift.remote.service.RemoteStreamService;
 import com.weekend.architect.unift.security.UniFtUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
@@ -7,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+
 import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -84,15 +87,17 @@ public class RemoteStreamController {
         StreamingResponseBody body = outputStream -> {
             try (InputStream is = remoteStream) {
                 is.transferTo(outputStream);
-                log.debug("[{}] ✓ Stream complete ← '{}'", sessionId, decodedPath);
+                log.debug("[{}] Stream complete ← '{}'", sessionId, decodedPath);
             } catch (Exception e) {
-                log.error("[{}] ❌ Stream error ← '{}': {}", sessionId, decodedPath, e.getMessage());
+                log.error("[{}] Stream error ← '{}': {}", sessionId, decodedPath, e.getMessage());
                 throw e;
             }
         };
 
+        String encoded = encodeFilenameRFC6266(fileNamePath.toString());
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileNamePath + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + encoded)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(body);
     }

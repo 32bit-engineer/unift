@@ -113,7 +113,10 @@ CREATE TABLE saved_hosts (
   last_used   TIMESTAMP,
 
   strict_host_key_checking BOOLEAN NOT NULL DEFAULT FALSE,
-  expected_fingerprint     TEXT
+  expected_fingerprint     TEXT,
+
+  -- User's preferred workspace type for this host (drives sidebar + landing page on reconnect)
+  workspace_preference     VARCHAR(20) DEFAULT 'ssh'
 );
 
 ---
@@ -136,3 +139,66 @@ CREATE TABLE session_log (
 );
 
 CREATE INDEX idx_session_log_user ON session_log (user_id, created_at DESC);
+
+---
+
+-- Persists every analytics probe result for a session.
+-- Scalar metric columns allow efficient time-range queries and statistical aggregations.
+-- The full response (including traffic history and connected-node list) is replayed from snapshot_json.
+
+CREATE TABLE session_analytics_snapshot (
+    id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Ownership / lookup
+    session_id               UUID         NOT NULL,          -- session_log.id (no FK: session may be closed)
+    user_id                  UUID         NOT NULL REFERENCES users(id),
+    host                     VARCHAR(255),
+    state                    VARCHAR(30),
+    captured_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+
+    -- Session duration
+    session_duration_seconds BIGINT,
+
+    -- SSH exec latency (ms)
+    latency_avg_ms           DOUBLE PRECISION,
+    latency_min_ms           DOUBLE PRECISION,
+    latency_max_ms           DOUBLE PRECISION,
+
+    -- ICMP packet loss
+    packet_loss_percent      DOUBLE PRECISION,
+    packets_sent             INTEGER,
+    packets_received         INTEGER,
+
+    -- Throughput
+    current_upload_bps       BIGINT,
+    current_download_bps     BIGINT,
+    total_uploaded_bytes     BIGINT,
+    total_downloaded_bytes   BIGINT,
+
+    -- Remote system metrics
+    cpu_percent              DOUBLE PRECISION,
+    memory_used_percent      DOUBLE PRECISION,
+    memory_used_bytes        BIGINT,
+    memory_total_bytes       BIGINT,
+    disk_used_percent        DOUBLE PRECISION,
+    disk_used_bytes          BIGINT,
+    disk_total_bytes         BIGINT,
+
+    -- Session metadata
+    ssh_cipher               VARCHAR(100),
+    region                   VARCHAR(100),
+    remote_pid               BIGINT,
+
+    -- Full snapshot payload (traffic history + connected nodes + all metadata)
+    snapshot_json            JSONB        NOT NULL
+);
+
+-- Primary query pattern: all snapshots for a session, newest first
+CREATE INDEX idx_analytics_snapshot_session  ON session_analytics_snapshot (session_id, captured_at DESC);
+
+-- User-level history across all sessions
+CREATE INDEX idx_analytics_snapshot_user     ON session_analytics_snapshot (user_id, captured_at DESC);
+
+-- Time-based range scans
+CREATE INDEX idx_analytics_snapshot_captured ON session_analytics_snapshot (captured_at DESC);
+

@@ -46,11 +46,11 @@ export function Terminal({
       rows: 24,
       cols: 80,
       fontSize: 12,
-      fontFamily: 'IBM Plex Mono, monospace',
+      fontFamily: 'DM Mono, monospace',
       theme: {
-        background: '#11141C',
+        background: '#0C0C14',
         foreground: '#E2E8F0',
-        cursor: '#4F8EF7',
+        cursor: '#7C6DFA',
       },
       cursorBlink: true,
       cursorStyle: 'block',
@@ -104,6 +104,9 @@ export function Terminal({
 
     resizeObserverRef.current = new ResizeObserver(() => {
       if (fitAddon && containerRef.current) {
+        // Skip resize when the container is collapsed (minimized state) to prevent
+        // xterm from shrinking to 0 rows and disrupting the terminal session.
+        if (containerRef.current.clientHeight <= 0 || containerRef.current.clientWidth <= 0) return;
         try {
           fitAddon.fit();
           sendResize(terminal.cols, terminal.rows);
@@ -136,13 +139,13 @@ export function Terminal({
     }
 
     return (
-      <div className="bg-[#1E2130] border-t border-[#2E3348] px-4 py-3 flex items-center justify-between">
+      <div className="bg-[#13131E] border-t border-[#1E1E2E] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {session.state === 'connecting' && (
             <>
-              <span className="w-2 h-2 rounded-full bg-[#4F8EF7] animate-pulse" />
-              <span className="text-xs text-slate-300">
-                Connecting to <span className="font-mono">{host}</span>
+              <span className="w-2 h-2 rounded-full bg-[#7C6DFA] animate-pulse" />
+              <span className="text-ui-sm text-primary">
+                Connecting to <span className="text-code">{host}</span>
                 {session.isReconnecting && ` (attempt ${session.attemptCount})`}
               </span>
             </>
@@ -151,8 +154,8 @@ export function Terminal({
           {session.state === 'disconnected' && (
             <>
               <span className="w-2 h-2 rounded-full bg-slate-600" />
-              <span className="text-xs text-slate-400">
-                Disconnected. Press <span className="font-mono font-bold">Ctrl+Shift+R</span> to
+              <span className="text-ui-sm">
+                Disconnected. Press <span className="text-code">Ctrl+Shift+R</span> to
                 reconnect
               </span>
             </>
@@ -161,21 +164,21 @@ export function Terminal({
           {session.state === 'idle_timeout' && (
             <>
               <span className="w-2 h-2 rounded-full bg-[#facc15]" />
-              <span className="text-xs text-slate-300">{session.error}</span>
+              <span className="text-ui-sm text-primary">{session.error}</span>
             </>
           )}
 
           {session.state === 'cap_exceeded' && (
             <>
               <span className="w-2 h-2 rounded-full bg-[#f87171]" />
-              <span className="text-xs text-slate-300">{session.error}</span>
+              <span className="text-ui-sm text-primary">{session.error}</span>
             </>
           )}
 
           {session.state === 'error' && (
             <>
               <span className="w-2 h-2 rounded-full bg-[#f87171]" />
-              <span className="text-xs text-slate-300">{session.error}</span>
+              <span className="text-ui-sm text-primary">{session.error}</span>
             </>
           )}
         </div>
@@ -186,8 +189,7 @@ export function Terminal({
             session.state === 'idle_timeout') && (
             <button
               onClick={() => tryReconnect()}
-              className="px-3 py-1.5 bg-[#4F8EF7] hover:brightness-110 text-[10px] font-mono
-                font-bold uppercase tracking-widest text-white rounded transition-all"
+              className="px-3 py-1.5 brand-gradient text-on-brand shadow-sm hover:brightness-110 text-micro text-white rounded transition-all cursor-pointer"
               aria-label="Reconnect to terminal"
             >
               Reconnect
@@ -196,8 +198,7 @@ export function Terminal({
 
           <button
             onClick={onClose}
-            className="px-3 py-1.5 border border-[#2E3348] hover:bg-white/5 text-[10px] font-mono
-              font-bold uppercase tracking-widest text-slate-300 rounded transition-all"
+            className="px-3 py-1.5 border border-[#1E1E2E] hover:bg-white/5 text-micro text-primary rounded transition-all cursor-pointer"
             aria-label="Close terminal"
           >
             Close
@@ -208,14 +209,14 @@ export function Terminal({
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#161923]">
+    <div className="h-full flex flex-col bg-[#0F0F1A]">
       {/* Terminal container */}
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden cursor-text"
         style={{
           // Apply xterm CSS customizations
-          '--xterm-font-family': 'IBM Plex Mono, monospace',
+          '--xterm-font-family': 'DM Mono, monospace',
           '--xterm-font-size': '12px',
         } as React.CSSProperties}
         onClick={() => terminalRef.current?.focus()}

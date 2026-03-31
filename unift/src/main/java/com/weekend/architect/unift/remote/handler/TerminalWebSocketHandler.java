@@ -34,7 +34,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 /**
  * WebSocket handler that bridges a terminal UI (e.g., Xterm.js) with a remote PTY shell.
  *
- * <h2>Security controls</h2>
+ * <h6>Security controls</h6>
  * <ol>
  *   <li><b>Authentication</b> — JWT validated at handshake time by {@link TerminalHandshakeInterceptor}.
  *       Only authenticated requests reach this handler.</li>
@@ -48,7 +48,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  *       gracefully.</li>
  * </ol>
  *
- * <h2>Wire protocol</h2>
+ * <h6>Wire protocol</h6>
  * <p>Client → Server (JSON text frames):
  * <pre>
  *   { "type": "input",  "data": "ls -la\n" }
@@ -56,7 +56,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * </pre>
  * <p>Server → Client: raw terminal output as UTF-8 text frames (Xterm.js compatible).
  *
- * <h2>WebSocket close codes</h2>
+ * <h6>WebSocket close codes</h6>
  * <table>
  *   <tr><th>Code</th><th>Meaning</th></tr>
  *   <tr><td>4001</td><td>Access denied — session not owned by authenticated user</td></tr>
@@ -191,7 +191,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
 
         // 9. Submit pipe virtual thread
         try {
-            outputExecutor.submit(() -> pipeShellToWebSocket(rawWsSession, shell));
+            outputExecutor.submit(() -> pipeShellToWebSocket(concurrentWsSession, shell));
         } catch (RejectedExecutionException e) {
             // Only reachable if the application is shutting down (executor already closed).
             log.warn("[ws-terminal] Executor shut down, rejecting terminal for {}", sshSessionId);
@@ -203,7 +203,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         // 10. Publish opened event (non-critical)
         eventPublisher.publishOpened(terminalSession, conn.getSession().getHost());
         log.info(
-                "[ws-terminal] ✓ Terminal session established — ws={}, ssh={}, user={}",
+                "[ws-terminal] Terminal session established — ws={}, ssh={}, user={}",
                 rawWsSession.getId(),
                 sshSessionId,
                 ownerId);
@@ -235,6 +235,13 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
                 rows = Math.max(5, Math.min(rows, 200));
                 terminal.shellSession().resize(cols, rows);
                 terminalRegistry.touchActivity(wsSession.getId());
+            }
+            case "ping" -> { 
+                // Application-level keepalive: reply with pong so the client
+                // clears its pong-timeout and does not self-close the connection.
+                terminal.wsSession().sendMessage(new TextMessage("{\"type\":\"pong\"}"));
+                terminalRegistry.touchActivity(wsSession.getId());
+                log.trace("[ws-terminal] Ping/pong exchange with {}", wsSession.getId());
             }
             default -> log.warn("[ws-terminal] Unknown message type '{}' from {}", type, wsSession.getId());
         }

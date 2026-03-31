@@ -10,13 +10,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>All properties live under the {@code unift.terminal.*} prefix in {@code application.yaml}.
  *
- * <h2>Security knobs</h2>
+ * <h6>Security knobs</h6>
  * <ul>
  *   <li>{@code maxSessionsPerUser} — limits blast radius of a compromised JWT</li>
  *   <li>{@code allowedOrigins} — WebSocket upgrade CORS; mirrors the HTTP CORS list</li>
  * </ul>
  *
- * <h2>Resource knobs</h2>
+ * <h6>Resource knobs</h6>
  * <ul>
  *   <li>{@code maxConcurrentSessions} — global JVM cap; also sizes the bounded thread pool</li>
  *   <li>{@code idleTimeoutMinutes} — auto-close shells abandoned by users</li>
@@ -29,15 +29,15 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "unift.terminal")
 public class TerminalProperties {
 
-    /** Maximum concurrent terminal sessions per authenticated user. Default: 3. */
-    private int maxSessionsPerUser = 1;
+    /** Maximum concurrent terminal sessions per authenticated user. Default: 3 */
+    private int maxSessionsPerUser = 3;
 
     /** Auto-close shells idle longer than this many minutes. Default: 15 min. */
     private int idleTimeoutMinutes = 15;
 
     /**
      * Global cap on concurrent terminal sessions across all users.
-     * Also used to size the bounded pipe-thread pool. Default: 50.
+     * Also used to size the bounded pipe-thread pool. Default: 5
      */
     private int maxConcurrentSessions = 5;
 

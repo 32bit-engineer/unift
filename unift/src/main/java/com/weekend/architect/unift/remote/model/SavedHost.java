@@ -47,6 +47,13 @@ public class SavedHost {
     /** Expected server fingerprint, e.g. {@code SHA256:...}; may be {@code null}. */
     String expectedFingerprint;
 
+    /**
+     * User's preferred workspace type for this host.
+     * Drives which dedicated sidebar and landing page to show on reconnect.
+     * Values: {@code ssh}, {@code kubernetes}. Defaults to {@code ssh}.
+     */
+    String workspacePreference;
+
     OffsetDateTime createdAt;
     OffsetDateTime lastUsed;
 }

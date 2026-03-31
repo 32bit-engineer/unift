@@ -61,7 +61,7 @@ function InputField({
       <label className="label tracking-wider">{label}</label>
       <div className="relative">
         <span
-          className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 select-none"
+          className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 select-none"
           style={{
             fontSize: '17px',
             lineHeight: 1,
@@ -94,7 +94,7 @@ function InputField({
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
             <span
-              className="material-symbols-outlined"
+              className="material-symbols-rounded"
               style={{ fontSize: '17px', lineHeight: 1 }}
             >
               {showPassword ? 'visibility_off' : 'visibility'}
@@ -104,7 +104,7 @@ function InputField({
       </div>
       {error && (
         <p className="flex items-center gap-1 text-[11px] font-mono" style={{ color: 'var(--color-status-err)' }}>
-          <span className="material-symbols-outlined text-[11px]">error</span>
+          <span className="material-symbols-rounded text-[11px]">error</span>
           {error}
         </p>
       )}
@@ -148,7 +148,7 @@ function LoginForm({ onSuccess, onRegister }: LoginFormProps) {
             color: 'var(--color-status-err)',
           }}
         >
-          <span className="material-symbols-outlined text-sm mt-px">warning</span>
+          <span className="material-symbols-rounded text-sm mt-px">warning</span>
           <span>{error}</span>
           <button
             type="button"
@@ -156,7 +156,7 @@ function LoginForm({ onSuccess, onRegister }: LoginFormProps) {
             className="ml-auto hover:opacity-70 transition-opacity cursor-pointer"
             aria-label="Dismiss error"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span className="material-symbols-rounded text-sm">close</span>
           </button>
         </div>
       )}
@@ -207,12 +207,12 @@ function LoginForm({ onSuccess, onRegister }: LoginFormProps) {
       >
         {isLoading ? (
           <>
-            <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+            <span className="material-symbols-rounded text-base animate-spin">progress_activity</span>
             Signing in…
           </>
         ) : (
           <>
-            <span className="material-symbols-outlined text-base">login</span>
+            <span className="material-symbols-rounded text-base">login</span>
             Sign in
           </>
         )}
@@ -275,7 +275,7 @@ function RegisterForm({ onSuccess, onLogin }: RegisterFormProps) {
             color: 'var(--color-status-err)',
           }}
         >
-          <span className="material-symbols-outlined text-sm mt-px">warning</span>
+          <span className="material-symbols-rounded text-sm mt-px">warning</span>
           <span>{error}</span>
           <button
             type="button"
@@ -283,7 +283,7 @@ function RegisterForm({ onSuccess, onLogin }: RegisterFormProps) {
             className="ml-auto hover:opacity-70 transition-opacity cursor-pointer"
             aria-label="Dismiss error"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span className="material-symbols-rounded text-sm">close</span>
           </button>
         </div>
       )}
@@ -366,12 +366,12 @@ function RegisterForm({ onSuccess, onLogin }: RegisterFormProps) {
       >
         {isLoading ? (
           <>
-            <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+            <span className="material-symbols-rounded text-base animate-spin">progress_activity</span>
             Creating account…
           </>
         ) : (
           <>
-            <span className="material-symbols-outlined text-base">person_add</span>
+            <span className="material-symbols-rounded text-base">person_add</span>
             Create account
           </>
         )}
@@ -400,7 +400,7 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
 
   const handleSuccess = () => {
-    window.location.href = '?page=home';
+    window.location.href = '/';
   };
 
   const switchMode = (next: AuthMode) => {
@@ -431,7 +431,7 @@ export function AuthPage() {
             style={{ background: 'var(--color-primary)' }}
           >
             <span
-              className="material-symbols-outlined text-white"
+              className="material-symbols-rounded text-white"
               style={{
                 fontSize: '16px',
                 fontVariationSettings: "'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20",

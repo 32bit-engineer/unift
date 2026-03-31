@@ -11,7 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Abstract base for all remote connections.
  *
- * <h2>Template Method Pattern</h2>
+ * <h6>Template Method Pattern</h6>
  * <p>This class owns the connection lifecycle (state machine) as
  * {@code final} methods and delegates the actual transport work to
  * abstract hooks that subclasses must implement:
@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
  * {@link #homeDirectory}) are left abstract here so each subclass
  * provides a transport-specific implementation.
  *
- * <h2>Session lifecycle</h2>
+ * <h6>Session lifecycle</h6>
  * <pre>
  *  INITIALIZING ──connect()──► ACTIVE ──close()──► CLOSED
  *                                  └──────────────► EXPIRED  (set by SessionReaper)
@@ -46,8 +46,6 @@ public abstract class AbstractRemoteConnection implements RemoteConnection {
         this.session = session;
         this.props = props;
     }
-
-    // RemoteConnection — lifecycle (final, sealed from subclasses)
 
     /**
      * Template method: validates credentials, delegates to {@link #doConnect},
@@ -111,8 +109,6 @@ public abstract class AbstractRemoteConnection implements RemoteConnection {
     public final RemoteSession getSession() {
         return session;
     }
-
-    // Guards — called by subclasses before each operation
 
     /**
      * Asserts that the session is active and not expired.

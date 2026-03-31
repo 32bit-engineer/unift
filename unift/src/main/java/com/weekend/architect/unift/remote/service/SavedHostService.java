@@ -61,4 +61,13 @@ public interface SavedHostService {
      *         if the remote connection itself fails
      */
     ConnectResponse connect(UUID ownerId, UUID hostId);
+
+    /**
+     * Updates the workspace preference for a saved host.
+     * Valid values: {@code ssh}, {@code kubernetes}.
+     *
+     * @throws com.weekend.architect.unift.remote.exception.SavedHostNotFoundException
+     *         if not found or not owned by {@code ownerId}
+     */
+    void updateWorkspacePreference(UUID ownerId, UUID hostId, String preference);
 }

@@ -44,6 +44,7 @@ public class SavedHostRepository {
                 .encryptedPassphrase(rs.getString("encrypted_passphrase"))
                 .strictHostKeyChecking(rs.getBoolean("strict_host_key_checking"))
                 .expectedFingerprint(rs.getString("expected_fingerprint"))
+                .workspacePreference(rs.getString("workspace_preference"))
                 .createdAt(toOffsetDateTime(rs.getTimestamp("created_at")))
                 .lastUsed(toOffsetDateTime(rs.getTimestamp("last_used")))
                 .build();
@@ -109,12 +110,14 @@ public class SavedHostRepository {
                     auth_type,
                     encrypted_password, encrypted_privatekey, encrypted_passphrase,
                     strict_host_key_checking, expected_fingerprint,
+                    workspace_preference,
                     created_at
                 ) VALUES (
                     :id, :userId, :label, :protocolType::protocol_type_enum, :hostname, :port, :username,
                     :authType::auth_type_enum,
                     :encryptedPassword, :encryptedPrivateKey, :encryptedPassphrase,
                     :strictHostKeyChecking, :expectedFingerprint,
+                    :workspacePreference,
                     NOW()
                 )
                 """;
@@ -137,6 +140,22 @@ public class SavedHostRepository {
     public void touchLastUsed(UUID id) {
         String sql = "UPDATE saved_hosts SET last_used = NOW() WHERE id = :id";
         jdbc.update(sql, new MapSqlParameterSource(PARAM_ID, id));
+    }
+
+    /**
+     * Updates the workspace preference for the given host (ownership enforced).
+     *
+     * @return {@code true} if a row was updated, {@code false} if not found / not owned
+     */
+    public boolean updateWorkspacePreference(UUID id, UUID userId, String preference) {
+        String sql = "UPDATE saved_hosts SET workspace_preference = :pref WHERE id = :id AND user_id = :userId";
+        int rows = jdbc.update(
+                sql,
+                new MapSqlParameterSource()
+                        .addValue(PARAM_ID, id)
+                        .addValue(PARAM_USER_ID, userId)
+                        .addValue("pref", preference));
+        return rows > 0;
     }
 
     /**
@@ -166,6 +185,7 @@ public class SavedHostRepository {
                 .addValue("encryptedPrivateKey", h.getEncryptedPrivateKey())
                 .addValue("encryptedPassphrase", h.getEncryptedPassphrase())
                 .addValue("strictHostKeyChecking", h.isStrictHostKeyChecking())
-                .addValue("expectedFingerprint", h.getExpectedFingerprint());
+                .addValue("expectedFingerprint", h.getExpectedFingerprint())
+                .addValue("workspacePreference", h.getWorkspacePreference());
     }
 }

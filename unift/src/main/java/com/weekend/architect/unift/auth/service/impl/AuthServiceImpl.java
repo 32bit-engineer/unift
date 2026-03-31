@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -61,6 +62,7 @@ public class AuthServiceImpl implements AuthService {
         this.platformThreadExecutor = platformThreadExecutor;
     }
 
+    @Transactional
     public AuthResponse register(RegisterRequest request) {
         log.info("New user registration attempt: {}", request.getUsername());
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -89,10 +91,11 @@ public class AuthServiceImpl implements AuthService {
                 .build();
 
         userRepository.save(user);
-        log.info("✓ User registered successfully: {} (ID: {})", request.getUsername(), user.getId());
+        log.info("User registered successfully: {} (ID: {})", request.getUsername(), user.getId());
         return buildAuthResponse(user, null);
     }
 
+    @Transactional
     public AuthResponse login(LoginRequest request, String deviceHint) {
         log.info("Login attempt: {} (device: {})", request.getUsername(), deviceHint);
         User user = userRepository.findByUsernameOrEmail(request.getUsername()).orElseThrow(() -> {
@@ -130,6 +133,7 @@ public class AuthServiceImpl implements AuthService {
         return buildAuthResponse(user, deviceHint);
     }
 
+    @Transactional
     public AuthResponse refresh(RefreshTokenRequest request) {
         log.debug("Token refresh attempt");
         String hash = jwtService.hashToken(request.getRefreshToken());
@@ -156,7 +160,7 @@ public class AuthServiceImpl implements AuthService {
             return new TokenInvalidException("Associated user not found");
         });
 
-        log.info("✓ Token refreshed for user: {}", user.getId());
+        log.info("Token refreshed for user: {}", user.getId());
         return buildAuthResponse(user, stored.getDeviceHint());
     }
 

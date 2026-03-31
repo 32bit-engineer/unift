@@ -1,6 +1,16 @@
 spring:
   application:
     name: uniFT
+
+  # Graceful shutdown: drain in-flight HTTP requests (SFTP uploads / StreamingResponseBody
+  # downloads) before Spring starts destroying beans and calling @PreDestroy.
+  # Without this, SIGTERM would kill active transfers mid-stream.
+  # PreTermination.destroy() relies on this — it only handles executor threads (terminal
+  # pipes, analytics probes). SFTP transfers run on Spring's own servlet/async threads
+  # and must be drained here first.
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+
   threads:
     virtual:
       enabled: true
@@ -14,6 +24,14 @@ spring:
       max-request-size: ${MAX_UPLOAD_REQUEST_SIZE:5GB}
       # Write to a temp file once the in-memory threshold is exceeded.
       file-size-threshold: ${UPLOAD_MEM_THRESHOLD:2KB}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:5000ms}
 
   datasource:
     url: ${DB_URL}
@@ -35,6 +53,9 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  shutdown: graceful
 
 logging:
   level:
@@ -77,6 +98,27 @@ unift:
     # idle-connection drops.  Keep well below your firewall's idle timeout (often 30–60 s).
     ssh-keep-alive-interval-ms: ${UNIFT_SSH_KEEPALIVE_INTERVAL_MS:30000}
     ssh-keep-alive-count-max: ${UNIFT_SSH_KEEPALIVE_COUNT_MAX:3}
+    # How long COMPLETED/FAILED/CANCELLED transfers stay in the registry before Caffeine evicts them.
+    transfer-terminal-ttl-minutes: ${UNIFT_TRANSFER_TERMINAL_TTL_MINUTES:30}
+
+  # -----------------------------------------------------------------------
+  # Named-cache sizing (all caches use CaffeineRegistryCache by default).
+  # These are safety caps — actual working-set is expected to be far smaller.
+  # Override via environment variables to tune without changing code.
+  # -----------------------------------------------------------------------
+  cache:
+    ssh-connection:
+      max-size: ${UNIFT_CACHE_SSH_MAX_SIZE:100}
+    terminal-session:
+      max-size: ${UNIFT_CACHE_TERMINAL_MAX_SIZE:10}
+    transfer:
+      max-size: ${UNIFT_CACHE_TRANSFER_MAX_SIZE:100000}
+    metrics:
+      max-size: ${UNIFT_CACHE_METRICS_MAX_SIZE:10000}
+    k8s-client:
+      max-size: ${UNIFT_CACHE_K8S_CLIENT_MAX_SIZE:500}
+    docker-client:
+      max-size: ${UNIFT_CACHE_DOCKER_CLIENT_MAX_SIZE:100}
 
   terminal:
     # Allowed WebSocket upgrade origins — mirrors the HTTP CORS list.
@@ -89,3 +131,40 @@ unift:
     # the remote host (e.g. Homebrew path errors on non-Mac servers).
     suppressed-output-patterns:
       - ".*: .*brew.*: No such file or directory.*"
+
+  analytics:
+    # How often SessionMetricsStore takes a bandwidth sample per active session.
+    # Each sample represents one data point on the 60-minute traffic chart.
+    # Default: 60 seconds (60 samples = 60-minute rolling window).
+    sample-interval-ms: ${UNIFT_ANALYTICS_SAMPLE_INTERVAL_MS:60000}
+
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8080,http://127.0.0.1:4200
+    allowed-headers: "*"
+    allowed-methods: GET,PUT,POST,DELETE,PATCH,OPTIONS
+    allow-credentials: true
+    max-age: 3600
+
+  rate-limit:
+    enabled: ${UNIFT_RATE_LIMIT_ENABLED:true}
+    rules:
+      - path: /api/auth/login
+        methods: [POST]
+        max-requests: ${UNIFT_RL_LOGIN_MAX:10}
+        window-seconds: ${UNIFT_RL_LOGIN_WINDOW:60}
+      - path: /api/auth/register
+        methods: [POST]
+        max-requests: ${UNIFT_RL_REGISTER_MAX:5}
+        window-seconds: ${UNIFT_RL_REGISTER_WINDOW:60}
+      - path: /api/auth/refresh
+        methods: [POST]
+        max-requests: ${UNIFT_RL_REFRESH_MAX:20}
+        window-seconds: ${UNIFT_RL_REFRESH_WINDOW:60}
+      - path: /api/remote/sessions
+        methods: [POST]
+        max-requests: ${UNIFT_RL_SESSION_OPEN_MAX:10}
+        window-seconds: ${UNIFT_RL_SESSION_OPEN_WINDOW:60}
+      - path: /api/remote/test-connection
+        methods: [POST]
+        max-requests: ${UNIFT_RL_TEST_CONN_MAX:15}
+        window-seconds: ${UNIFT_RL_TEST_CONN_WINDOW:60}

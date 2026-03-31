@@ -75,9 +75,9 @@ public class SavedHostRequest {
      */
     private String passphrase;
 
-    /** When {@code true}, the SSH client verifies the server host key. Default: {@code false}. */
+    /** When {@code true}, the SSH client verifies the server host key. Default: {@code true}. */
     @Builder.Default
-    private boolean strictHostKeyChecking = false;
+    private boolean strictHostKeyChecking = true;
 
     /**
      * Expected server fingerprint, e.g. {@code SHA256:...}.
