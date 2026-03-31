@@ -81,7 +81,20 @@ dependencies {
 	annotationProcessor 'org.projectlombok:lombok'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-test-autoconfigure'
 	testImplementation 'org.springframework.security:spring-security-test'
+
+	// Testcontainers — versions managed by Spring Boot BOM
+	testImplementation 'org.testcontainers:junit-jupiter:1.20.6'
+	testImplementation 'org.testcontainers:postgresql:1.20.6'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+
+	// Embedded Kafka for integration tests
+	testImplementation 'org.springframework.kafka:spring-kafka-test'
+
+	// Apache MINA SSHD — in-process SSH/SFTP server for remote-connection tests
+	testImplementation 'org.apache.sshd:sshd-core:2.14.0'
+	testImplementation 'org.apache.sshd:sshd-sftp:2.14.0'
 
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

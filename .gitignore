@@ -81,3 +81,8 @@ unift/unift/product-info
 old-product-guidelines/
 new-product-guidelines/
 designs/
+
+unift/.github
+
+tests/copilot/tests
+tests/codex/tests

@@ -5,8 +5,9 @@
 // is true (user already went through WorkspaceDetectionModal), detection is skipped
 // and the SSH workspace is shown immediately — avoiding the blank "checking"
 // state that appeared when returning from Docker workspace.
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Terminal } from '@/components/ui';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { SessionAnalyticsResponse } from '@/utils/remoteConnectionAPI';
 import { FileBrowser } from './RemoteHostsManager/FileBrowser';
@@ -14,7 +15,7 @@ import { TerminalPanel } from './RemoteHostsManager/TerminalPanel';
 import { useNetworkMonitor, useDockerDetect } from '@/hooks/useNetworkMonitor';
 import type { UIHost } from './RemoteHostsManager/types';
 
-type WorkspaceView = 'overview' | 'browser';
+type WorkspaceView = 'overview' | 'browser' | 'terminal';
 
 interface KineticWorkspacePageProps {
   session: UIHost;
@@ -410,6 +411,7 @@ function KineticSidebar({
 
   const navItems: { id: WorkspaceView; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview',     icon: 'monitoring' },
+    { id: 'terminal', label: 'Terminal',     icon: 'terminal' },
     { id: 'browser',  label: 'File Browser', icon: 'folder_open' },
   ];
 
@@ -611,39 +613,60 @@ function DockerModal({
   );
 }
 
-// ─── Docker Workspace Placeholder ────────────────────────────────────────────
-
-function DockerWorkspacePlaceholder({ onBack }: { onBack: () => void }) {
+function SshTerminalWorkspace({
+  session,
+  onBackToOverview,
+}: {
+  session: UIHost;
+  onBackToOverview: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-4">
+    <div className="flex-1 flex flex-col gap-4 p-4 overflow-hidden" style={{ background: 'var(--color-bg-base)' }}>
       <div
-        className="w-16 h-16 rounded-2xl flex items-center justify-center"
-        style={{ background: 'rgba(38,166,154,0.1)', border: '1px solid rgba(38,166,154,0.2)' }}
+        className="shrink-0 flex items-center justify-between gap-4 rounded-xl px-4 py-3"
+        style={{
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border-muted)',
+        }}
       >
-        <span
-          className="material-symbols-rounded"
-          style={{ fontSize: '32px', color: '#26A69A',
-            fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            SSH Terminal
+          </p>
+          <p className="text-[11px] font-mono truncate" style={{ color: 'var(--color-text-muted)' }}>
+            {session.userAtIp}
+          </p>
+        </div>
+
+        <button
+          onClick={onBackToOverview}
+          className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-medium cursor-pointer transition-colors hover:bg-white/5"
+          style={{
+            color: 'var(--color-text-secondary)',
+            border: '1px solid var(--color-border-muted)',
+          }}
         >
-          deployed_code
-        </span>
+          <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>arrow_back</span>
+          Overview
+        </button>
       </div>
-      <div className="text-center">
-        <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--color-text-primary)' }}>
-          Docker Workspace
-        </p>
-        <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-          Container management coming soon.
-        </p>
-      </div>
-      <button
-        onClick={onBack}
-        className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-medium cursor-pointer transition-colors hover:bg-white/5"
-        style={{ border: '1px solid var(--color-border-muted)', color: 'var(--color-text-secondary)' }}
+
+      <div
+        className="flex-1 overflow-hidden rounded-xl"
+        style={{
+          background: 'linear-gradient(135deg, #0F0F1A 0%, #0C0C14 100%)',
+          border: '1px solid var(--color-border-muted)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+        }}
       >
-        <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>arrow_back</span>
-        Back to SSH Workspace
-      </button>
+        <Terminal
+          key={session.sessionId}
+          sshSessionId={session.sessionId}
+          host={session.userAtIp}
+          onClose={onBackToOverview}
+          onStateChange={() => {}}
+        />
+      </div>
     </div>
   );
 }
@@ -657,7 +680,14 @@ function SshWorkspace({
   session: UIHost;
   onBack: () => void;
 }) {
-  const [activeView, setActiveView] = useState<WorkspaceView>('overview');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const requestedView = new URLSearchParams(location.search).get('view');
+  const activeView: WorkspaceView = requestedView === 'terminal'
+    ? 'terminal'
+    : requestedView === 'files'
+    ? 'browser'
+    : 'overview';
 
   // Terminal panel state
   const [terminalOpen, setTerminalOpen]           = useState(false);
@@ -668,6 +698,20 @@ function SshWorkspace({
     setTerminalOpen(true);
     setTerminalMinimized(false);
   };
+
+  const setActiveView = useCallback((view: WorkspaceView) => {
+    const searchParams = new URLSearchParams(location.search);
+    if (view === 'overview') {
+      searchParams.delete('view');
+    } else if (view === 'browser') {
+      searchParams.set('view', 'files');
+    } else {
+      searchParams.set('view', 'terminal');
+    }
+
+    const search = searchParams.toString();
+    navigate(`${location.pathname}${search ? `?${search}` : ''}`);
+  }, [location.pathname, location.search, navigate]);
 
   const handleTerminalResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -719,6 +763,13 @@ function SshWorkspace({
             />
           </>
         )}
+
+        {activeView === 'terminal' && (
+          <SshTerminalWorkspace
+            session={session}
+            onBackToOverview={() => setActiveView('overview')}
+          />
+        )}
       </div>
     </div>
   );
@@ -730,23 +781,15 @@ export function KineticWorkspacePage({ session, onBack, capabilitiesDetected = f
   type WorkspaceMode = 'detecting' | 'docker-offer' | 'ssh';
 
   const navigate = useNavigate();
-  // When capabilities have already been determined by AppLayout.WorkspaceDetectionModal,
-  // skip the WS-based detection entirely and render the SSH workspace immediately.
-  // This prevents the blank "Checking server environment…" flash that occurred
-  // every time the user navigated back from a Docker workspace.
-  const [mode, setMode] = useState<WorkspaceMode>(capabilitiesDetected ? 'ssh' : 'detecting');
   const dockerPhase = useDockerDetect(capabilitiesDetected ? null : session.sessionId);
-
-  // React to docker detection result (only relevant when capabilitiesDetected is false)
-  useEffect(() => {
-    if (dockerPhase === 'checking') return;
-    if (dockerPhase === 'present') {
-      setMode('docker-offer');
-    } else {
-      // Docker absent, error, or timeout — go straight to SSH workspace
-      setMode('ssh');
-    }
-  }, [dockerPhase]);
+  const [continueWithSsh, setContinueWithSsh] = useState(capabilitiesDetected);
+  const mode: WorkspaceMode = continueWithSsh
+    ? 'ssh'
+    : dockerPhase === 'checking'
+    ? 'detecting'
+    : dockerPhase === 'present'
+    ? 'docker-offer'
+    : 'ssh';
 
   if (mode === 'detecting') {
     return (
@@ -769,7 +812,7 @@ export function KineticWorkspacePage({ session, onBack, capabilitiesDetected = f
       {mode === 'docker-offer' && (
         <DockerModal
           onManageDocker={() => navigate(`/workspace/${session.sessionId}/docker`)}
-          onContinueSsh={() => setMode('ssh')}
+          onContinueSsh={() => setContinueWithSsh(true)}
         />
       )}
 

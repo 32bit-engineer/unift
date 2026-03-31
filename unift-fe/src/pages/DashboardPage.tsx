@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type {
   SessionAnalyticsResponse,
@@ -32,7 +32,10 @@ function formatBytes(b: number): string {
 
 // Returns how long ago an ISO timestamp was as a short string
 function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const timestamp = new Date(iso).getTime();
+  if (Number.isNaN(timestamp)) return 'recently';
+
+  const s = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
   if (s < 60)   return `${s}s ago`;
   const m = Math.floor(s / 60);
   if (m < 60)   return `${m}m ago`;
@@ -513,8 +516,17 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
   const [liveUpdates, setLiveUpdates]       = useState(true);
   const hasFetched = useRef(false);
 
+  const fetchTransferStats = useEffectEvent(async () => {
+    try {
+      const stats = await remoteConnectionAPI.getTransferHistoryStats();
+      setTransferStats(stats);
+    } catch {
+      // Non-critical widget; ignore fetch failures.
+    }
+  });
+
   // Fetch analytics for all active sessions in parallel
-  const fetchAllAnalytics = useCallback(async () => {
+  const fetchAllAnalytics = useEffectEvent(async () => {
     const online = sessions.filter(s => s.status === 'online');
     if (online.length === 0) {
       if (!hasFetched.current) {
@@ -538,11 +550,11 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
       hasFetched.current = true;
       setAnalyticsLoading(false);
     }
-  }, [sessions]);
+  });
 
   useEffect(() => {
     void fetchAllAnalytics();
-  }, [fetchAllAnalytics]);
+  }, [sessions, fetchAllAnalytics]);
 
   // Live poll every 30s when live updates are on
   useEffect(() => {
@@ -553,10 +565,8 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
 
   // Fetch transfer history stats once
   useEffect(() => {
-    remoteConnectionAPI.getTransferHistoryStats()
-      .then(setTransferStats)
-      .catch(() => { /* non-critical */ });
-  }, []);
+    void fetchTransferStats();
+  }, [fetchTransferStats]);
 
   // Derived aggregate metrics
   const onlineSessions  = sessions.filter(s => s.status === 'online');
