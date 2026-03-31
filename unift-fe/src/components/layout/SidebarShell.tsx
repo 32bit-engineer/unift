@@ -1,6 +1,7 @@
 // Shared sidebar shell — provides consistent chrome (logo, session indicator, footer,
 // nav rendering) used by all workspace-specific sidebar variants.
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export interface NavItem {
   id:    string;
@@ -18,6 +19,7 @@ interface SidebarShellProps {
  * Renders logo header, scrollable nav area (children), and version footer.
  */
 export function SidebarShell({ children }: SidebarShellProps) {
+  const navigate = useNavigate();
   return (
     <aside
       className="w-52 flex flex-col shrink-0"
@@ -27,8 +29,9 @@ export function SidebarShell({ children }: SidebarShellProps) {
       }}
     >
       {/* Logo */}
-      <div
-        className="flex items-center gap-2.5 px-4 h-14 shrink-0"
+      <button
+        onClick={() => navigate('/')}
+        className="flex items-center gap-2.5 px-4 h-14 shrink-0 w-full cursor-pointer hover:bg-white/3 transition-colors"
         style={{ borderBottom: '1px solid var(--color-border-muted)' }}
       >
         <div
@@ -51,7 +54,7 @@ export function SidebarShell({ children }: SidebarShellProps) {
         >
           UniFT<span className="opacity-30">//OS</span>
         </span>
-      </div>
+      </button>
 
       {/* Scrollable nav content */}
       <nav className="flex-1 overflow-y-auto custom-scrollbar py-2">
@@ -154,7 +157,7 @@ interface SessionIndicatorProps {
 export function SessionIndicator({ sessionName, onBack, backLabel = 'Back to Infrastructure' }: SessionIndicatorProps) {
   return (
     <div className="px-3 pt-1 pb-3">
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-1.5">
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={{ background: '#4ade80' }}
@@ -165,9 +168,15 @@ export function SessionIndicator({ sessionName, onBack, backLabel = 'Back to Inf
       </div>
       <button
         onClick={onBack}
-        className="text-[10px] cursor-pointer hover:underline transition-colors"
-        style={{ color: '#5a6380' }}
+        className="flex items-center gap-1.5 text-[11px] font-medium cursor-pointer px-2 py-1 rounded-md transition-all hover:bg-white/8"
+        style={{ color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-muted)' }}
       >
+        <span
+          className="material-symbols-rounded"
+          style={{ fontSize: '13px', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+        >
+          arrow_back
+        </span>
         {backLabel}
       </button>
     </div>

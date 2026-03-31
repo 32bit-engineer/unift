@@ -134,6 +134,7 @@ function renderContent(
         onDelete={onDeleteConfig}
         onCreateNew={onNavigateToAddNew}
         onLaunchWorkspace={onLaunchWorkspace}
+        onHostUpdated={reloadSavedConfigs}
       />
     );
   }

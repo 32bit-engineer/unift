@@ -6,6 +6,7 @@ import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.enums.SessionState;
 import com.weekend.architect.unift.remote.exception.SessionExpiredException;
 import com.weekend.architect.unift.remote.exception.SessionNotFoundException;
+import com.weekend.architect.unift.remote.docker.DockerClientPool;
 import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,12 @@ public class SessionRegistry {
      * the parent SSH session is closed. Injected lazily to avoid a circular dependency.
      */
     private final K8sClientPool k8sClientPool;
+
+    /**
+     * Evicts the cached DockerClient (+ any socat bridge + SSH tunnel) when the parent
+     * SSH session is closed.
+     */
+    private final DockerClientPool dockerClientPool;
 
     /**
      * Registers a new (already-connected) session.
@@ -119,6 +126,8 @@ public class SessionRegistry {
             terminalSessionRegistry.closeAllBySshSession(sessionId, "ssh-session-removed");
             // Tear down Fabric8 client + any SSH port-forward tunnel for this session.
             k8sClientPool.evict(sessionId);
+            // Tear down DockerClient + any socat bridge + SSH tunnel for this session.
+            dockerClientPool.evict(sessionId);
             try {
                 conn.close();
             } catch (Exception e) {

@@ -87,7 +87,6 @@ public class K8sController {
         return ResponseEntity.ok(k8sService.listNamespaces(sessionId, principal.user().getId()));
     }
 
-    // ─── Pods ─────────────────────────────────────────────────────────────────
 
     @GetMapping("/pods")
     @Operation(summary = "List pods, optionally filtered by namespace")

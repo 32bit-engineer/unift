@@ -617,8 +617,8 @@ export function RemoteHostsManagerPage({
                     </button>
                   </div>
                 </div>
-
-                {/* Bottom Action Cards */}
+{/* 
+                
                 <button
                   onClick={openTerminal}
                   className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0F0F1A] border border-[#13131E] hover:border-slate-600/50 transition-all cursor-pointer group text-left"
@@ -635,7 +635,7 @@ export function RemoteHostsManagerPage({
                     </div>
                   </div>
                   <Icon name="arrow_forward" className="text-base text-slate-600 group-hover:text-slate-400 transition-colors shrink-0 ml-3" />
-                </button>
+                </button> */}
               </div>
             </div>
         </div>

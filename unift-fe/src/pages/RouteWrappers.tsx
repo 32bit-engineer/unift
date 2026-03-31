@@ -83,6 +83,7 @@ export function InfrastructureRoute() {
   const deletingHostId = useConnectionStore(s => s.deletingHostId);
   const connectSavedHost = useConnectionStore(s => s.connectSavedHost);
   const deleteSavedHost = useConnectionStore(s => s.deleteSavedHost);
+  const fetchSavedHosts = useConnectionStore(s => s.fetchSavedHosts);
   const setActiveWorkspace = useConnectionStore(s => s.setActiveWorkspace);
 
   const activeSessions: SavedHost[] = useMemo(
@@ -144,6 +145,7 @@ export function InfrastructureRoute() {
       onCreateNew={() => navigate('/sessions')}
       onLaunchWorkspace={handleLaunchWorkspace}
       onOpenWorkspace={handleOpenWorkspace}
+      onHostUpdated={fetchSavedHosts}
     />
   );
 }

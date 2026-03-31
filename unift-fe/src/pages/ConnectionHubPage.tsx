@@ -3,7 +3,8 @@
 // Shows SSH servers (from saved host configs) and Kubernetes clusters.
 // Filters: All | SSH | K8s
 import { useState } from 'react';
-import type { SavedHostResponse } from '@/utils/remoteConnectionAPI';
+import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import type { SavedHostResponse, SavedHostRequest, SshAuthType } from '@/utils/remoteConnectionAPI';
 import type { SavedHost } from '@/components/layout';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -37,6 +38,8 @@ interface ConnectionHubPageProps {
   onLaunchWorkspace?:  (cfg: SavedHostResponse) => void;
   /** Navigate directly to an active session's workspace. */
   onOpenWorkspace?:    (sessionId: string) => void;
+  /** Called after a host config is successfully updated (to trigger parent refresh). */
+  onHostUpdated?:      () => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -78,6 +81,7 @@ const STATUS_LABELS: Record<HostStatus | 'active', string> = {
 };
 
 function StatusBadge({ status }: { status: HostStatus | 'active' }) {
+  if (status === 'idle') return null;
   const cfg = STATUS_COLORS[status];
   return (
     <span
@@ -129,6 +133,519 @@ function SshIcon() {
       >
         computer
       </span>
+    </div>
+  );
+}
+
+// ─── Host Details Modal ───────────────────────────────────────────────────────
+
+const AUTH_LABELS: Record<string, string> = {
+  PASSWORD:               'Password',
+  PRIVATE_KEY:            'SSH Key',
+  PRIVATE_KEY_PASSPHRASE: 'SSH Key + Passphrase',
+};
+
+function HostDetailsModal({
+  cfg,
+  onClose,
+}: {
+  cfg:     SavedHostResponse;
+  onClose: () => void;
+}) {
+  const displayName = cfg.label ?? cfg.hostname;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.65)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col rounded-xl w-full max-w-md"
+        style={{
+          background: 'var(--color-surface-alt)',
+          border:     '1px solid var(--color-border-muted)',
+          boxShadow:  '0 16px 48px rgba(0,0,0,0.55)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: '1px solid var(--color-border-muted)' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#7C6DFA' }}>
+              info
+            </span>
+            <span className="text-[14px] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Host Details
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>close</span>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="px-5 py-4 space-y-4">
+          {/* Name */}
+          <div>
+            <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Label / Alias</p>
+            <p className="text-[13px] font-semibold mt-1" style={{ color: 'var(--color-text-primary)' }}>
+              {displayName}
+            </p>
+          </div>
+
+          {/* Connection info grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Protocol</p>
+              <p className="text-[12px] font-mono mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.protocol === 'SSH_SFTP' ? 'SFTP' : cfg.protocol}
+              </p>
+            </div>
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Port</p>
+              <p className="text-[12px] font-mono mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.port}
+              </p>
+            </div>
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Hostname</p>
+              <p className="text-[12px] font-mono mt-1 truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.hostname}
+              </p>
+            </div>
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Username</p>
+              <p className="text-[12px] font-mono mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.username}
+              </p>
+            </div>
+          </div>
+
+          {/* Auth + workspace */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Auth Method</p>
+              <p className="text-[12px] font-mono mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.authType ? (AUTH_LABELS[cfg.authType] ?? cfg.authType) : 'Unknown'}
+              </p>
+            </div>
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Workspace</p>
+              <p className="text-[12px] font-mono mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.workspacePreference ?? 'ssh'}
+              </p>
+            </div>
+          </div>
+
+          {/* Security */}
+          <div>
+            <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Strict Host Key Checking</p>
+            <p
+              className="text-[12px] font-mono mt-1"
+              style={{ color: cfg.strictHostKeyChecking ? '#4ade80' : 'var(--color-text-muted)' }}
+            >
+              {cfg.strictHostKeyChecking ? 'Enabled' : 'Disabled'}
+            </p>
+          </div>
+
+          {cfg.expectedFingerprint && (
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Expected Fingerprint</p>
+              <p className="text-[11px] font-mono mt-1 break-all" style={{ color: 'var(--color-text-secondary)' }}>
+                {cfg.expectedFingerprint}
+              </p>
+            </div>
+          )}
+
+          {/* Timestamps */}
+          <div
+            className="grid grid-cols-2 gap-3 rounded-lg p-3"
+            style={{ background: 'var(--color-bg-base)', border: '1px solid var(--color-border-subtle)' }}
+          >
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Created</p>
+              <p className="text-[11px] font-mono mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                {new Date(cfg.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            <div>
+              <p className="label" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Last Used</p>
+              <p className="text-[11px] font-mono mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                {cfg.lastUsed ? new Date(cfg.lastUsed).toLocaleDateString() : 'Never'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          className="flex justify-end px-5 py-3"
+          style={{ borderTop: '1px solid var(--color-border-muted)' }}
+        >
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded text-[12px] font-medium transition-colors cursor-pointer"
+            style={{
+              background: 'var(--color-surface)',
+              color:      'var(--color-text-secondary)',
+              border:     '1px solid var(--color-border-muted)',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit Host Modal ──────────────────────────────────────────────────────────
+
+function EditHostModal({
+  cfg,
+  onClose,
+  onSaved,
+}: {
+  cfg:     SavedHostResponse;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [label,                 setLabel]                 = useState(cfg.label ?? '');
+  const [hostname,              setHostname]              = useState(cfg.hostname);
+  const [port,                  setPort]                  = useState(String(cfg.port));
+  const [username,              setUsername]              = useState(cfg.username);
+  const [authType,              setAuthType]              = useState<SshAuthType>(cfg.authType ?? 'PASSWORD');
+  const [password,              setPassword]              = useState('');
+  const [privateKey,            setPrivateKey]            = useState('');
+  const [passphrase,            setPassphrase]            = useState('');
+  const [strictHostKeyChecking, setStrictHostKeyChecking] = useState(cfg.strictHostKeyChecking);
+  const [expectedFingerprint,   setExpectedFingerprint]   = useState(cfg.expectedFingerprint ?? '');
+  const [saving,                setSaving]                = useState(false);
+  const [error,                 setError]                 = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!hostname.trim() || !username.trim()) {
+      setError('Hostname and username are required');
+      return;
+    }
+
+    const portNum = parseInt(port, 10);
+    if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      setError('Port must be a number between 1 and 65535');
+      return;
+    }
+
+    if (authType === 'PASSWORD' && !password) {
+      setError('Password is required to save changes');
+      return;
+    }
+    if ((authType === 'PRIVATE_KEY' || authType === 'PRIVATE_KEY_PASSPHRASE') && !privateKey) {
+      setError('SSH private key is required to save changes');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const request: SavedHostRequest = {
+        label:    label.trim() || undefined,
+        protocol: cfg.protocol,
+        hostname: hostname.trim(),
+        port:     portNum,
+        username: username.trim(),
+        authType,
+        ...(authType === 'PASSWORD'               && { password }),
+        ...(authType === 'PRIVATE_KEY'            && { privateKey }),
+        ...(authType === 'PRIVATE_KEY_PASSPHRASE' && { privateKey, passphrase }),
+        strictHostKeyChecking,
+        ...(strictHostKeyChecking && expectedFingerprint.trim() && {
+          expectedFingerprint: expectedFingerprint.trim(),
+        }),
+      };
+
+      // Create the new entry first so we don't lose data if creation fails
+      await remoteConnectionAPI.saveSavedHost(request);
+      await remoteConnectionAPI.deleteSavedHost(cfg.id);
+
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update host configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle = {
+    background: 'var(--color-bg-base)',
+    border:     '1px solid var(--color-border-muted)',
+    color:      'var(--color-text-primary)',
+  } as const;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.65)' }}
+    >
+      <div
+        className="relative flex flex-col rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+        style={{
+          background: 'var(--color-surface-alt)',
+          border:     '1px solid var(--color-border-muted)',
+          boxShadow:  '0 16px 48px rgba(0,0,0,0.55)',
+        }}
+      >
+        {/* Header */}
+        <div
+          className="sticky top-0 flex items-center justify-between px-5 py-4 z-10"
+          style={{ background: 'var(--color-surface-alt)', borderBottom: '1px solid var(--color-border-muted)' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#7C6DFA' }}>
+              edit
+            </span>
+            <span className="text-[14px] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Edit Host
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="text-slate-500 hover:text-slate-300 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>close</span>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {/* Info banner */}
+          <div
+            className="flex items-start gap-2 rounded-lg px-3 py-2.5"
+            style={{ background: 'rgba(79,142,247,0.08)', border: '1px solid rgba(79,142,247,0.18)' }}
+          >
+            <span className="material-symbols-rounded shrink-0 mt-0.5" style={{ fontSize: '14px', color: '#4F8EF7' }}>
+              info
+            </span>
+            <p className="text-[11px]" style={{ color: '#4F8EF7' }}>
+              Credentials must be re-entered — they are stored encrypted and cannot be retrieved.
+            </p>
+          </div>
+
+          {/* Label */}
+          <div>
+            <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+              Label <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={label}
+              placeholder="e.g. Production Server"
+              onChange={e => setLabel(e.target.value)}
+              className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Hostname + Port */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                Hostname
+              </label>
+              <input
+                type="text"
+                value={hostname}
+                onChange={e => setHostname(e.target.value)}
+                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                Port
+              </label>
+              <input
+                type="number"
+                value={port}
+                onChange={e => setPort(e.target.value)}
+                min={1}
+                max={65535}
+                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          {/* Username */}
+          <div>
+            <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+              Username
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Auth type selector */}
+          <div>
+            <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+              Authentication
+            </label>
+            <div className="flex gap-1">
+              {(['PASSWORD', 'PRIVATE_KEY', 'PRIVATE_KEY_PASSPHRASE'] as SshAuthType[]).map(type => (
+                <button
+                  key={type}
+                  onClick={() => setAuthType(type)}
+                  className="flex-1 py-1.5 rounded text-[10px] font-mono transition-colors cursor-pointer"
+                  style={
+                    authType === type
+                      ? { background: '#7C6DFA', color: '#fff' }
+                      : { background: 'var(--color-bg-base)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border-muted)' }
+                  }
+                >
+                  {type === 'PASSWORD' ? 'Password' : type === 'PRIVATE_KEY' ? 'SSH Key' : 'Key + Pass'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Credential inputs */}
+          {authType === 'PASSWORD' ? (
+            <div>
+              <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                Password <span style={{ color: '#f87171', fontSize: '10px' }}>required</span>
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter password"
+                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+                style={inputStyle}
+              />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                  Private Key <span style={{ color: '#f87171', fontSize: '10px' }}>required</span>
+                </label>
+                <textarea
+                  value={privateKey}
+                  onChange={e => setPrivateKey(e.target.value)}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  rows={4}
+                  className="w-full rounded px-3 py-2 text-xs font-mono outline-none resize-none"
+                  style={inputStyle}
+                />
+              </div>
+              {authType === 'PRIVATE_KEY_PASSPHRASE' && (
+                <div>
+                  <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                    Passphrase
+                  </label>
+                  <input
+                    type="password"
+                    value={passphrase}
+                    onChange={e => setPassphrase(e.target.value)}
+                    placeholder="Key passphrase (if encrypted)"
+                    className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Strict host key checking */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setStrictHostKeyChecking(v => !v)}
+              className="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+              style={
+                strictHostKeyChecking
+                  ? { background: '#7C6DFA', border: '1px solid #7C6DFA' }
+                  : { background: 'transparent', border: '1px solid var(--color-border-muted)' }
+              }
+            >
+              {strictHostKeyChecking && (
+                <span className="material-symbols-rounded" style={{ fontSize: '12px', color: '#fff' }}>
+                  check
+                </span>
+              )}
+            </button>
+            <span className="text-[12px]" style={{ color: 'var(--color-text-secondary)' }}>
+              Strict host key checking
+            </span>
+          </div>
+
+          {strictHostKeyChecking && (
+            <div>
+              <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                Expected Fingerprint <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={expectedFingerprint}
+                placeholder="SHA256:abc123..."
+                onChange={e => setExpectedFingerprint(e.target.value)}
+                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
+                style={inputStyle}
+              />
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div
+              className="rounded-lg px-3 py-2"
+              style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)' }}
+            >
+              <p className="text-[11px]" style={{ color: '#f87171' }}>{error}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          className="sticky bottom-0 flex justify-end gap-2 px-5 py-3"
+          style={{ background: 'var(--color-surface-alt)', borderTop: '1px solid var(--color-border-muted)' }}
+        >
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-1.5 rounded text-[12px] font-medium transition-colors cursor-pointer disabled:opacity-50"
+            style={{
+              background: 'var(--color-surface)',
+              color:      'var(--color-text-secondary)',
+              border:     '1px solid var(--color-border-muted)',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-1.5 rounded text-[12px] font-semibold transition-all cursor-pointer disabled:opacity-50"
+            style={{ background: '#7C6DFA', color: '#fff' }}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -255,17 +772,21 @@ function SshServerCard({
   onLaunchWorkspace,
   onOpenWorkspace,
   onDelete,
+  onHostUpdated,
 }: {
-  cfg:                 SavedHostResponse;
-  status:              HostStatus;
-  isConnecting:        boolean;
-  isDeleting:          boolean;
-  activeSessionId?:    string | null;
-  onLaunchWorkspace?:  (cfg: SavedHostResponse) => void;
-  onOpenWorkspace?:    (sessionId: string) => void;
-  onDelete?:           (id: string) => void;
+  cfg:                SavedHostResponse;
+  status:             HostStatus;
+  isConnecting:       boolean;
+  isDeleting:         boolean;
+  activeSessionId?:   string | null;
+  onLaunchWorkspace?: (cfg: SavedHostResponse) => void;
+  onOpenWorkspace?:   (sessionId: string) => void;
+  onDelete?:          (id: string) => void;
+  onHostUpdated?:     () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen,    setMenuOpen]    = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [editOpen,    setEditOpen]    = useState(false);
   const displayName = cfg.label ?? cfg.hostname;
   const region = getRegionFromHostname(cfg.hostname);
   const busy = isConnecting || isDeleting;
@@ -273,6 +794,18 @@ function SshServerCard({
   const isActive = status === 'online' && !!activeSessionId;
 
   return (
+    <>
+      {detailsOpen && (
+        <HostDetailsModal cfg={cfg} onClose={() => setDetailsOpen(false)} />
+      )}
+      {editOpen && (
+        <EditHostModal
+          cfg={cfg}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => onHostUpdated?.()}
+        />
+      )}
+
     <div
       className="flex flex-col gap-3 p-4 rounded-xl relative"
       style={{
@@ -347,13 +880,30 @@ function SshServerCard({
                 onClick={() => setMenuOpen(false)}
               />
               <div
-                className="absolute right-0 bottom-full mb-1 z-20 rounded-lg py-1 min-w-[130px]"
+                className="absolute right-0 bottom-full mb-1 z-20 rounded-lg py-1 min-w-[160px]"
                 style={{
                   background: 'var(--color-surface-alt)',
                   border:     '1px solid var(--color-border-muted)',
                   boxShadow:  '0 8px 24px rgba(0,0,0,0.45)',
                 }}
               >
+                <button
+                  onClick={() => { setDetailsOpen(true); setMenuOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-left hover:bg-white/5 transition-colors cursor-pointer"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '14px' }}>info</span>
+                  View Details
+                </button>
+                <button
+                  onClick={() => { setEditOpen(true); setMenuOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-left hover:bg-white/5 transition-colors cursor-pointer"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '14px' }}>edit</span>
+                  Edit Host
+                </button>
+                <div style={{ height: '1px', background: 'var(--color-border-muted)', margin: '2px 8px' }} />
                 <button
                   onClick={() => { onLaunchWorkspace?.(cfg); setMenuOpen(false); }}
                   disabled={busy}
@@ -380,10 +930,11 @@ function SshServerCard({
         </div>
       </div>
     </div>
+    </>
   );
 }
 
-// ─── Create New Connection Card ───────────────────────────────────────────────
+// Create New Connection Card 
 
 function CreateNewCard({ onClick }: { onClick?: () => void }) {
   return (
@@ -471,7 +1022,6 @@ function SectionHeader({
   );
 }
 
-// ─── Empty State ──────────────────────────────────────────────────────────────
 
 function EmptySection({ message }: { message: string }) {
   return (
@@ -489,7 +1039,6 @@ function EmptySection({ message }: { message: string }) {
   );
 }
 
-// ─── Filter Tab ───────────────────────────────────────────────────────────────
 
 function FilterTab({
   label,
@@ -527,6 +1076,7 @@ export function ConnectionHubPage({
   onCreateNew,
   onLaunchWorkspace,
   onOpenWorkspace,
+  onHostUpdated,
 }: ConnectionHubPageProps) {
   const [filter, setFilter] = useState<FilterType>('all');
 
@@ -625,7 +1175,6 @@ export function ConnectionHubPage({
 
             {k8sClusters.length === 0 ? (
               <div className="flex flex-wrap gap-4">
-                <EmptySection message="No Kubernetes clusters configured yet." />
                 <CreateNewCard onClick={onCreateNew} />
               </div>
             ) : (
@@ -662,6 +1211,7 @@ export function ConnectionHubPage({
                     onLaunchWorkspace={onLaunchWorkspace}
                     onOpenWorkspace={onOpenWorkspace}
                     onDelete={onDelete}
+                    onHostUpdated={onHostUpdated}
                   />
                 ))}
                 <CreateNewCard onClick={onCreateNew} />

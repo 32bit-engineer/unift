@@ -1,5 +1,5 @@
-// ─── Sidebar ───────────────────────────────────────────────────────────────
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { SavedHostResponse } from '@/utils/remoteConnectionAPI';
 import type { SessionCapabilities } from '@/store/connectionStore';
 
@@ -34,7 +34,7 @@ interface SidebarProps {
   workspaceCapabilities?: SessionCapabilities | null;
 }
 
-// ─── Accordion ─────────────────────────────────────────────────────────────
+// ─── Accordion component for collapsible sections (Active Sessions, Saved Connections)
 const SAVED_CONNECTIONS_PREVIEW_LIMIT = 10;
 
 function AccordionSection({
@@ -151,11 +151,11 @@ function NavButton({
   );
 }
 
-// ─── Static nav sections ────────────────────────────────────────────────────
+// Static nav items for main sections after login
 const MAIN_NAV: NavItem[] = [
+  { id: 'connection-hub',  label: 'Infrastructure',  icon: 'hub' },
   { id: 'my-files',        label: 'Dashboard',      icon: 'folder' },
   { id: 'remote-hosts',    label: 'Sessions',        icon: 'dns' },
-  { id: 'connection-hub',  label: 'Infrastructure',  icon: 'hub' },
 ];
 
 const TRANSFERS_NAV: NavItem[] = [
@@ -209,6 +209,7 @@ export function Sidebar({
   workspaceSessionName = null,
   workspaceCapabilities = null,
 }: SidebarProps) {
+  const navigate = useNavigate();
   const [activeSessionsOpen, setActiveSessionsOpen] = useState(true);
   const [savedConnectionsOpen, setSavedConnectionsOpen] = useState(true);
 
@@ -246,8 +247,9 @@ export function Sidebar({
       }}
     >
       {/* ── Logo ── */}
-      <div
-        className="flex items-center gap-2.5 px-4 h-14 shrink-0"
+      <button
+        onClick={() => navigate('/')}
+        className="flex items-center gap-2.5 px-4 h-14 shrink-0 w-full cursor-pointer hover:bg-white/3 transition-colors"
         style={{ borderBottom: '1px solid var(--color-border-muted)' }}
       >
         <div
@@ -270,7 +272,7 @@ export function Sidebar({
         >
           UniFT<span className="opacity-30">//OS</span>
         </span>
-      </div>
+      </button>
 
       {/* ── Nav Sections ── */}
       <nav className="flex-1 overflow-y-auto custom-scrollbar py-2">

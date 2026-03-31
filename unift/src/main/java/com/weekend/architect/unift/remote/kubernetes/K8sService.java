@@ -16,6 +16,7 @@ import com.weekend.architect.unift.remote.kubernetes.K8sModels.ServicePage;
 import com.weekend.architect.unift.remote.kubernetes.K8sModels.StatefulSetPage;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Service interface for Kubernetes cluster management via SSH.
@@ -55,6 +56,8 @@ public interface K8sService {
      */
     String getPodLogs(String sessionId, UUID userId, String namespace, String podName, int tailLines);
 
+    void streamPodLogs(String sessionId, UUID userId, String namespace, String podName,
+        int tailLines, SseEmitter emitter);
     /**
      * Deletes a pod (triggers re-creation by its controller).
      */

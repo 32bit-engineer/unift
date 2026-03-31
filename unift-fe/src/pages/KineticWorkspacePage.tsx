@@ -4,6 +4,7 @@
 // - Docker found → DockerModal (user can choose Docker workspace or SSH workspace)
 // - Docker absent (or user dismisses) → SSHWorkspace
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { SessionAnalyticsResponse } from '@/utils/remoteConnectionAPI';
 import { FileBrowser } from './RemoteHostsManager/FileBrowser';
@@ -717,8 +718,9 @@ function SshWorkspace({
 // ─── KineticWorkspacePage ─────────────────────────────────────────────────────
 
 export function KineticWorkspacePage({ session, onBack }: KineticWorkspacePageProps) {
-  type WorkspaceMode = 'detecting' | 'docker-offer' | 'ssh' | 'docker';
+  type WorkspaceMode = 'detecting' | 'docker-offer' | 'ssh';
 
+  const navigate = useNavigate();
   const [mode, setMode] = useState<WorkspaceMode>('detecting');
   const dockerPhase = useDockerDetect(session.sessionId);
 
@@ -753,13 +755,9 @@ export function KineticWorkspacePage({ session, onBack }: KineticWorkspacePagePr
       {/* Docker detection popup */}
       {mode === 'docker-offer' && (
         <DockerModal
-          onManageDocker={() => setMode('docker')}
+          onManageDocker={() => navigate(`/workspace/${session.sessionId}/docker`)}
           onContinueSsh={() => setMode('ssh')}
         />
-      )}
-
-      {mode === 'docker' && (
-        <DockerWorkspacePlaceholder onBack={() => setMode('ssh')} />
       )}
 
       {(mode === 'ssh' || mode === 'docker-offer') && (
