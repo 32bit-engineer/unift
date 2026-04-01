@@ -13,16 +13,15 @@ import org.springframework.stereotype.Service;
 /**
  * Spring MVC implementation of {@link RemoteStreamService}.
  *
- * <p>Opens the remote SFTP {@link InputStream} on the calling thread and returns
- * it directly to the controller. The controller wraps it in a
- * {@link org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody},
- * which Spring MVC executes on its async task executor — offloading the blocking
- * SFTP read from the request thread without any Reactor dependency.
+ * <p>Opens the remote SFTP {@link InputStream} on the calling thread and returns it directly to the
+ * controller. The controller wraps it in a {@link
+ * org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody}, which Spring MVC
+ * executes on its async task executor — offloading the blocking SFTP read from the request thread
+ * without any Reactor dependency.
  *
- * <p>{@code RemoteConnection} is <em>not</em> closed here. It is a long-lived
- * session object owned by {@link SessionRegistry}; only the {@link InputStream}
- * is closed (by the controller's {@code StreamingResponseBody}) after all bytes
- * have been written.
+ * <p>{@code RemoteConnection} is <em>not</em> closed here. It is a long-lived session object owned
+ * by {@link SessionRegistry}; only the {@link InputStream} is closed (by the controller's {@code
+ * StreamingResponseBody}) after all bytes have been written.
  */
 @Slf4j
 @Service

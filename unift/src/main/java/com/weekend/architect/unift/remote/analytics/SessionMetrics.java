@@ -11,14 +11,14 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Mutable per-session metrics bucket held inside {@link SessionMetricsStore}.
  *
- * <p>Package-private — intentionally not part of the public API.  Extracted from
- * a static inner class so that {@code SessionMetricsStore} can declare its
- * {@link RegistryCache} field with a
+ * <p>Package-private — intentionally not part of the public API. Extracted from a static inner
+ * class so that {@code SessionMetricsStore} can declare its {@link RegistryCache} field with a
  * concrete generic type, enabling a future Redis-backed implementation.
  *
  * <h6>Thread-safety</h6>
- * <p>The {@link AtomicLong} counters are individually thread-safe.
- * The {@code history} deque is guarded by a {@code synchronized} block.
+ *
+ * <p>The {@link AtomicLong} counters are individually thread-safe. The {@code history} deque is
+ * guarded by a {@code synchronized} block.
  */
 public final class SessionMetrics {
 

@@ -21,9 +21,9 @@ import org.springframework.stereotype.Repository;
 /**
  * JDBC repository for the {@code upload_sessions} table.
  *
- * <p>PostgreSQL {@code INT[]} columns are read via {@link java.sql.Array} and written as
- * PostgreSQL array literals (e.g. {@code '{0,1,2}'::integer[]}) to avoid the need for
- * a live {@link java.sql.Connection} when constructing named parameters.
+ * <p>PostgreSQL {@code INT[]} columns are read via {@link java.sql.Array} and written as PostgreSQL
+ * array literals (e.g. {@code '{0,1,2}'::integer[]}) to avoid the need for a live {@link
+ * java.sql.Connection} when constructing named parameters.
  */
 @Slf4j
 @Repository
@@ -79,12 +79,11 @@ public class UploadSessionRepository {
     /**
      * Inserts a new upload session.
      *
-     * <p>The {@code received_chunks} column is initialised to an empty array.
-     * {@code expires_at} defaults to {@code NOW() + INTERVAL '48 hours'} per DDL.
+     * <p>The {@code received_chunks} column is initialised to an empty array. {@code expires_at}
+     * defaults to {@code NOW() + INTERVAL '48 hours'} per DDL.
      */
     public void save(UploadSession session) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO upload_sessions (
                     id, user_id, filename, total_size, chunk_size, total_chunks,
                     received_chunks, destination_path, status, created_at, expires_at
@@ -110,18 +109,17 @@ public class UploadSessionRepository {
      * Atomically appends {@code chunkIndex} to {@code received_chunks} and advances the status.
      *
      * <ul>
-     *   <li>If the chunk is already present, or the session is not PENDING/IN_PROGRESS,
-     *       or the session belongs to a different user, <em>no rows are updated</em>.</li>
-     *   <li>When the number of received chunks after appending equals {@code total_chunks}
-     *       the status is set to {@code COMPLETED} in the same statement.</li>
-     *   <li>Otherwise the status is set to {@code IN_PROGRESS}.</li>
+     *   <li>If the chunk is already present, or the session is not PENDING/IN_PROGRESS, or the
+     *       session belongs to a different user, <em>no rows are updated</em>.
+     *   <li>When the number of received chunks after appending equals {@code total_chunks} the
+     *       status is set to {@code COMPLETED} in the same statement.
+     *   <li>Otherwise the status is set to {@code IN_PROGRESS}.
      * </ul>
      *
      * @return {@code true} if a row was updated (chunk was new and session was active)
      */
     public boolean acknowledgeChunk(UUID sessionId, UUID userId, int chunkIndex) {
-        String sql =
-                """
+        String sql = """
                 UPDATE upload_sessions
                 SET
                     received_chunks = array_append(received_chunks, CAST(:chunkIndex AS integer)),
@@ -146,12 +144,11 @@ public class UploadSessionRepository {
     }
 
     /**
-     * Updates the status of a session (e.g. to FAILED or EXPIRED).
-     * Ownership is enforced via the {@code user_id} filter.
+     * Updates the status of a session (e.g. to FAILED or EXPIRED). Ownership is enforced via the
+     * {@code user_id} filter.
      */
     public boolean updateStatus(UUID sessionId, UUID userId, UploadSessionStatus status) {
-        String sql =
-                """
+        String sql = """
                 UPDATE upload_sessions SET status = :status
                 WHERE id = :id AND user_id = :userId
                 """;
@@ -165,7 +162,7 @@ public class UploadSessionRepository {
     }
 
     /**
-     * Deletes an upload session.  Returns {@code false} if not found or not owned by {@code userId}.
+     * Deletes an upload session. Returns {@code false} if not found or not owned by {@code userId}.
      */
     public boolean deleteById(UUID sessionId, UUID userId) {
         String sql = "DELETE FROM upload_sessions WHERE id = :id AND user_id = :userId";
@@ -178,9 +175,7 @@ public class UploadSessionRepository {
     // Read operations
     // -------------------------------------------------------------------------
 
-    /**
-     * Finds a session by ID, enforcing user ownership.
-     */
+    /** Finds a session by ID, enforcing user ownership. */
     public Optional<UploadSession> findById(UUID sessionId, UUID userId) {
         String sql = "SELECT * FROM upload_sessions WHERE id = :id AND user_id = :userId";
         return jdbc
@@ -201,8 +196,9 @@ public class UploadSessionRepository {
      */
     public List<UploadSession> findByUserId(UUID userId, UploadSessionStatus status) {
         String sql = status != null
-                ? "SELECT * FROM upload_sessions WHERE user_id = :userId AND status = :status ORDER BY created_at DESC"
-                : "SELECT * FROM upload_sessions WHERE user_id = :userId ORDER BY created_at DESC";
+                ? "SELECT * FROM upload_sessions WHERE user_id = :userId AND status ="
+                        + " :status ORDER BY created_at DESC"
+                : "SELECT * FROM upload_sessions WHERE user_id = :userId ORDER BY" + " created_at DESC";
         MapSqlParameterSource params = new MapSqlParameterSource().addValue(PARAM_USER_ID, userId);
         if (status != null) {
             params.addValue("status", status.name());

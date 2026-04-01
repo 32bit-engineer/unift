@@ -14,12 +14,12 @@ import org.springframework.stereotype.Service;
 /**
  * AES-256-GCM encryption / decryption for sensitive credential fields stored in the DB.
  *
- * <p><b>Storage format:</b> {@code <base64-IV>.<base64-ciphertext+auth-tag>}
- * A fresh 12-byte (96-bit) IV is generated per {@link #encrypt} call, so two identical
- * plaintexts always produce different ciphertexts (IND-CPA security).
+ * <p><b>Storage format:</b> {@code <base64-IV>.<base64-ciphertext+auth-tag>} A fresh 12-byte
+ * (96-bit) IV is generated per {@link #encrypt} call, so two identical plaintexts always produce
+ * different ciphertexts (IND-CPA security).
  *
- * <p>The 128-bit GCM authentication tag guarantees both confidentiality and integrity —
- * any tampering with the stored blob causes a hard failure at decrypt time.
+ * <p>The 128-bit GCM authentication tag guarantees both confidentiality and integrity — any
+ * tampering with the stored blob causes a hard failure at decrypt time.
  *
  * <p><b>Key setup:</b> set {@code UNIFT_ENCRYPTION_KEY} to a Base64-encoded 32-byte secret.
  * Generate one with: {@code openssl rand -base64 32}
@@ -39,7 +39,9 @@ public class CredentialEncryptionService {
         byte[] raw = Base64.getDecoder().decode(base64Key);
         if (raw.length != 32) {
             throw new IllegalStateException("unift.encryption.key must be Base64 of exactly 32 bytes (256 bits); got "
-                    + raw.length + " bytes. " + "Generate one with: openssl rand -base64 32");
+                    + raw.length
+                    + " bytes. "
+                    + "Generate one with: openssl rand -base64 32");
         }
         this.secretKey = new SecretKeySpec(raw, "AES");
         log.info("CredentialEncryptionService initialised (AES-256-GCM)");
@@ -71,8 +73,8 @@ public class CredentialEncryptionService {
     }
 
     /**
-     * Decrypts a value previously produced by {@link #encrypt(String)}.
-     * Returns {@code null} when {@code ciphertext} is {@code null}.
+     * Decrypts a value previously produced by {@link #encrypt(String)}. Returns {@code null} when
+     * {@code ciphertext} is {@code null}.
      *
      * @throws IllegalStateException if the value has been tampered with or the key is wrong
      */

@@ -17,18 +17,20 @@ import org.springframework.stereotype.Repository;
  * Persists and queries analytics snapshots in {@code session_analytics_snapshot}.
  *
  * <h6>Storage strategy</h6>
+ *
  * <p>Each probe result is stored in two ways:
+ *
  * <ul>
- *   <li><b>Scalar columns</b> — individual metric values for efficient SQL filtering
- *       and aggregation (e.g. "average CPU last week").</li>
- *   <li><b>{@code snapshot_json} (JSONB)</b> — full serialised
- *       {@link SessionAnalyticsResponse} for lossless replay including
- *       traffic history and connected-node list.</li>
+ *   <li><b>Scalar columns</b> — individual metric values for efficient SQL filtering and
+ *       aggregation (e.g. "average CPU last week").
+ *   <li><b>{@code snapshot_json} (JSONB)</b> — full serialised {@link SessionAnalyticsResponse} for
+ *       lossless replay including traffic history and connected-node list.
  * </ul>
  *
  * <h6>Ownership</h6>
- * <p>Every query includes {@code user_id = :userId} so a user can never read
- * another user's analytics history, even if they know the session ID.
+ *
+ * <p>Every query includes {@code user_id = :userId} so a user can never read another user's
+ * analytics history, even if they know the session ID.
  */
 @Slf4j
 @Repository
@@ -41,15 +43,14 @@ public class SessionAnalyticsSnapshotRepository {
     private final ObjectMapper objectMapper;
 
     /**
-     * Persists one analytics snapshot.  Best-effort — callers should catch
-     * and log any exception rather than propagating it.
+     * Persists one analytics snapshot. Best-effort — callers should catch and log any exception
+     * rather than propagating it.
      *
-     * @param response  the fully-assembled analytics response to persist
-     * @param userId    owner UUID (stored for ownership-scoped queries)
+     * @param response the fully-assembled analytics response to persist
+     * @param userId owner UUID (stored for ownership-scoped queries)
      */
     public void save(SessionAnalyticsResponse response, UUID userId) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO session_analytics_snapshot (
                     session_id, user_id, host, state, captured_at,
                     session_duration_seconds,
@@ -88,19 +89,18 @@ public class SessionAnalyticsSnapshotRepository {
     /**
      * Returns historical snapshots for a session, newest-first.
      *
-     * @param sessionId     the session to query
-     * @param userId        requesting user — ownership gate at DB level
-     * @param from          inclusive lower bound on {@code captured_at} (nullable)
-     * @param to            inclusive upper bound on {@code captured_at} (nullable)
-     * @param limit         max rows to return (capped at {@value #MAX_LIMIT})
+     * @param sessionId the session to query
+     * @param userId requesting user — ownership gate at DB level
+     * @param from inclusive lower bound on {@code captured_at} (nullable)
+     * @param to inclusive upper bound on {@code captured_at} (nullable)
+     * @param limit max rows to return (capped at {@value #MAX_LIMIT})
      */
     public List<SessionAnalyticsResponse> findBySessionId(
             String sessionId, UUID userId, OffsetDateTime from, OffsetDateTime to, int limit) {
 
         int effectiveLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
 
-        String sql =
-                """
+        String sql = """
                 SELECT snapshot_json
                 FROM   session_analytics_snapshot
                 WHERE  session_id = :sessionId::uuid
@@ -130,31 +130,30 @@ public class SessionAnalyticsSnapshotRepository {
     }
 
     /**
-     * Returns {@code true} when at least one more snapshot exists beyond the rows
-     * already fetched — i.e., the caller should offer a "load more" option.
+     * Returns {@code true} when at least one more snapshot exists beyond the rows already fetched —
+     * i.e., the caller should offer a "load more" option.
      *
      * <p><b>Why {@code EXISTS} instead of {@code COUNT(*) > N}:</b>
+     *
      * <ul>
-     *   <li>PostgreSQL stops scanning as soon as it finds the first qualifying row
-     *       at {@code OFFSET :offset}, making this O(1) extra work vs O(n) for
-     *       a full {@code COUNT(*)}.</li>
-     *   <li>{@code EXISTS} returns a native {@code boolean} column — no
-     *       {@code bigint → int} implicit cast needed, and
-     *       {@code queryForObject(..., Boolean.class)} maps it unambiguously.</li>
+     *   <li>PostgreSQL stops scanning as soon as it finds the first qualifying row at {@code OFFSET
+     *       :offset}, making this O(1) extra work vs O(n) for a full {@code COUNT(*)}.
+     *   <li>{@code EXISTS} returns a native {@code boolean} column — no {@code bigint → int}
+     *       implicit cast needed, and {@code queryForObject(..., Boolean.class)} maps it
+     *       unambiguously.
      * </ul>
      *
-     * @param sessionId      session to check
-     * @param userId         ownership filter — enforced in SQL
-     * @param from           optional lower bound on {@code captured_at}
-     * @param to             optional upper bound on {@code captured_at}
+     * @param sessionId session to check
+     * @param userId ownership filter — enforced in SQL
+     * @param from optional lower bound on {@code captured_at}
+     * @param to optional upper bound on {@code captured_at}
      * @param alreadyFetched number of rows the caller already holds (used as OFFSET)
      */
     public boolean hasMore(String sessionId, UUID userId, OffsetDateTime from, OffsetDateTime to, int alreadyFetched) {
 
         // OFFSET :offset skips past the already-fetched rows; LIMIT 1 stops at the
-        // first additional row.  EXISTS short-circuits as soon as that row is found.
-        String sql =
-                """
+        // first additional row. EXISTS short-circuits as soon as that row is found.
+        String sql = """
                 SELECT EXISTS (
                     SELECT 1
                     FROM   session_analytics_snapshot

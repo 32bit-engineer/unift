@@ -1,0 +1,163 @@
+package com.weekend.architect.unift.integration.remote;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.weekend.architect.unift.integration.config.IntegrationTestBase;
+import com.weekend.architect.unift.integration.support.MockSftpServer;
+import com.weekend.architect.unift.integration.support.TestAuthHelper;
+import com.weekend.architect.unift.integration.support.TestAuthHelper.AuthTokens;
+import com.weekend.architect.unift.remote.dto.ConnectRequest;
+import com.weekend.architect.unift.remote.enums.ProtocolType;
+import com.weekend.architect.unift.remote.enums.SshAuthType;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MvcResult;
+
+/**
+ * Integration tests for the remote file streaming endpoint ({@code GET
+ * /api/stream/sessions/{id}/files}).
+ *
+ * <p>The streaming controller opens an SFTP {@link java.io.InputStream} on the request thread and
+ * writes it to the response via a Spring MVC {@link
+ * org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody}. MockMvc resolves
+ * the async dispatch transparently, so regular {@code andExpect} assertions work against the final
+ * response.
+ *
+ * <p>A single MockSftpServer is shared for the class. Pre-seeded files are created once in {@link
+ * #setUp()}.
+ */
+@DisplayName("Remote Stream API")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class RemoteStreamApiIT extends IntegrationTestBase {
+
+    private static final String STREAM = "/api/stream/sessions";
+    private static final String SESSIONS = "/api/remote/sessions";
+    private static final String PASSWORD = "P@ssw0rd!";
+
+    private static final String STREAM_FILE_NAME = "stream-test.txt";
+    private static final String STREAM_FILE_CONTENT = "Hello streaming world!";
+
+    private MockSftpServer sftpServer;
+    private String sessionId;
+    private String bearerToken;
+
+    @BeforeAll
+    void setUp() throws Exception {
+        sftpServer = new MockSftpServer();
+        sftpServer.start();
+
+        // Seed a file the happy-path streaming test can fetch
+        sftpServer.createTestFile(STREAM_FILE_NAME, STREAM_FILE_CONTENT);
+
+        TestAuthHelper auth = new TestAuthHelper(mockMvc, objectMapper);
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        bearerToken = tokens.bearer();
+        sessionId = openSession(bearerToken);
+    }
+
+    @AfterAll
+    void tearDown() throws Exception {
+        if (sessionId != null) {
+            mockMvc.perform(delete(SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, bearerToken))
+                    .andReturn();
+        }
+        sftpServer.close();
+    }
+
+    @Test
+    @DisplayName(
+            "GET /stream/sessions/{id}/files?path → 200 with octet-stream body and inline" + " Content-Disposition")
+    void streamFile_happyPath() throws Exception {
+        mockMvc.perform(get(STREAM + "/" + sessionId + "/files")
+                        .param("path", "/" + STREAM_FILE_NAME)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(header().exists(HttpHeaders.CONTENT_DISPOSITION))
+                .andExpect(content().contentType(MediaType.APPLICATION_OCTET_STREAM))
+                .andExpect(content().string(STREAM_FILE_CONTENT));
+    }
+
+    @Test
+    @DisplayName("GET /stream → Content-Disposition header contains the correct filename")
+    void streamFile_contentDispositionContainsFilename() throws Exception {
+        mockMvc.perform(get(STREAM + "/" + sessionId + "/files")
+                        .param("path", "/" + STREAM_FILE_NAME)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                                HttpHeaders.CONTENT_DISPOSITION,
+                                org.hamcrest.Matchers.containsString(STREAM_FILE_NAME)));
+    }
+
+    @Test
+    @DisplayName("GET /stream → 400 when path resolves to root (no filename component)")
+    void streamFile_rootPath_badRequest() throws Exception {
+        mockMvc.perform(get(STREAM + "/" + sessionId + "/files")
+                        .param("path", "/")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("GET /stream → 401 when no JWT is provided")
+    void streamFile_unauthenticated() throws Exception {
+        mockMvc.perform(get(STREAM + "/" + sessionId + "/files").param("path", "/" + STREAM_FILE_NAME))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /stream → 403 when session belongs to a different user")
+    void streamFile_crossUserForbidden() throws Exception {
+        TestAuthHelper auth = new TestAuthHelper(mockMvc, objectMapper);
+        AuthTokens other = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(STREAM + "/" + sessionId + "/files")
+                        .param("path", "/" + STREAM_FILE_NAME)
+                        .header(HttpHeaders.AUTHORIZATION, other.bearer()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("GET /stream → 404 when session ID does not exist")
+    void streamFile_sessionNotFound() throws Exception {
+        mockMvc.perform(get(STREAM + "/nonexistent-session-id/files")
+                        .param("path", "/" + STREAM_FILE_NAME)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    private String openSession(String bearer) throws Exception {
+        MvcResult result = mockMvc.perform(post(SESSIONS)
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validConnectRequest())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("sessionId")
+                .asText();
+    }
+
+    private ConnectRequest validConnectRequest() {
+        return ConnectRequest.builder()
+                .protocol(ProtocolType.SSH_SFTP)
+                .host(sftpServer.getHost())
+                .port(sftpServer.getPort())
+                .username(MockSftpServer.TEST_USER)
+                .sshAuthType(SshAuthType.PASSWORD)
+                .password(MockSftpServer.TEST_PASS)
+                .strictHostKeyChecking(false)
+                .build();
+    }
+}

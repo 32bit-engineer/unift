@@ -8,8 +8,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * A single bandwidth sample captured at one-minute intervals.
- * Stored in the rolling 60-entry history kept by {@code SessionMetricsStore}.
+ * A single bandwidth sample captured at one-minute intervals. Stored in the rolling 60-entry
+ * history kept by {@code SessionMetricsStore}.
  */
 @Data
 @Builder

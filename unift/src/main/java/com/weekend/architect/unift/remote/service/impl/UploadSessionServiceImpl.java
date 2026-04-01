@@ -73,7 +73,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
                     "Chunk index " + chunkIndex + " is out of range [0, " + (session.getTotalChunks() - 1) + "]");
         }
 
-        // Guard: session must be active (expired sessions fail the DB predicate too, but give a clear message here)
+        // Guard: session must be active (expired sessions fail the DB predicate too,
+        // but give a clear message here)
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
             throw new IllegalStateException("Upload session " + sessionId + " is already COMPLETED");
         }
@@ -86,7 +87,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         if (!updated) {
             // Either already received, or session expired between our read and the update
             log.debug(
-                    "[upload-session] Chunk {} already acknowledged for session {} (or session expired)",
+                    "[upload-session] Chunk {} already acknowledged for session {} (or session" + " expired)",
                     chunkIndex,
                     sessionId);
         }
@@ -120,8 +121,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     /**
-     * Checks whether the session has passed its TTL and, if so, updates the DB status
-     * to EXPIRED before converting to a response DTO.
+     * Checks whether the session has passed its TTL and, if so, updates the DB status to EXPIRED
+     * before converting to a response DTO.
      */
     private UploadSessionResponse applyExpiryAndMap(UploadSession session) {
         if ((session.getStatus() == UploadSessionStatus.PENDING

@@ -11,17 +11,19 @@ import org.springframework.stereotype.Component;
  * <p>All properties live under the {@code unift.terminal.*} prefix in {@code application.yaml}.
  *
  * <h6>Security knobs</h6>
+ *
  * <ul>
- *   <li>{@code maxSessionsPerUser} — limits blast radius of a compromised JWT</li>
- *   <li>{@code allowedOrigins} — WebSocket upgrade CORS; mirrors the HTTP CORS list</li>
+ *   <li>{@code maxSessionsPerUser} — limits blast radius of a compromised JWT
+ *   <li>{@code allowedOrigins} — WebSocket upgrade CORS; mirrors the HTTP CORS list
  * </ul>
  *
  * <h6>Resource knobs</h6>
+ *
  * <ul>
- *   <li>{@code maxConcurrentSessions} — global JVM cap; also sizes the bounded thread pool</li>
- *   <li>{@code idleTimeoutMinutes} — auto-close shells abandoned by users</li>
- *   <li>{@code sendTimeoutMs} — max time a single WS {@code sendMessage} may block</li>
- *   <li>{@code sendBufferSizeLimitBytes} — max bytes queued for a single slow client</li>
+ *   <li>{@code maxConcurrentSessions} — global JVM cap; also sizes the bounded thread pool
+ *   <li>{@code idleTimeoutMinutes} — auto-close shells abandoned by users
+ *   <li>{@code sendTimeoutMs} — max time a single WS {@code sendMessage} may block
+ *   <li>{@code sendBufferSizeLimitBytes} — max bytes queued for a single slow client
  * </ul>
  */
 @Data
@@ -36,8 +38,8 @@ public class TerminalProperties {
     private int idleTimeoutMinutes = 15;
 
     /**
-     * Global cap on concurrent terminal sessions across all users.
-     * Also used to size the bounded pipe-thread pool. Default: 5
+     * Global cap on concurrent terminal sessions across all users. Also used to size the bounded
+     * pipe-thread pool. Default: 5
      */
     private int maxConcurrentSessions = 5;
 
@@ -45,22 +47,21 @@ public class TerminalProperties {
     private long reaperIntervalMs = 30_000L;
 
     /**
-     * Maximum time (ms) a single {@code WebSocketSession.sendMessage()} call may block
-     * before the session is force-closed. Prevents slow/stuck clients from tying up
-     * pipe threads indefinitely. Default: 10 s.
+     * Maximum time (ms) a single {@code WebSocketSession.sendMessage()} call may block before the
+     * session is force-closed. Prevents slow/stuck clients from tying up pipe threads indefinitely.
+     * Default: 10 s.
      */
     private int sendTimeoutMs = 10_000;
 
     /**
-     * Maximum bytes buffered for a single slow WebSocket client before the session
-     * is force-closed. Default: 64 KB.
+     * Maximum bytes buffered for a single slow WebSocket client before the session is force-closed.
+     * Default: 64 KB.
      */
     private int sendBufferSizeLimitBytes = 64 * 1024;
 
     /**
-     * Allowed origins for WebSocket upgrade requests (CORS).
-     * Mirrors the HTTP CORS list in SecurityConfig.
-     * Default covers common local-dev ports.
+     * Allowed origins for WebSocket upgrade requests (CORS). Mirrors the HTTP CORS list in
+     * SecurityConfig. Default covers common local-dev ports.
      */
     private List<String> allowedOrigins = List.of(
             "http://localhost:3000",

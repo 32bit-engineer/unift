@@ -19,10 +19,10 @@ import org.springframework.stereotype.Repository;
 /**
  * JDBC repository for the {@code transfer_log} table.
  *
- * <p>Rows are written automatically by {@code RemoteConnectionServiceImpl} when a
- * download or upload reaches a terminal state (COMPLETED, FAILED, CANCELLED).
- * All writes are best-effort — callers should catch and log any {@link Exception}
- * rather than rolling back the originating transfer operation.
+ * <p>Rows are written automatically by {@code RemoteConnectionServiceImpl} when a download or
+ * upload reaches a terminal state (COMPLETED, FAILED, CANCELLED). All writes are best-effort —
+ * callers should catch and log any {@link Exception} rather than rolling back the originating
+ * transfer operation.
  */
 @Slf4j
 @Repository
@@ -71,12 +71,11 @@ public class TransferLogRepository {
     /**
      * Inserts a new transfer log entry.
      *
-     * <p>This method is best-effort.  Callers in {@code RemoteConnectionServiceImpl}
-     * wrap this in a try-catch so a DB failure never surfaces to the API client.
+     * <p>This method is best-effort. Callers in {@code RemoteConnectionServiceImpl} wrap this in a
+     * try-catch so a DB failure never surfaces to the API client.
      */
     public void save(TransferLog entry) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO transfer_log (
                     id, user_id, filename, source, destination,
                     size_bytes, avg_speed_bps, duration_ms, status, error_message, created_at
@@ -116,9 +115,7 @@ public class TransferLogRepository {
     // Read operations
     // -------------------------------------------------------------------------
 
-    /**
-     * Finds a single transfer log entry by ID, enforcing user ownership.
-     */
+    /** Finds a single transfer log entry by ID, enforcing user ownership. */
     public Optional<TransferLog> findById(UUID id, UUID userId) {
         String sql = "SELECT * FROM transfer_log WHERE id = :id AND user_id = :userId";
         return jdbc
@@ -139,8 +136,7 @@ public class TransferLogRepository {
     public List<TransferLog> findByUserId(UUID userId, int page, int size) {
         int safeSize = Math.min(size, 100);
         int offset = page * safeSize;
-        String sql =
-                """
+        String sql = """
                 SELECT * FROM transfer_log
                 WHERE user_id = :userId
                 ORDER BY created_at DESC
@@ -155,9 +151,7 @@ public class TransferLogRepository {
                 this::mapRow);
     }
 
-    /**
-     * Returns the total number of transfer log entries for a user (for pagination metadata).
-     */
+    /** Returns the total number of transfer log entries for a user (for pagination metadata). */
     public long countByUserId(UUID userId) {
         String sql = "SELECT COUNT(*) FROM transfer_log WHERE user_id = :userId";
         Long count = jdbc.queryForObject(sql, new MapSqlParameterSource(PARAM_USER_ID, userId), Long.class);
@@ -170,8 +164,7 @@ public class TransferLogRepository {
      * <p>Uses PostgreSQL {@code FILTER} clauses for a single-pass aggregation.
      */
     public TransferHistoryStatsResponse getStats(UUID userId) {
-        String sql =
-                """
+        String sql = """
                 SELECT
                     COUNT(*)                                                AS total_transfers,
                     COUNT(*) FILTER (WHERE status = 'COMPLETED')           AS completed_transfers,

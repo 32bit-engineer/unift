@@ -38,8 +38,7 @@ public class SessionAnalyticsResponse {
     private PacketLossInfo packetLoss;
 
     /**
-     * Rolling 60-minute bandwidth samples (one per minute).
-     * May be empty for brand-new sessions.
+     * Rolling 60-minute bandwidth samples (one per minute). May be empty for brand-new sessions.
      */
     private List<TrafficDataPoint> trafficAnalysis;
 

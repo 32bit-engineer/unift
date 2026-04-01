@@ -39,11 +39,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * REST controller for Kubernetes cluster management.
- * All operations execute kubectl CLI commands on the remote host
- * through the session's SSH connection.
+ * REST controller for Kubernetes cluster management. All operations execute kubectl CLI commands on
+ * the remote host through the session's SSH connection.
  *
- * Base path: {@code /api/remote/sessions/{sessionId}/k8s}
+ * <p>Base path: {@code /api/remote/sessions/{sessionId}/k8s}
  */
 @RestController
 @RequestMapping("/api/remote/sessions/{sessionId}/k8s")
@@ -111,7 +110,7 @@ public class K8sController {
     }
 
     @GetMapping(value = "/pods/{podName}/logs/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "Stream pod logs (follow mode) via Server-Sent Events — one line per data event")
+    @Operation(summary = "Stream pod logs (follow mode) via Server-Sent Events — one line per data" + " event")
     public SseEmitter streamPodLogs(
             @PathVariable String sessionId,
             @PathVariable String podName,

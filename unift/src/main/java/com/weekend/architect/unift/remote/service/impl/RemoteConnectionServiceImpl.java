@@ -116,7 +116,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         String remoteOs = resolveRemoteOs(connection);
         session.setRemoteOs(remoteOs);
 
-        // 9. Persist session metadata to DB (best-effort — never rolls back the session)
+        // 9. Persist session metadata to DB (best-effort — never rolls back the
+        // session)
         sessionLogRepository.save(session);
 
         log.info(
@@ -205,7 +206,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         RemoteTransfer transfer = createTransfer(sessionId, remotePath, TransferDirection.DOWNLOAD, -1L);
         TransferProgressCallback callback = progressCallbackFor(transfer);
 
-        // Capture session metadata before entering the lambda (session may be closed by the time
+        // Capture session metadata before entering the lambda (session may be closed by
+        // the time
         // the streaming body is written)
         String remoteHost = conn.getSession().getHost();
         int remotePort = conn.getSession().getPort();
@@ -287,7 +289,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         try {
             transferRegistry.updateState(transfer.getTransferId(), TransferState.IN_PROGRESS);
             // CancellableInputStream is a secondary guard (throws before each read).
-            // The primary cancellation path is JschSftpProgressMonitor.count() returning false,
+            // The primary cancellation path is JschSftpProgressMonitor.count() returning
+            // false,
             // which is JSch's official way to stop the copy loop.
             conn.upload(
                     remotePath,
@@ -341,14 +344,19 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         // Guard: must still be active
         TransferState state = transfer.getState();
         if (state == TransferState.COMPLETED || state == TransferState.FAILED || state == TransferState.CANCELLED) {
-            throw new IllegalStateException("Transfer " + transferId + " has already finished (state: "
-                    + state.name().toLowerCase() + ")");
+            throw new IllegalStateException("Transfer "
+                    + transferId
+                    + " has already finished (state: "
+                    + state.name().toLowerCase()
+                    + ")");
         }
         // Guard: must be a cancellable stream upload (not multipart)
         CancellationToken token = transfer.getCancellationToken();
         if (token == null) {
-            throw new IllegalArgumentException("Transfer " + transferId + " does not support cancellation. "
-                    + "Only uploads started via POST .../files/upload/stream can be cancelled.");
+            throw new IllegalArgumentException("Transfer "
+                    + transferId
+                    + " does not support cancellation. Only uploads started via POST"
+                    + " .../files/upload/stream can be cancelled.");
         }
 
         log.info("[{}] Cancellation requested for transfer {}", sessionId, transferId);
@@ -358,8 +366,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     }
 
     /**
-     * Marks a transfer as CANCELLED and attempts to delete the partial remote file.
-     * Called from both the normal-return and exception paths of {@code uploadStream}.
+     * Marks a transfer as CANCELLED and attempts to delete the partial remote file. Called from
+     * both the normal-return and exception paths of {@code uploadStream}.
      */
     private void handleUploadCancellation(
             RemoteTransfer transfer,
@@ -378,8 +386,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     }
 
     /**
-     * Best-effort deletion of a partial remote file left behind by a canceled upload.
-     * Logs a warning on failure but never throws.
+     * Best-effort deletion of a partial remote file left behind by a canceled upload. Logs a
+     * warning on failure but never throws.
      */
     private void tryDeletePartialFile(RemoteConnection conn, String sessionId, String remotePath) {
         try {
@@ -429,7 +437,9 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
             OffsetDateTime now = OffsetDateTime.now();
             RemoteSession session = RemoteSession.builder()
                     .sessionId(sessionId)
-                    .ownerId(UUID.randomUUID()) // temporary owner for test
+                    .ownerId(UUID.randomUUID()) // temporary
+                    // owner for
+                    // test
                     .label(request.getLabel())
                     .protocol(request.getProtocol())
                     .host(request.getHost())
@@ -553,8 +563,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     }
 
     /**
-     * Calls {@link RemoteConnection#detectRemoteOs()} and returns the result.
-     * Never throws — any error is logged as a warning and {@code null} is returned.
+     * Calls {@link RemoteConnection#detectRemoteOs()} and returns the result. Never throws — any
+     * error is logged as a warning and {@code null} is returned.
      */
     private String resolveRemoteOs(RemoteConnection conn) {
         try {
@@ -566,14 +576,14 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     }
 
     /**
-     * Best-effort: writes a {@link TransferLog} row for a terminal transfer.
-     * Never throws — a logging failure must never affect the API response.
+     * Best-effort: writes a {@link TransferLog} row for a terminal transfer. Never throws — a
+     * logging failure must never affect the API response.
      *
-     * @param ownerId    the authenticated user's ID
+     * @param ownerId the authenticated user's ID
      * @param remotePath remote file path (used to derive filename, source and destination)
      * @param remoteHost hostname of the remote server
      * @param remotePort port of the remote server
-     * @param transfer   the completed/failed/cancelled transfer
+     * @param transfer the completed/failed/cancelled transfer
      */
     private void logTransfer(
             UUID ownerId, String remotePath, String remoteHost, int remotePort, RemoteTransfer transfer) {

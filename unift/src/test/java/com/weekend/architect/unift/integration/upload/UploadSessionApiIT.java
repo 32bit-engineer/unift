@@ -1,0 +1,345 @@
+package com.weekend.architect.unift.integration.upload;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.weekend.architect.unift.integration.config.IntegrationTestBase;
+import com.weekend.architect.unift.integration.support.TestAuthHelper;
+import com.weekend.architect.unift.integration.support.TestAuthHelper.AuthTokens;
+import com.weekend.architect.unift.remote.dto.UploadSessionRequest;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MvcResult;
+
+/**
+ * Integration tests for {@code /api/uploads/sessions/**} (resumable chunked-upload sessions).
+ *
+ * <p>Covers: create session, list, get, acknowledge chunks (idempotency, out-of-range,
+ * auto-complete), abort, and authentication guards.
+ *
+ * <p>Each test uses an isolated user so session state cannot bleed between tests.
+ */
+@DisplayName("Upload Session API")
+class UploadSessionApiIT extends IntegrationTestBase {
+
+    private static final String UPLOAD_SESSIONS = "/api/uploads/sessions";
+    private static final String PASSWORD = "P@ssw0rd!";
+
+    private TestAuthHelper auth;
+
+    @BeforeEach
+    void setUp() {
+        auth = new TestAuthHelper(mockMvc, objectMapper);
+    }
+
+    @Test
+    @DisplayName("POST /sessions → 201 with session metadata when payload is valid")
+    void createSession_happyPath() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UploadSessionRequest body = buildRequest("video.mp4", 100_000L, 10_000, 10);
+
+        mockMvc.perform(post(UPLOAD_SESSIONS)
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", notNullValue()))
+                .andExpect(jsonPath("$.filename").value("video.mp4"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.progressPercent").value(0))
+                .andExpect(jsonPath("$.totalChunks").value(10));
+    }
+
+    @Test
+    @DisplayName("POST /sessions → 400 when filename is blank")
+    void createSession_blankFilename() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UploadSessionRequest body = buildRequest("", 1024L, 512, 2);
+
+        mockMvc.perform(post(UPLOAD_SESSIONS)
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.filename", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("POST /sessions → 400 when totalSize is zero or negative")
+    void createSession_invalidTotalSize() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UploadSessionRequest body = buildRequest("file.zip", 0L, 512, 1);
+
+        mockMvc.perform(post(UPLOAD_SESSIONS)
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.totalSize", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("POST /sessions → 401 when no JWT is provided")
+    void createSession_unauthenticated() throws Exception {
+        mockMvc.perform(post(UPLOAD_SESSIONS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(buildRequest("x.bin", 1L, 1, 1))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /sessions → 200 with empty list when user has no sessions")
+    void listSessions_empty() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(UPLOAD_SESSIONS).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("GET /sessions → 200 returns only the requesting user's sessions")
+    void listSessions_returnsOnlyOwnedSessions() throws Exception {
+        AuthTokens userA = auth.register(auth.uniqueUsername(), PASSWORD);
+        AuthTokens userB = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        createSession(userA.bearer(), "a.bin");
+        createSession(userA.bearer(), "b.bin");
+        createSession(userB.bearer(), "c.bin");
+
+        mockMvc.perform(get(UPLOAD_SESSIONS).header(HttpHeaders.AUTHORIZATION, userA.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+
+        mockMvc.perform(get(UPLOAD_SESSIONS).header(HttpHeaders.AUTHORIZATION, userB.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("GET /sessions?status=PENDING → 200 returns only PENDING sessions")
+    void listSessions_filteredByStatus() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSession(tokens.bearer(), "pending.bin");
+
+        // Acknowledge one chunk so status becomes IN_PROGRESS
+        String twoChunkSessionId = createSessionWithChunks(tokens.bearer(), "progress.bin", 2);
+        acknowledgeChunk(twoChunkSessionId, 0, tokens.bearer());
+
+        mockMvc.perform(get(UPLOAD_SESSIONS)
+                        .param("status", "PENDING")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + sessionId + "')]").exists());
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{id} → 200 when session belongs to the user")
+    void getSession_found() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSession(tokens.bearer(), "get-me.bin");
+
+        mockMvc.perform(get(UPLOAD_SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(sessionId))
+                .andExpect(jsonPath("$.filename").value("get-me.bin"));
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{id} → 404 when session does not exist")
+    void getSession_notFound() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(UPLOAD_SESSIONS + "/" + UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{id} → 404 when session belongs to a different user (no leaking" + " existence)")
+    void getSession_crossUserAccess() throws Exception {
+        AuthTokens userA = auth.register(auth.uniqueUsername(), PASSWORD);
+        AuthTokens userB = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSession(userA.bearer(), "private.bin");
+
+        mockMvc.perform(get(UPLOAD_SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, userB.bearer()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{id} → 401 when no JWT is provided")
+    void getSession_unauthenticated() throws Exception {
+        mockMvc.perform(get(UPLOAD_SESSIONS + "/" + UUID.randomUUID())).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("POST /sessions/{id}/chunks/0 → 200 with IN_PROGRESS status after first chunk")
+    void acknowledgeChunk_firstChunk_inProgress() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSessionWithChunks(tokens.bearer(), "multi.bin", 3);
+
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/0")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.receivedChunks[0]").value(0));
+    }
+
+    @Test
+    @DisplayName("POST /sessions/{id}/chunks/0 (twice) → 200 idempotent, no duplicate recorded")
+    void acknowledgeChunk_idempotent() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSessionWithChunks(tokens.bearer(), "idem.bin", 3);
+
+        acknowledgeChunk(sessionId, 0, tokens.bearer());
+
+        // Acknowledge again — should not duplicate
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/0")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.receivedChunks", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("POST /sessions/{id}/chunks/99 → 400 when chunk index is out of range")
+    void acknowledgeChunk_outOfRange() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSessionWithChunks(tokens.bearer(), "range.bin", 3);
+
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/99")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Acknowledging all chunks → status transitions to COMPLETED automatically")
+    void acknowledgeAllChunks_sessionCompletes() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSessionWithChunks(tokens.bearer(), "complete.bin", 2);
+
+        acknowledgeChunk(sessionId, 0, tokens.bearer());
+
+        // Last chunk — should auto-complete
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/1")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.progressPercent").value(100));
+    }
+
+    @Test
+    @DisplayName("POST /sessions/{id}/chunks/0 → 409 when session is already COMPLETED")
+    void acknowledgeChunk_sessionAlreadyCompleted() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSessionWithChunks(tokens.bearer(), "done.bin", 1);
+
+        // Complete the session
+        acknowledgeChunk(sessionId, 0, tokens.bearer());
+
+        // Attempt to ack on a completed session
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/0")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("DELETE /sessions/{id} → 204 when session is aborted successfully")
+    void abortSession_success() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSession(tokens.bearer(), "abort-me.bin");
+
+        mockMvc.perform(delete(UPLOAD_SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isNoContent());
+
+        // Verify the session is gone
+        mockMvc.perform(get(UPLOAD_SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("DELETE /sessions/{id} → 404 when session does not exist")
+    void abortSession_notFound() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(delete(UPLOAD_SESSIONS + "/" + UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("DELETE /sessions/{id} → 401 when no JWT is provided")
+    void abortSession_unauthenticated() throws Exception {
+        mockMvc.perform(delete(UPLOAD_SESSIONS + "/" + UUID.randomUUID())).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("DELETE /sessions/{id} → 404 when session belongs to a different user (no leaking" + " existence)")
+    void abortSession_crossUserAccess() throws Exception {
+        AuthTokens userA = auth.register(auth.uniqueUsername(), PASSWORD);
+        AuthTokens userB = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSession(userA.bearer(), "other-user.bin");
+
+        mockMvc.perform(delete(UPLOAD_SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, userB.bearer()))
+                .andExpect(status().isNotFound());
+
+        // Verify that userA's session is still intact
+        mockMvc.perform(get(UPLOAD_SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, userA.bearer()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /sessions/{id}/chunks/0 → 404 when session belongs to a different user")
+    void acknowledgeChunk_crossUserAccess() throws Exception {
+        AuthTokens userA = auth.register(auth.uniqueUsername(), PASSWORD);
+        AuthTokens userB = auth.register(auth.uniqueUsername(), PASSWORD);
+        String sessionId = createSessionWithChunks(userA.bearer(), "cross-chunk.bin", 3);
+
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/0")
+                        .header(HttpHeaders.AUTHORIZATION, userB.bearer()))
+                .andExpect(status().isNotFound());
+    }
+
+    private String createSession(String bearerToken, String filename) throws Exception {
+        return createSessionWithChunks(bearerToken, filename, 5);
+    }
+
+    private String createSessionWithChunks(String bearerToken, String filename, int totalChunks) throws Exception {
+        long totalSize = (long) totalChunks * 1024;
+        UploadSessionRequest body = buildRequest(filename, totalSize, 1024, totalChunks);
+        MvcResult result = mockMvc.perform(post(UPLOAD_SESSIONS)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("id")
+                .asText();
+    }
+
+    private void acknowledgeChunk(String sessionId, int chunkIndex, String bearerToken) throws Exception {
+        mockMvc.perform(post(UPLOAD_SESSIONS + "/" + sessionId + "/chunks/" + chunkIndex)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk());
+    }
+
+    private UploadSessionRequest buildRequest(String filename, long totalSize, int chunkSize, int totalChunks) {
+        UploadSessionRequest r = new UploadSessionRequest();
+        r.setFilename(filename);
+        r.setTotalSize(totalSize);
+        r.setChunkSize(chunkSize);
+        r.setTotalChunks(totalChunks);
+        r.setDestinationPath("/uploads/" + filename);
+        return r;
+    }
+}

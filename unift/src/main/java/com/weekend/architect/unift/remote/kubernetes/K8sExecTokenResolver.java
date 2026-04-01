@@ -21,35 +21,38 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * Resolves exec-based Kubernetes credentials on the remote SSH server.
  *
  * <h3>Why this is needed</h3>
- * <p>Kubeconfigs for managed clusters (EKS, GKE, AKS) use an {@code exec} credential
- * provider that spawns a CLI tool ({@code aws}, {@code gke-gcloud-auth-plugin}, etc.)
- * to obtain a short-lived bearer token.  When Fabric8 reads such a kubeconfig it tries
- * to run the exec command on the <em>local</em> machine — the UniFT server — where those
- * CLIs are not installed and AWS/GCP credentials are not present.  The result is a
- * missing token and a 401 Unauthorized from the k8s API server.
+ *
+ * <p>Kubeconfigs for managed clusters (EKS, GKE, AKS) use an {@code exec} credential provider that
+ * spawns a CLI tool ({@code aws}, {@code gke-gcloud-auth-plugin}, etc.) to obtain a short-lived
+ * bearer token. When Fabric8 reads such a kubeconfig it tries to run the exec command on the
+ * <em>local</em> machine — the UniFT server — where those CLIs are not installed and AWS/GCP
+ * credentials are not present. The result is a missing token and a 401 Unauthorized from the k8s
+ * API server.
  *
  * <h3>What this class does</h3>
+ *
  * <ol>
- *   <li>Parse the kubeconfig YAML to locate the {@code exec} section of the current
- *       context's user entry.</li>
- *   <li>Build the exact shell command (with env vars and arguments).</li>
- *   <li>Execute it on the remote SSH server via the existing SSH channel — where the
- *       CLI is installed and credentials are configured.</li>
- *   <li>Parse the {@code ExecCredential} JSON response and return the bearer token +
- *       expiry timestamp.</li>
+ *   <li>Parse the kubeconfig YAML to locate the {@code exec} section of the current context's user
+ *       entry.
+ *   <li>Build the exact shell command (with env vars and arguments).
+ *   <li>Execute it on the remote SSH server via the existing SSH channel — where the CLI is
+ *       installed and credentials are configured.
+ *   <li>Parse the {@code ExecCredential} JSON response and return the bearer token + expiry
+ *       timestamp.
  * </ol>
  *
  * <h3>Callers</h3>
- * <p>{@link K8sClientPool} calls {@link #resolve} during client construction, then
- * {@link #patchKubeconfigWithToken} to replace the {@code exec} section with a static
- * {@code token} field before passing the YAML to Fabric8 — so Fabric8 never attempts
- * to run the exec command itself.
+ *
+ * <p>{@link K8sClientPool} calls {@link #resolve} during client construction, then {@link
+ * #patchKubeconfigWithToken} to replace the {@code exec} section with a static {@code token} field
+ * before passing the YAML to Fabric8 — so Fabric8 never attempts to run the exec command itself.
  *
  * <h3>Token refresh</h3>
- * <p>{@link ResolvedToken#isExpiringOrExpired()} returns {@code true} when fewer than
- * 2 minutes remain before the expiry timestamp reported by the exec provider.
- * {@link K8sClientPool} checks this on every {@code resolveForSession} call and
- * evicts + rebuilds the client entry (which re-runs this resolver) when needed.
+ *
+ * <p>{@link ResolvedToken#isExpiringOrExpired()} returns {@code true} when fewer than 2 minutes
+ * remain before the expiry timestamp reported by the exec provider. {@link K8sClientPool} checks
+ * this on every {@code resolveForSession} call and evicts + rebuilds the client entry (which
+ * re-runs this resolver) when needed.
  */
 @Slf4j
 @Component
@@ -69,12 +72,11 @@ public class K8sExecTokenResolver {
     }
 
     /**
-     * Inspects the kubeconfig for an exec credential provider on the current context's
-     * user.  If found, executes the provider command on the SSH server and returns the
-     * resolved bearer token.
+     * Inspects the kubeconfig for an exec credential provider on the current context's user. If
+     * found, executes the provider command on the SSH server and returns the resolved bearer token.
      *
      * @param kubeconfigYaml raw kubeconfig YAML content read from the SSH server
-     * @param shell          live SSH exec channel to the remote host
+     * @param shell live SSH exec channel to the remote host
      * @return resolved token + expiry, or empty if no exec section was found
      */
     public Optional<ResolvedToken> resolve(String kubeconfigYaml, RemoteShell shell) {
@@ -100,12 +102,12 @@ public class K8sExecTokenResolver {
             if (output == null || output.isBlank()) {
                 // Most likely cause: the credential provider binary (e.g. 'aws') is not on
                 // the $PATH of the non-login SSH exec channel even though it works in an
-                // interactive session.  The command is wrapped in 'bash -l -c' to load the
+                // interactive session. The command is wrapped in 'bash -l -c' to load the
                 // user's profile — if still empty, check that 'bash' itself is on the
                 // server's default PATH (/bin/bash) and that the profile sets PATH correctly.
                 log.warn(
-                        "[k8s-exec] Credential provider returned empty output. "
-                                + "Verify that '{}' is on $PATH in a login shell on the SSH server.",
+                        "[k8s-exec] Credential provider returned empty output. Verify that '{}' is"
+                                + " on $PATH in a login shell on the SSH server.",
                         execSection.get("command"));
                 return Optional.empty();
             }
@@ -141,12 +143,12 @@ public class K8sExecTokenResolver {
     }
 
     /**
-     * Replaces the {@code exec} credential section of every user entry that has one
-     * with a static {@code token} field.  This prevents Fabric8 from attempting to run
-     * the exec command on the UniFT server.
+     * Replaces the {@code exec} credential section of every user entry that has one with a static
+     * {@code token} field. This prevents Fabric8 from attempting to run the exec command on the
+     * UniFT server.
      *
      * @param kubeconfigYaml original kubeconfig YAML
-     * @param token          bearer token obtained from the SSH server
+     * @param token bearer token obtained from the SSH server
      * @return patched YAML with {@code exec} replaced by {@code token}
      */
     @SuppressWarnings("unchecked")
@@ -233,14 +235,15 @@ public class K8sExecTokenResolver {
         // Wrap in bash -l -c '...' for login-shell PATH resolution.
         // Use '"'"' to escape inner single-quotes for the outer wrapper.
         // This avoids the double-escape corruption that '\'' would cause
-        // (backslash is literal inside single-quotes, corrupting nested '\'' sequences).
+        // (backslash is literal inside single-quotes, corrupting nested '\''
+        // sequences).
         String outerEscaped = inner.toString().replace("'", OUTER_QUOTE_ESCAPE);
         return "bash -l -c '" + outerEscaped + "' 2>/dev/null";
     }
 
     /**
-     * Finds the first {@code {…}} JSON object in the output string.
-     * Some exec providers write warning lines to stdout before the JSON.
+     * Finds the first {@code {…}} JSON object in the output string. Some exec providers write
+     * warning lines to stdout before the JSON.
      */
     private String extractJson(String output) {
         int start = output.indexOf('{');
@@ -256,14 +259,14 @@ public class K8sExecTokenResolver {
     }
 
     /**
-     * A resolved bearer token with an optional expiry timestamp reported by the exec
-     * credential provider.
+     * A resolved bearer token with an optional expiry timestamp reported by the exec credential
+     * provider.
      */
     public record ResolvedToken(String token, @Nullable Instant expiresAt) {
         /**
-         * Returns {@code true} when the token has already expired or will expire within
-         * the next {@value K8sExecTokenResolver#REFRESH_BUFFER_SECONDS} seconds.
-         * {@link K8sClientPool} uses this to trigger a proactive refresh.
+         * Returns {@code true} when the token has already expired or will expire within the next
+         * {@value K8sExecTokenResolver#REFRESH_BUFFER_SECONDS} seconds. {@link K8sClientPool} uses
+         * this to trigger a proactive refresh.
          */
         public boolean isExpiringOrExpired() {
             if (expiresAt == null) return false;

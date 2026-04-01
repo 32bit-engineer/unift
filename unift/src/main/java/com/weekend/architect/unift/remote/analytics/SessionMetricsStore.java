@@ -14,30 +14,29 @@ import org.springframework.stereotype.Component;
  * In-memory per-session bandwidth and activity store.
  *
  * <h6>Responsibilities</h6>
+ *
  * <ul>
- *   <li>Accumulate upload/download byte counters as transfers progress.</li>
- *   <li>Record the last API activity timestamp (used as a heartbeat proxy).</li>
- *   <li>Take a bandwidth sample every minute and maintain a rolling 60-entry
- *       history per session (last 60 minutes of Mbps data for traffic charts).</li>
+ *   <li>Accumulate upload/download byte counters as transfers progress.
+ *   <li>Record the last API activity timestamp (used as a heartbeat proxy).
+ *   <li>Take a bandwidth sample every minute and maintain a rolling 60-entry history per session
+ *       (last 60 minutes of Mbps data for traffic charts).
  * </ul>
  *
  * <h6>Backing store</h6>
- * <p>Uses an injected {@link MetricsCache} (Caffeine-backed by default, bounded to
- * 10,000 entries).  Entries are removed explicitly via {@link #removeSession} when a
- * session closes.  Swapping to Redis requires only changing {@link MetricsCache}'s
- * constructor — no code changes here.
  *
- * <p>{@code sampleWindowSecs} is derived from the injected
- * {@code unift.analytics.sample-interval-ms} value so the bps divisor always
- * matches the actual scheduler cadence.
+ * <p>Uses an injected {@link MetricsCache} (Caffeine-backed by default, bounded to 10,000 entries).
+ * Entries are removed explicitly via {@link #removeSession} when a session closes. Swapping to
+ * Redis requires only changing {@link MetricsCache}'s constructor — no code changes here.
+ *
+ * <p>{@code sampleWindowSecs} is derived from the injected {@code
+ * unift.analytics.sample-interval-ms} value so the bps divisor always matches the actual scheduler
+ * cadence.
  */
 @Slf4j
 @Component
 public class SessionMetricsStore {
 
-    /**
-     * Seconds per sample window — derived from the configured scheduler interval.
-     */
+    /** Seconds per sample window — derived from the configured scheduler interval. */
     private final long sampleWindowSecs;
 
     private final MetricsCache store;
@@ -105,8 +104,8 @@ public class SessionMetricsStore {
     }
 
     /**
-     * Returns a snapshot of the rolling traffic history (newest last).
-     * Returns an empty list if no samples have been taken yet.
+     * Returns a snapshot of the rolling traffic history (newest last). Returns an empty list if no
+     * samples have been taken yet.
      */
     public List<TrafficDataPoint> getTrafficHistory(String sessionId) {
         SessionMetrics m = store.getIfPresent(sessionId);
@@ -115,9 +114,9 @@ public class SessionMetricsStore {
     }
 
     /**
-     * Runs every {@code unift.analytics.sample-interval-ms} (default: 60 s).
-     * For each tracked session, computes the byte delta since the last snapshot
-     * and appends a {@link TrafficDataPoint} to the rolling deque.
+     * Runs every {@code unift.analytics.sample-interval-ms} (default: 60 s). For each tracked
+     * session, computes the byte delta since the last snapshot and appends a {@link
+     * TrafficDataPoint} to the rolling deque.
      *
      * <p>The bps divisor uses {@link #sampleWindowSecs} (C1 fix — was hardcoded to 60).
      */

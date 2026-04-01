@@ -24,13 +24,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Per-IP rate-limiting filter backed by Caffeine caches.
  *
- * <p>A separate Caffeine cache is created per configured rule, keyed
- * by {@code clientIP + ":" + rulePath}. Each entry is an {@link AtomicInteger}
- * counter that expires after the rule's window duration. Requests that exceed
- * the limit receive HTTP 429 with standard {@code X-RateLimit-*} headers.
+ * <p>A separate Caffeine cache is created per configured rule, keyed by {@code clientIP + ":" +
+ * rulePath}. Each entry is an {@link AtomicInteger} counter that expires after the rule's window
+ * duration. Requests that exceed the limit receive HTTP 429 with standard {@code X-RateLimit-*}
+ * headers.
  *
- * <p>The filter runs before Spring Security's authentication filter so that
- * brute-force login attempts are blocked early, before any JWT/database work.
+ * <p>The filter runs before Spring Security's authentication filter so that brute-force login
+ * attempts are blocked early, before any JWT/database work.
  */
 @Slf4j
 @Component
@@ -41,7 +41,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     // One Caffeine cache per unique windowSeconds value to ensure entries
-    // expire at the correct rate. Key: windowSeconds -> Cache<compositeKey, counter>.
+    // expire at the correct rate. Key: windowSeconds -> Cache<compositeKey,
+    // counter>.
     private final ConcurrentHashMap<Integer, Cache<String, AtomicInteger>> cachesByWindow = new ConcurrentHashMap<>();
 
     public RateLimitFilter(RateLimitProperties properties, ObjectMapper objectMapper) {
@@ -73,8 +74,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String clientIp = resolveClientIp(request);
         String cacheKey = clientIp + ":" + matchedRule.getPath();
 
-        Cache<String, AtomicInteger> windowCache =
-                cachesByWindow.computeIfAbsent(matchedRule.getWindowSeconds(), secs -> Caffeine.newBuilder()
+        Cache<String, AtomicInteger> windowCache = cachesByWindow.computeIfAbsent(
+                matchedRule.getWindowSeconds(),
+                secs -> Caffeine.newBuilder()
                         .expireAfterWrite(Duration.ofSeconds(secs))
                         .maximumSize(50_000)
                         .build());
@@ -109,8 +111,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Resolves the client IP, respecting {@code X-Forwarded-For} when behind
-     * a reverse proxy. Uses the leftmost (original client) address.
+     * Resolves the client IP, respecting {@code X-Forwarded-For} when behind a reverse proxy. Uses
+     * the leftmost (original client) address.
      */
     private String resolveClientIp(HttpServletRequest request) {
         String xff = request.getHeader("X-Forwarded-For");
@@ -126,10 +128,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setHeader("Retry-After", String.valueOf(windowSeconds));
 
         Map<String, Object> body = Map.of(
-                "status", HttpStatus.TOO_MANY_REQUESTS.value(),
-                "error", HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(),
-                "message", "Too many requests. Please try again later.",
-                "timestamp", OffsetDateTime.now().toString());
+                "status",
+                HttpStatus.TOO_MANY_REQUESTS.value(),
+                "error",
+                HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(),
+                "message",
+                "Too many requests. Please try again later.",
+                "timestamp",
+                OffsetDateTime.now().toString());
 
         objectMapper.writeValue(response.getOutputStream(), body);
     }

@@ -23,11 +23,11 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 /**
  * Interceptor that validates the JWT token during the WebSocket handshake.
  *
- * <p>Browser WebSocket clients cannot set custom headers (e.g. {@code Authorization}) during
- * the upgrade request. The token is therefore passed as a WebSocket subprotocol value in the
- * {@code Sec-WebSocket-Protocol} header using the format {@code Bearer.<jwtToken>}.
- * {@link BearerProtocolHandshakeHandler} ensures the server echoes the protocol back so browsers
- * do not reject the upgrade response.
+ * <p>Browser WebSocket clients cannot set custom headers (e.g. {@code Authorization}) during the
+ * upgrade request. The token is therefore passed as a WebSocket subprotocol value in the {@code
+ * Sec-WebSocket-Protocol} header using the format {@code Bearer.<jwtToken>}. {@link
+ * BearerProtocolHandshakeHandler} ensures the server echoes the protocol back so browsers do not
+ * reject the upgrade response.
  */
 @Slf4j
 @Component
@@ -46,11 +46,12 @@ public class TerminalHandshakeInterceptor implements HandshakeInterceptor {
 
         if (request instanceof ServletServerHttpRequest) {
             // Extract the JWT from the Sec-WebSocket-Protocol header.
-            // The client sends it as "Bearer.<token>"; we strip the prefix to get the raw JWT.
+            // The client sends it as "Bearer.<token>"; we strip the prefix to get the raw
+            // JWT.
             String token = extractBearerToken(request.getHeaders());
 
             if (token == null) {
-                log.warn("[ws-handshake] Missing or malformed Bearer token in Sec-WebSocket-Protocol header");
+                log.warn("[ws-handshake] Missing or malformed Bearer token in Sec-WebSocket-Protocol" + " header");
                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
                 return false;
             }
@@ -90,7 +91,8 @@ public class TerminalHandshakeInterceptor implements HandshakeInterceptor {
         // No-op
     }
 
-    // Extracts the raw JWT from a "Bearer.<token>" value inside Sec-WebSocket-Protocol.
+    // Extracts the raw JWT from a "Bearer.<token>" value inside
+    // Sec-WebSocket-Protocol.
     private static String extractBearerToken(HttpHeaders headers) {
         List<String> protocols = headers.get("Sec-WebSocket-Protocol");
         if (protocols == null) {

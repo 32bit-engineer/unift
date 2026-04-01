@@ -1,0 +1,220 @@
+package com.weekend.architect.unift.integration.history;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.weekend.architect.unift.integration.config.IntegrationTestBase;
+import com.weekend.architect.unift.integration.support.TestAuthHelper;
+import com.weekend.architect.unift.integration.support.TestAuthHelper.AuthTokens;
+import com.weekend.architect.unift.integration.support.TestDataFactory;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * Integration tests for {@code /api/transfers/history/**}.
+ *
+ * <p>Because transfer-log rows are normally written as a side-effect of completed SFTP transfers,
+ * this test class uses {@link TestDataFactory} to inject rows directly, keeping each test focused
+ * on the query/response contract without requiring a live SSH session.
+ */
+@DisplayName("Transfer History API")
+class TransferHistoryApiIT extends IntegrationTestBase {
+
+    private static final String HISTORY = "/api/transfers/history";
+    private static final String PASSWORD = "P@ssw0rd!";
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private TestAuthHelper auth;
+    private TestDataFactory dataFactory;
+
+    @BeforeEach
+    void setUp() {
+        auth = new TestAuthHelper(mockMvc, objectMapper);
+        dataFactory = new TestDataFactory(jdbcTemplate);
+    }
+
+    @Test
+    @DisplayName("GET /history → 200 with empty list when user has no transfer records")
+    void listHistory_empty() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(HISTORY).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("GET /history → 200 returns only the requesting user's entries")
+    void listHistory_returnsOnlyOwnedEntries() throws Exception {
+        AuthTokens userA = auth.register(auth.uniqueUsername(), PASSWORD);
+        AuthTokens userB = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        UUID userAId = extractUserId(userA);
+        UUID userBId = extractUserId(userB);
+
+        dataFactory.insertTransferLog(userAId, "file-a1.txt", "COMPLETED");
+        dataFactory.insertTransferLog(userAId, "file-a2.txt", "FAILED");
+        dataFactory.insertTransferLog(userBId, "file-b1.txt", "COMPLETED");
+
+        mockMvc.perform(get(HISTORY).header(HttpHeaders.AUTHORIZATION, userA.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+
+        mockMvc.perform(get(HISTORY).header(HttpHeaders.AUTHORIZATION, userB.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("GET /history?page=0&size=1 → 200 returns only one entry per page")
+    void listHistory_pagination() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UUID userId = extractUserId(tokens);
+
+        dataFactory.insertTransferLog(userId, "page-file-1.txt", "COMPLETED");
+        dataFactory.insertTransferLog(userId, "page-file-2.txt", "COMPLETED");
+
+        mockMvc.perform(get(HISTORY)
+                        .param("page", "0")
+                        .param("size", "1")
+                        .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("GET /history?size=101 → 400 when page size exceeds maximum (100)")
+    void listHistory_sizeExceedsMax() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(HISTORY).param("size", "101").header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("GET /history → 401 when no JWT is provided")
+    void listHistory_unauthenticated() throws Exception {
+        mockMvc.perform(get(HISTORY)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /history/stats → 200 with zero counts when user has no records")
+    void getStats_empty() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(HISTORY + "/stats").header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalTransfers").value(0))
+                .andExpect(jsonPath("$.completedTransfers").value(0))
+                .andExpect(jsonPath("$.failedTransfers").value(0));
+    }
+
+    @Test
+    @DisplayName("GET /history/stats → 200 with correct aggregate counts")
+    void getStats_withEntries() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UUID userId = extractUserId(tokens);
+
+        dataFactory.insertTransferLogFull(userId, "big.bin", "COMPLETED", 1_000_000L, 50_000L, 20_000L, null);
+        dataFactory.insertTransferLog(userId, "fail.txt", "FAILED");
+        dataFactory.insertTransferLog(userId, "cancel.zip", "CANCELLED");
+
+        mockMvc.perform(get(HISTORY + "/stats").header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalTransfers").value(3))
+                .andExpect(jsonPath("$.completedTransfers").value(1))
+                .andExpect(jsonPath("$.failedTransfers").value(1))
+                .andExpect(jsonPath("$.cancelledTransfers").value(1));
+    }
+
+    @Test
+    @DisplayName("GET /history/{id} → 200 with entry details when entry belongs to user")
+    void getEntry_found() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UUID userId = extractUserId(tokens);
+        UUID entryId = dataFactory.insertTransferLog(userId, "found.txt", "COMPLETED");
+
+        mockMvc.perform(get(HISTORY + "/" + entryId).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(entryId.toString()))
+                .andExpect(jsonPath("$.filename").value("found.txt"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
+    @DisplayName("GET /history/{id} → 400 when entry does not exist")
+    void getEntry_notFound() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(HISTORY + "/" + UUID.randomUUID()).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("GET /history/{id} → 400 when entry belongs to a different user")
+    void getEntry_crossUserAccess() throws Exception {
+        AuthTokens userA = auth.register(auth.uniqueUsername(), PASSWORD);
+        AuthTokens userB = auth.register(auth.uniqueUsername(), PASSWORD);
+        UUID userAId = extractUserId(userA);
+
+        UUID entryId = dataFactory.insertTransferLog(userAId, "private.txt", "COMPLETED");
+
+        mockMvc.perform(get(HISTORY + "/" + entryId).header(HttpHeaders.AUTHORIZATION, userB.bearer()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("DELETE /history/{id} → 204 when entry is successfully deleted")
+    void deleteEntry_success() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+        UUID userId = extractUserId(tokens);
+        UUID entryId = dataFactory.insertTransferLog(userId, "delete-me.txt", "COMPLETED");
+
+        mockMvc.perform(delete(HISTORY + "/" + entryId).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isNoContent());
+
+        // Confirm it is gone
+        mockMvc.perform(get(HISTORY + "/" + entryId).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("DELETE /history/{id} → 400 when entry does not exist")
+    void deleteEntry_notFound() throws Exception {
+        AuthTokens tokens = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(delete(HISTORY + "/" + UUID.randomUUID()).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("DELETE /history/{id} → 401 when no JWT is provided")
+    void deleteEntry_unauthenticated() throws Exception {
+        mockMvc.perform(delete(HISTORY + "/" + UUID.randomUUID())).andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * Decodes the JWT payload to retrieve the username (subject claim), then queries the database
+     * to resolve the corresponding user UUID.
+     *
+     * <p>The JWT {@code sub} field is the username, not the UUID.
+     */
+    private UUID extractUserId(AuthTokens tokens) throws Exception {
+        String jwt = tokens.accessToken();
+        String payload = jwt.split("\\.")[1];
+        int padding = (4 - payload.length() % 4) % 4;
+        String decoded = new String(java.util.Base64.getUrlDecoder().decode(payload + "=".repeat(padding)));
+        String username = objectMapper.readTree(decoded).get("sub").asText();
+        return jdbcTemplate.queryForObject("SELECT id FROM users WHERE username = ?", UUID.class, username);
+    }
+}

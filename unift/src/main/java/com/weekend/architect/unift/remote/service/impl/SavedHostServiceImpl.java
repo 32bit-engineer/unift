@@ -25,13 +25,14 @@ import org.springframework.stereotype.Service;
  * Protocol-agnostic implementation of {@link SavedHostService}.
  *
  * <p>Credential validation and {@link ConnectRequest} assembly are fully delegated to
- * protocol-specific strategy beans ({@link CredentialValidator} /
- * {@link ConnectRequestAssembler}).  Adding support for a new protocol (e.g. FTP, S3)
- * requires only:
+ * protocol-specific strategy beans ({@link CredentialValidator} / {@link ConnectRequestAssembler}).
+ * Adding support for a new protocol (e.g. FTP, S3) requires only:
+ *
  * <ol>
- *   <li>A new {@link CredentialValidator} implementation annotated with {@code @Component}.</li>
- *   <li>A new {@link ConnectRequestAssembler} implementation annotated with {@code @Component}.</li>
+ *   <li>A new {@link CredentialValidator} implementation annotated with {@code @Component}.
+ *   <li>A new {@link ConnectRequestAssembler} implementation annotated with {@code @Component}.
  * </ol>
+ *
  * No changes to this class are needed (Open/Closed Principle).
  */
 @Slf4j
@@ -105,7 +106,8 @@ public class SavedHostServiceImpl implements SavedHostService {
     public ConnectResponse connect(UUID ownerId, UUID hostId) {
         SavedHost host = requireOwned(ownerId, hostId);
 
-        // Decrypt credentials on the fly — plaintext exists only for this call's duration
+        // Decrypt credentials on the fly — plaintext exists only for this call's
+        // duration
         ConnectRequest connectReq = findAssembler(host.getProtocol())
                 .assemble(
                         host,
@@ -168,9 +170,9 @@ public class SavedHostServiceImpl implements SavedHostService {
     }
 
     /**
-     * Loads the saved host and verifies ownership in one step.
-     * Throws {@link SavedHostNotFoundException} if not found OR owned by a different user,
-     * deliberately indistinguishable to avoid information leakage.
+     * Loads the saved host and verifies ownership in one step. Throws {@link
+     * SavedHostNotFoundException} if not found OR owned by a different user, deliberately
+     * indistinguishable to avoid information leakage.
      */
     private SavedHost requireOwned(UUID ownerId, UUID hostId) {
         return hostRepo.findById(hostId)

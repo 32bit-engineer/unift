@@ -5,9 +5,9 @@ import java.util.UUID;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Service interface for Docker container management via SSH tunnel.
- * All operations execute Docker Engine API calls on the remote host
- * through an SSH-tunnelled connection to the Docker daemon socket.
+ * Service interface for Docker container management via SSH tunnel. All operations execute Docker
+ * Engine API calls on the remote host through an SSH-tunnelled connection to the Docker daemon
+ * socket.
  */
 public interface DockerService {
 
@@ -81,8 +81,7 @@ public interface DockerService {
 
     DockerModels.ContainerActionResult removeImage(String sessionId, UUID userId, String imageId, boolean force);
 
-    DockerModels.ContainerActionResult tagImage(
-            String sessionId, UUID userId, String imageId, String repo, String tag);
+    DockerModels.ContainerActionResult tagImage(String sessionId, UUID userId, String imageId, String repo, String tag);
 
     /** Removes all dangling images. */
     void pruneImages(String sessionId, UUID userId);

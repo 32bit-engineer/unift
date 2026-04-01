@@ -12,11 +12,10 @@ import lombok.NoArgsConstructor;
 /**
  * Persistent state for a resumable chunked-upload session.
  *
- * <p>Maps 1-to-1 to the {@code upload_sessions} table. The
- * {@code receivedChunks} field is backed by a PostgreSQL {@code INT[]} column
- * and tracks the (0-based) indices of every chunk that has been acknowledged.
- * When {@code receivedChunks.size() == totalChunks} the session transitions
- * to {@link UploadSessionStatus#COMPLETED} atomically in the DB.
+ * <p>Maps 1-to-1 to the {@code upload_sessions} table. The {@code receivedChunks} field is backed
+ * by a PostgreSQL {@code INT[]} column and tracks the (0-based) indices of every chunk that has
+ * been acknowledged. When {@code receivedChunks.size() == totalChunks} the session transitions to
+ * {@link UploadSessionStatus#COMPLETED} atomically in the DB.
  */
 @Data
 @Builder
@@ -40,8 +39,8 @@ public class UploadSession {
     private int totalChunks;
 
     /**
-     * Sorted list of 0-based chunk indices that have been acknowledged.
-     * Stored as {@code INT[]} in PostgreSQL.
+     * Sorted list of 0-based chunk indices that have been acknowledged. Stored as {@code INT[]} in
+     * PostgreSQL.
      */
     private List<Integer> receivedChunks;
 

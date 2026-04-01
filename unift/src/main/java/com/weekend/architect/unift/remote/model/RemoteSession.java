@@ -14,19 +14,19 @@ import lombok.Data;
 /**
  * Mutable session envelope that tracks the lifecycle of one remote connection.
  *
- * <p>This is NOT stored in any database – it lives in the in-memory
- * {@code SessionRegistry} and is discarded when the session closes or expires.
+ * <p>This is NOT stored in any database – it lives in the in-memory {@code SessionRegistry} and is
+ * discarded when the session closes or expires.
  *
  * <h6>Thread-safety</h6>
+ *
  * <ul>
- *   <li>{@code state} is {@code volatile}: the {@code SessionReaper} thread and request
- *       threads can read/write it without locking.</li>
- *   <li>{@code expiresAt} is an {@link AtomicReference}: {@link #renewTtl()} calls
- *       {@code atomicExpiresAt.set(now + ttlMinutes)} which does <em>not</em> read the
- *       existing value before writing, so there is no read-compute-write race.
- *       Two concurrent {@code renewTtl()} calls both compute {@code now + ttlMinutes}
- *       independently and the last write wins — both are valid future timestamps,
- *       making this safe without CAS or locking (L1 resolved).</li>
+ *   <li>{@code state} is {@code volatile}: the {@code SessionReaper} thread and request threads can
+ *       read/write it without locking.
+ *   <li>{@code expiresAt} is an {@link AtomicReference}: {@link #renewTtl()} calls {@code
+ *       atomicExpiresAt.set(now + ttlMinutes)} which does <em>not</em> read the existing value
+ *       before writing, so there is no read-compute-write race. Two concurrent {@code renewTtl()}
+ *       calls both compute {@code now + ttlMinutes} independently and the last write wins — both
+ *       are valid future timestamps, making this safe without CAS or locking (L1 resolved).
  * </ul>
  */
 @Data
@@ -40,8 +40,8 @@ public class RemoteSession {
     private final UUID ownerId;
 
     /**
-     * The saved-host entry that was used to open this session, or {@code null}
-     * when the session was created via a direct (ad-hoc) connect call.
+     * The saved-host entry that was used to open this session, or {@code null} when the session was
+     * created via a direct (ad-hoc) connect call.
      */
     private final UUID savedHostId;
 
@@ -66,15 +66,14 @@ public class RemoteSession {
     private AtomicReference<OffsetDateTime> atomicExpiresAt;
 
     /**
-     * OS or service name detected after a successful connect, e.g.
-     * "Ubuntu 22.04.3 LTS", "Debian GNU/Linux 12", "Amazon S3".
-     * {@code null} until detection completes.
+     * OS or service name detected after a successful connect, e.g. "Ubuntu 22.04.3 LTS", "Debian
+     * GNU/Linux 12", "Amazon S3". {@code null} until detection completes.
      */
     private volatile String remoteOs;
 
     /**
-     * The set of workspace types currently active for this session.
-     * Always contains "ssh" as the base workspace. Thread-safe via ConcurrentHashMap.
+     * The set of workspace types currently active for this session. Always contains "ssh" as the
+     * base workspace. Thread-safe via ConcurrentHashMap.
      */
     @Builder.Default
     private final Set<String> activeWorkspaces = ConcurrentHashMap.newKeySet();
@@ -94,24 +93,23 @@ public class RemoteSession {
      */
     public void activateWorkspace(String type) {
         if (!VALID_WORKSPACE_TYPES.contains(type)) {
-            throw new IllegalArgumentException("Invalid workspace type: " + type
-                    + ". Valid types: " + VALID_WORKSPACE_TYPES);
+            throw new IllegalArgumentException(
+                    "Invalid workspace type: " + type + ". Valid types: " + VALID_WORKSPACE_TYPES);
         }
         activeWorkspaces.add(type);
     }
 
     /**
-     * Deactivates a workspace type for this session.
-     * The "ssh" workspace cannot be deactivated.
+     * Deactivates a workspace type for this session. The "ssh" workspace cannot be deactivated.
      *
      * @param type the workspace type to deactivate
      * @throws IllegalArgumentException if the type is not valid
-     * @throws IllegalStateException    if attempting to deactivate "ssh"
+     * @throws IllegalStateException if attempting to deactivate "ssh"
      */
     public void deactivateWorkspace(String type) {
         if (!VALID_WORKSPACE_TYPES.contains(type)) {
-            throw new IllegalArgumentException("Invalid workspace type: " + type
-                    + ". Valid types: " + VALID_WORKSPACE_TYPES);
+            throw new IllegalArgumentException(
+                    "Invalid workspace type: " + type + ". Valid types: " + VALID_WORKSPACE_TYPES);
         }
         if ("ssh".equals(type)) {
             throw new IllegalStateException("Cannot deactivate the base SSH workspace");
@@ -133,17 +131,15 @@ public class RemoteSession {
         return this.atomicExpiresAt.get();
     }
 
-    /**
-     * Returns {@code true} if the session's TTL has elapsed.
-     */
+    /** Returns {@code true} if the session's TTL has elapsed. */
     public boolean isExpired() {
         OffsetDateTime exp = atomicExpiresAt.get();
         return exp != null && OffsetDateTime.now().isAfter(exp);
     }
 
     /**
-     * Extends {@code expiresAt} by the original {@code ttlMinutes} from now.
-     * Called on every activity when sliding-TTL is enabled.
+     * Extends {@code expiresAt} by the original {@code ttlMinutes} from now. Called on every
+     * activity when sliding-TTL is enabled.
      */
     public void renewTtl() {
         if (!slidingTtl) return;

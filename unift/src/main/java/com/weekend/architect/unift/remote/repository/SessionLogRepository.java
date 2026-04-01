@@ -11,12 +11,12 @@ import org.springframework.stereotype.Repository;
 /**
  * Persists a lightweight audit log of every remote session opened by UniFT users.
  *
- * <p>Unlike the in-memory {@code SessionRegistry}, rows in {@code session_log} survive
- * server restarts and session expiry, giving users (and admins) a history of connections
- * including the detected remote OS and connection labels.
+ * <p>Unlike the in-memory {@code SessionRegistry}, rows in {@code session_log} survive server
+ * restarts and session expiry, giving users (and admins) a history of connections including the
+ * detected remote OS and connection labels.
  *
- * <p>All writes are best-effort — callers should catch and log any {@link Exception}
- * rather than rolling back the originating operation.
+ * <p>All writes are best-effort — callers should catch and log any {@link Exception} rather than
+ * rolling back the originating operation.
  */
 @Slf4j
 @Repository
@@ -28,14 +28,13 @@ public class SessionLogRepository {
     private final NamedParameterJdbcTemplate jdbc;
 
     /**
-     * Inserts a new session-log row.  Called once immediately after a session
-     * is successfully established (and the OS has been detected).
+     * Inserts a new session-log row. Called once immediately after a session is successfully
+     * established (and the OS has been detected).
      *
      * @param session the fully-connected session (with {@code remoteOs} already set)
      */
     public void save(RemoteSession session) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO session_log (
                     id, user_id, label, protocol, host, port, username, remote_os, created_at
                 ) VALUES (
@@ -51,8 +50,8 @@ public class SessionLogRepository {
     }
 
     /**
-     * Stamps {@code closed_at = NOW()} when a session is explicitly closed by the user
-     * or reaped by the TTL reaper.
+     * Stamps {@code closed_at = NOW()} when a session is explicitly closed by the user or reaped by
+     * the TTL reaper.
      *
      * @param sessionId the session ID (UUID v7 string)
      */

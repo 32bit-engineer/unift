@@ -13,10 +13,12 @@
  *   - SavedHostsRoute: reads savedHosts from connectionStore
  *   - TransferHistoryRoute: reads session IDs from connectionStore
  */
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useConnectionStore } from '@/store/connectionStore';
 import type { UISession } from '@/store/connectionStore';
+import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import { DashboardPage } from './DashboardPage';
 import { RemoteHostsManagerPage } from './RemoteHostsManagerPage';
 import { ConnectionHubPage } from './ConnectionHubPage';
@@ -43,10 +45,23 @@ function toUIHost(s: UISession): UIHost {
   };
 }
 
+function toDashboardHost(s: UISession): UIHost {
+  return {
+    sessionId: s.sessionId,
+    name: s.name,
+    status: s.status,
+    userAtIp: `${s.username}@${s.host}`,
+    protocol: s.protocol,
+    port: s.port,
+    lastConnected: s.createdAt,
+    latency: 0,
+  };
+}
+
 export function DashboardRoute() {
   const navigate = useNavigate();
   const sessions = useConnectionStore(s => s.sessions);
-  const uiHosts = useMemo(() => sessions.map(toUIHost), [sessions]);
+  const uiHosts = useMemo(() => sessions.map(toDashboardHost), [sessions]);
 
   return (
     <DashboardPage
@@ -59,13 +74,62 @@ export function DashboardRoute() {
   );
 }
 
+function K8sRouteGuard({ sessionId, children }: { sessionId: string; children: ReactNode }) {
+  const navigate = useNavigate();
+  const updateSessionCapabilities = useConnectionStore(s => s.updateSessionCapabilities);
+  const setWorkspaceType = useConnectionStore(s => s.setWorkspaceType);
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifyAvailability = async () => {
+      try {
+        const { available } = await remoteConnectionAPI.checkKubectlAvailable(sessionId);
+        if (cancelled) return;
+
+        if (!available) {
+          updateSessionCapabilities(sessionId, { kubernetes: false });
+          setWorkspaceType(sessionId, 'ssh');
+          navigate(`/workspace/${sessionId}`, { replace: true });
+          return;
+        }
+
+        updateSessionCapabilities(sessionId, { kubernetes: true });
+        setIsReady(true);
+      } catch {
+        if (cancelled) return;
+        updateSessionCapabilities(sessionId, { kubernetes: false });
+        setWorkspaceType(sessionId, 'ssh');
+        navigate(`/workspace/${sessionId}`, { replace: true });
+      }
+    };
+
+    verifyAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, navigate, setWorkspaceType, updateSessionCapabilities]);
+
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center h-full text-xs font-medium text-slate-400">
+        Checking Kubernetes availability...
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 export function SessionsRoute() {
   const sessions = useConnectionStore(s => s.sessions);
   const fetchSessions = useConnectionStore(s => s.fetchSessions);
   const fetchSavedHosts = useConnectionStore(s => s.fetchSavedHosts);
   const uiHosts = useMemo(() => sessions.map(toUIHost), [sessions]);
 
-  const handleSessionsChange = useCallback((_hosts: UIHost[]) => {
+  const handleSessionsChange = useCallback(() => {
     // Trigger a fresh fetch from server to sync store
     fetchSessions();
   }, [fetchSessions]);
@@ -346,7 +410,11 @@ export function K8sDashboardRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sDashboardPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sDashboardPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sPodsRoute() {
@@ -363,7 +431,11 @@ export function K8sPodsRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sPodsPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sPodsPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sDeploymentsRoute() {
@@ -380,7 +452,11 @@ export function K8sDeploymentsRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sDeploymentsPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sDeploymentsPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sServicesRoute() {
@@ -397,7 +473,11 @@ export function K8sServicesRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sServicesPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sServicesPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sNodesRoute() {
@@ -414,7 +494,11 @@ export function K8sNodesRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sNodesPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sNodesPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sIngressesRoute() {
@@ -431,7 +515,11 @@ export function K8sIngressesRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sIngressPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sIngressPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sStatefulSetsRoute() {
@@ -448,7 +536,11 @@ export function K8sStatefulSetsRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sStatefulSetsPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sStatefulSetsPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sDaemonSetsRoute() {
@@ -465,7 +557,11 @@ export function K8sDaemonSetsRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sDaemonSetsPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sDaemonSetsPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function K8sConfigMapsRoute() {
@@ -482,7 +578,11 @@ export function K8sConfigMapsRoute() {
   }, [sessionId, navigate, setActiveWorkspace]);
 
   if (!sessionId) return null;
-  return <K8sConfigMapsPage sessionId={sessionId} />;
+  return (
+    <K8sRouteGuard sessionId={sessionId}>
+      <K8sConfigMapsPage sessionId={sessionId} />
+    </K8sRouteGuard>
+  );
 }
 
 export function SshMonitoringRoute() {

@@ -7,10 +7,9 @@ import lombok.RequiredArgsConstructor;
 /**
  * Sealed base class for all remote-connection credential types.
  *
- * <p>The sealed hierarchy enables exhaustive {@code switch} expressions
- * (Java 17+) in the {@code ConnectionFactory}, eliminating the need for
- * {@code instanceof} chains and ensuring compile-time coverage of every
- * protocol variant.
+ * <p>The sealed hierarchy enables exhaustive {@code switch} expressions (Java 17+) in the {@code
+ * ConnectionFactory}, eliminating the need for {@code instanceof} chains and ensuring compile-time
+ * coverage of every protocol variant.
  *
  * <pre>
  * RemoteCredentials (sealed)

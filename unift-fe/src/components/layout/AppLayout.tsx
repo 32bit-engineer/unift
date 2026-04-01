@@ -12,6 +12,22 @@ import { TransferProgressPopup } from '@/components/ui';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { WorkspaceType } from '@/utils/remoteConnectionAPI';
 
+const WORKSPACE_LABELS: Record<WorkspaceType, string> = {
+  ssh: 'SSH Workspace',
+  docker: 'Docker Workspace',
+  kubernetes: 'Kubernetes Workspace',
+};
+
+const BREADCRUMB_MAP: Record<string, { parts: string[]; }> = {
+  '/': { parts: ['Home', 'Dashboard'] },
+  '/sessions': { parts: ['Home', 'Sessions'] },
+  '/infrastructure': { parts: ['Home', 'Infrastructure'] },
+  '/saved-hosts': { parts: ['Home', 'Saved Hosts'] },
+  '/transfers/active': { parts: ['Home', 'Transfers', 'Active'] },
+  '/transfers/log': { parts: ['Home', 'Transfers', 'Log'] },
+  '/transfers/uploads': { parts: ['Home', 'Transfers', 'Uploads'] },
+};
+
 /**
  * AppLayout wraps the authenticated application shell.
  * Renders the correct dedicated sidebar based on the active workspace type:
@@ -79,44 +95,93 @@ export function AppLayout() {
     if (!workspaceSessionId || !workspaceSession) return;
     if (workspaceSession.capabilitiesDetected) return;
 
+    let cancelled = false;
+
     // If the URL already points to a specific workspace type, the user reached here
     // through a prior detection choice (or via KineticWorkspacePage.DockerModal which
     // navigates directly without calling handleDetectionComplete). Trust the URL,
     // restore store state, and dismiss any stale detection modal — prevents the modal
     // from re-appearing on top of the Docker/K8s dashboard.
-    if (activeWorkspaceType === 'docker') {
-      updateSessionCapabilities(workspaceSessionId, { docker: true });
-      markCapabilitiesDetected(workspaceSessionId);
-      setWorkspaceType(workspaceSessionId, 'docker');
-      if (showDetectionModal) setShowDetectionModal(null);
-      return;
-    }
-    if (activeWorkspaceType === 'kubernetes') {
-      updateSessionCapabilities(workspaceSessionId, { kubernetes: true });
-      markCapabilitiesDetected(workspaceSessionId);
-      setWorkspaceType(workspaceSessionId, 'kubernetes');
-      if (showDetectionModal) setShowDetectionModal(null);
-      return;
-    }
+    const restoreWorkspaceState = async () => {
+      if (activeWorkspaceType === 'docker') {
+        try {
+          const { available } = await remoteConnectionAPI.checkDockerAvailable(workspaceSessionId);
+          if (cancelled) return;
+          if (!available) {
+            updateSessionCapabilities(workspaceSessionId, { docker: false });
+            setWorkspaceType(workspaceSessionId, 'ssh');
+            if (showDetectionModal) setShowDetectionModal(null);
+            navigate(`/workspace/${workspaceSessionId}`, { replace: true });
+            return;
+          }
 
-    // For SSH workspace routes, don't re-open the modal if it is already showing.
-    if (showDetectionModal) return;
-    const savedHost = savedHostConfigs.find(h => h.activeSessionId === workspaceSessionId);
-    if (savedHost?.workspacePreference && savedHost.workspacePreference !== 'ssh') {
-      const pref = savedHost.workspacePreference;
-      markCapabilitiesDetected(workspaceSessionId);
-      setWorkspaceType(workspaceSessionId, pref);
-      const wsBase = `/workspace/${workspaceSessionId}`;
-      if (pref === 'docker') {
-        navigate(`${wsBase}/docker`);
-      } else if (pref === 'kubernetes') {
-        navigate(`${wsBase}/k8s`);
+          updateSessionCapabilities(workspaceSessionId, { docker: true });
+          markCapabilitiesDetected(workspaceSessionId);
+          setWorkspaceType(workspaceSessionId, 'docker');
+          if (showDetectionModal) setShowDetectionModal(null);
+          return;
+        } catch {
+          if (cancelled) return;
+          updateSessionCapabilities(workspaceSessionId, { docker: false });
+          setWorkspaceType(workspaceSessionId, 'ssh');
+          if (showDetectionModal) setShowDetectionModal(null);
+          navigate(`/workspace/${workspaceSessionId}`, { replace: true });
+          return;
+        }
       }
-      return;
-    }
 
-    // Show detection modal for new sessions
-    setShowDetectionModal(workspaceSessionId);
+      if (activeWorkspaceType === 'kubernetes') {
+        try {
+          const { available } = await remoteConnectionAPI.checkKubectlAvailable(workspaceSessionId);
+          if (cancelled) return;
+          if (!available) {
+            updateSessionCapabilities(workspaceSessionId, { kubernetes: false });
+            setWorkspaceType(workspaceSessionId, 'ssh');
+            if (showDetectionModal) setShowDetectionModal(null);
+            navigate(`/workspace/${workspaceSessionId}`, { replace: true });
+            return;
+          }
+
+          updateSessionCapabilities(workspaceSessionId, { kubernetes: true });
+          markCapabilitiesDetected(workspaceSessionId);
+          setWorkspaceType(workspaceSessionId, 'kubernetes');
+          if (showDetectionModal) setShowDetectionModal(null);
+          return;
+        } catch {
+          if (cancelled) return;
+          updateSessionCapabilities(workspaceSessionId, { kubernetes: false });
+          setWorkspaceType(workspaceSessionId, 'ssh');
+          if (showDetectionModal) setShowDetectionModal(null);
+          navigate(`/workspace/${workspaceSessionId}`, { replace: true });
+          return;
+        }
+      }
+
+      // For SSH workspace routes, don't re-open the modal if it is already showing.
+      if (showDetectionModal) return;
+      const savedHost = savedHostConfigs.find(h => h.activeSessionId === workspaceSessionId);
+      if (savedHost?.workspacePreference && savedHost.workspacePreference !== 'ssh') {
+        const pref = savedHost.workspacePreference;
+        markCapabilitiesDetected(workspaceSessionId);
+        setWorkspaceType(workspaceSessionId, pref);
+        const wsBase = `/workspace/${workspaceSessionId}`;
+        if (pref === 'docker') {
+          navigate(`${wsBase}/docker`);
+        } else if (pref === 'kubernetes') {
+          navigate(`${wsBase}/k8s`);
+        }
+        return;
+      }
+
+      // Show detection modal for new sessions
+      setShowDetectionModal(workspaceSessionId);
+    };
+
+    restoreWorkspaceState();
+
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceSessionId, workspaceSession, activeWorkspaceType, savedHostConfigs, showDetectionModal, updateSessionCapabilities, markCapabilitiesDetected, setWorkspaceType, navigate]);
 
   // Build available workspace types from session capabilities
@@ -152,6 +217,9 @@ export function AppLayout() {
       if (path.includes('/k8s/configmaps')) return 'ws-k8s-configmaps';
       if (path.includes('/k8s')) return 'ws-k8s-dashboard';
       // SSH sidebar items
+      const sshView = new URLSearchParams(location.search).get('view');
+      if (sshView === 'terminal') return 'ws-terminal';
+      if (sshView === 'files') return 'ws-files';
       return 'ws-overview';
     }
     if (path.startsWith('/infrastructure')) return 'connection-hub';
@@ -162,15 +230,7 @@ export function AppLayout() {
     if (path.startsWith('/transfers/uploads')) return 'upload-sessions';
     if (path === '/') return 'my-files';
     return 'my-files';
-  }, [location.pathname, workspaceSessionId]);
-
-  // Sidebar saved-host view derived from sessions.
-  // Label includes the active workspace type suffix for clarity.
-  const WORKSPACE_LABELS: Record<WorkspaceType, string> = {
-    ssh: 'SSH Workspace',
-    docker: 'Docker Workspace',
-    kubernetes: 'Kubernetes Workspace',
-  };
+  }, [location.pathname, location.search, workspaceSessionId]);
 
   const activeSessions: SavedHost[] = useMemo(
     () => sessions.map(s => ({
@@ -205,8 +265,8 @@ export function AppLayout() {
     const wsRouteMap: Record<string, string> = {
       // SSH
       'ws-overview': wsBase,
-      'ws-terminal': wsBase,
-      'ws-files': wsBase,
+      'ws-terminal': `${wsBase}?view=terminal`,
+      'ws-files': `${wsBase}?view=files`,
       'ws-monitoring': `${wsBase}/monitoring`,
       'ws-logs': `${wsBase}/logs`,
       // Docker
@@ -357,17 +417,6 @@ export function AppLayout() {
     navigate('/infrastructure');
   }, [navigate]);
 
-  // Breadcrumb mapping for the header
-  const breadcrumbMap: Record<string, { parts: string[]; }> = {
-    '/': { parts: ['Home', 'Dashboard'] },
-    '/sessions': { parts: ['Home', 'Sessions'] },
-    '/infrastructure': { parts: ['Home', 'Infrastructure'] },
-    '/saved-hosts': { parts: ['Home', 'Saved Hosts'] },
-    '/transfers/active': { parts: ['Home', 'Transfers', 'Active'] },
-    '/transfers/log': { parts: ['Home', 'Transfers', 'Log'] },
-    '/transfers/uploads': { parts: ['Home', 'Transfers', 'Uploads'] },
-  };
-
   const crumb = useMemo(() => {
     if (workspaceSession) {
       const name = workspaceSession.name;
@@ -379,7 +428,7 @@ export function AppLayout() {
       }
       return { parts: ['Home', name, 'SSH'] };
     }
-    return breadcrumbMap[location.pathname] ?? { parts: ['Home'] };
+    return BREADCRUMB_MAP[location.pathname] ?? { parts: ['Home'] };
   }, [workspaceSession, activeWorkspaceType, location.pathname]);
 
   // Render the appropriate sidebar based on workspace context

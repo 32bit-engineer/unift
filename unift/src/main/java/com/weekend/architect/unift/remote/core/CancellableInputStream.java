@@ -9,7 +9,7 @@ import java.io.InterruptedIOException;
  * An {@link InputStream} wrapper that aborts reading when a {@link CancellationToken} is set.
  *
  * <p>Each {@code read} call checks the token <em>before</em> delegating to the underlying stream.
- * When cancelled, an {@link InterruptedIOException} is thrown.  JSch's {@code ChannelSftp.put()}
+ * When cancelled, an {@link InterruptedIOException} is thrown. JSch's {@code ChannelSftp.put()}
  * surfaces this as a {@code TransferException}, which the service layer catches to mark the
  * transfer as {@code CANCELLED} and clean up the partial remote file.
  */

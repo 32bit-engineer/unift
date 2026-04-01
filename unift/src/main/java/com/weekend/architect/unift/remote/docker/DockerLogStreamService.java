@@ -27,14 +27,15 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * </pre>
  *
  * <p>SSE event types emitted:
+ *
  * <ul>
- *   <li>{@code log}   — a single log line (plain text)</li>
- *   <li>{@code end}   — stream finished naturally (container stopped / exited)</li>
- *   <li>{@code error} — JSON {@code {"message":"..."}}; stream then completes</li>
+ *   <li>{@code log} — a single log line (plain text)
+ *   <li>{@code end} — stream finished naturally (container stopped / exited)
+ *   <li>{@code error} — JSON {@code {"message":"..."}}; stream then completes
  * </ul>
  *
- * <p>Each stream awaits completion on a Project Loom virtual thread so blocking
- * is cheap and does not consume a platform carrier thread.
+ * <p>Each stream awaits completion on a Project Loom virtual thread so blocking is cheap and does
+ * not consume a platform carrier thread.
  */
 @Slf4j
 @Service
@@ -59,11 +60,11 @@ public class DockerLogStreamService {
     /**
      * Opens a live log stream for the specified container and returns an SSE emitter.
      *
-     * @param sessionId   UniFT session ID
-     * @param userId      authenticated user
+     * @param sessionId UniFT session ID
+     * @param userId authenticated user
      * @param containerId Docker container ID or name
-     * @param tailLines   number of historical lines to replay before following
-     * @param timestamps  whether to prefix each line with a timestamp
+     * @param tailLines number of historical lines to replay before following
+     * @param timestamps whether to prefix each line with a timestamp
      */
     public SseEmitter streamContainerLogs(
             String sessionId, UUID userId, String containerId, int tailLines, boolean timestamps) {
@@ -77,7 +78,8 @@ public class DockerLogStreamService {
         int safeTail = Math.max(1, Math.min(tailLines, 5_000));
         String streamId = sessionId + ":" + containerId;
 
-        // Replace any existing stream for the same container (e.g. user re-opened panel)
+        // Replace any existing stream for the same container (e.g. user re-opened
+        // panel)
         streamRegistry.close(streamId);
 
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
@@ -109,8 +111,7 @@ public class DockerLogStreamService {
             // Virtual thread waits for stream to end naturally (container stop / exit)
             executor.submit(() -> awaitAndFinalize(callback, emitter, streamId, containerId));
 
-            log.info("[docker-log] Started log stream {} (tail={}, timestamps={})",
-                    streamId, safeTail, timestamps);
+            log.info("[docker-log] Started log stream {} (tail={}, timestamps={})", streamId, safeTail, timestamps);
 
         } catch (Exception e) {
             log.warn("[docker-log] Failed to start log stream for {}: {}", containerId, e.getMessage());
@@ -140,9 +141,9 @@ public class DockerLogStreamService {
     }
 
     private void sendError(SseEmitter emitter, String message) {
-        trySend(emitter, SseEmitter.event()
-                .name("error")
-                .data(Map.of("message", message != null ? message : "Unknown error")));
+        trySend(
+                emitter,
+                SseEmitter.event().name("error").data(Map.of("message", message != null ? message : "Unknown error")));
         try {
             emitter.complete();
         } catch (Exception ignored) {

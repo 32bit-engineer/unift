@@ -31,10 +31,25 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
+  sql:
+    init:
+      # Apply the test schema to the Testcontainers PostgreSQL on every context start.
+      # "always" is required for non-embedded datasources.
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5000ms
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
-      group-id: ${KAFKA_CONSUMER_GROUP_ID:unift-group}
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:unift-test-group}
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
@@ -51,17 +66,17 @@ server:
 
 logging:
   level:
-    root: ${LOG_LEVEL_ROOT:INFO}
+    root: ${LOG_LEVEL_ROOT:WARN}
     com.weekend.architect.unift: ${LOG_LEVEL_APP:INFO}
-    com.weekend.architect.unift.exception: ${LOG_LEVEL_EXCEPTION:INFO}
+    com.weekend.architect.unift.exception: ${LOG_LEVEL_EXCEPTION:WARN}
   pattern:
     console: "%d{HH:mm:ss.SSS} [%-5level] [%logger{35}] - %msg%n"
 
 jwt:
-  # Required — generate with: openssl rand -base64 64
-  secret: ${JWT_SECRET}
-  access-token-expiration-ms: ${JWT_ACCESS_TOKEN_EXPIRATION_MS:900000}      # 15 minutes
-  refresh-token-expiration-ms: ${JWT_REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
+  # Hardcoded test secret — valid base64, 64 bytes (512-bit), never use in production
+  secret: YDmSLUGkMztPWEvuOuMu/lXEVYOay4KMMdNmE2USby45PtUGSestlgHTV903oQxY1Ij9cuQt6X5JdJ0AyCYDZA==
+  access-token-expiration-ms: 900000
+  refresh-token-expiration-ms: 604800000
 
 springdoc:
   api-docs:
@@ -70,7 +85,7 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
-    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:false}
+    try-it-out-enabled: false
 
 unift:
   # AES-256-GCM key for encrypting SSH credentials at rest.
@@ -80,18 +95,18 @@ unift:
     key: 2Qkwav0LDqGZP7zf+vFStXKpUMsZVBmkRv/nJiJysSw=
 
   remote:
-    session-ttl-minutes: ${UNIFT_SESSION_TTL_MINUTES:30}
-    max-sessions-per-user: ${UNIFT_MAX_SESSIONS_PER_USER:5}
-    reaper-interval-ms: ${UNIFT_REAPER_INTERVAL_MS:60000}
-    connect-timeout-ms: ${UNIFT_CONNECT_TIMEOUT_MS:15000}
-    channel-timeout-ms: ${UNIFT_CHANNEL_TIMEOUT_MS:10000}
-    sliding-ttl: ${UNIFT_SLIDING_TTL:true}
+    session-ttl-minutes: 30
+    max-sessions-per-user: 5
+    reaper-interval-ms: 60000
+    connect-timeout-ms: 5000
+    channel-timeout-ms: 3000
+    sliding-ttl: true
     # SSH keep-alive: sends an SSH heartbeat every N ms to prevent NAT/firewall
     # idle-connection drops.  Keep well below your firewall's idle timeout (often 30–60 s).
-    ssh-keep-alive-interval-ms: ${UNIFT_SSH_KEEPALIVE_INTERVAL_MS:30000}
-    ssh-keep-alive-count-max: ${UNIFT_SSH_KEEPALIVE_COUNT_MAX:3}
+    ssh-keep-alive-interval-ms: 30000
+    ssh-keep-alive-count-max: 3
     # How long COMPLETED/FAILED/CANCELLED transfers stay in the registry before Caffeine evicts them.
-    transfer-terminal-ttl-minutes: ${UNIFT_TRANSFER_TERMINAL_TTL_MINUTES:30}
+    transfer-terminal-ttl-minutes: 30
 
   # -----------------------------------------------------------------------
   # Named-cache sizing (all caches use CaffeineRegistryCache by default).
@@ -100,18 +115,22 @@ unift:
   # -----------------------------------------------------------------------
   cache:
     ssh-connection:
-      max-size: ${UNIFT_CACHE_SSH_MAX_SIZE:100}
+      max-size: 100
     terminal-session:
-      max-size: ${UNIFT_CACHE_TERMINAL_MAX_SIZE:10}
+      max-size: 10
     transfer:
-      max-size: ${UNIFT_CACHE_TRANSFER_MAX_SIZE:100000}
+      max-size: 100000
     metrics:
-      max-size: ${UNIFT_CACHE_METRICS_MAX_SIZE:10000}
+      max-size: 10000
+    k8s-client:
+      max-size: 500
+    docker-client:
+      max-size: 100
 
   terminal:
     # Allowed WebSocket upgrade origins — mirrors the HTTP CORS list.
     # Override with UNIFT_TERMINAL_ALLOWED_ORIGINS (comma-separated) in production.
-    allowed-origins: ${UNIFT_TERMINAL_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173}
+    allowed-origins: http://localhost,http://localhost:3000
 
     # Lines in remote shell output that match any of these regex patterns are
     # silently dropped before being forwarded to the WebSocket / Xterm.js client.
@@ -124,11 +143,17 @@ unift:
     # How often SessionMetricsStore takes a bandwidth sample per active session.
     # Each sample represents one data point on the 60-minute traffic chart.
     # Default: 60 seconds (60 samples = 60-minute rolling window).
-    sample-interval-ms: ${UNIFT_ANALYTICS_SAMPLE_INTERVAL_MS:60000}
+    sample-interval-ms: 60000
 
   cors:
-    allowed-origins: http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8080,http://127.0.0.1:4200
+    allowed-origins: http://localhost:3000
     allowed-headers: "*"
     allowed-methods: GET,PUT,POST,DELETE,PATCH,OPTIONS
     allow-credentials: true
     max-age: 3600
+
+  # Disable rate limiting so tests do not get throttled
+  rate-limit:
+    enabled: false
+    rules: []
+

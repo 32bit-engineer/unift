@@ -7,7 +7,6 @@ import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException
 import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
-import jakarta.annotation.PreDestroy;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -15,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -25,6 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * Streams live Kubernetes pod logs to a browser via Server-Sent Events (SSE).
  *
  * <h6>Data flow</h6>
+ *
  * <pre>
  *   Browser EventSource ── HTTP GET ──▶ SseEmitter
  *                                          │
@@ -36,28 +35,28 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * </pre>
  *
  * <h6>SSE event types emitted</h6>
+ *
  * <ul>
- *   <li>{@code log}   — a single log line (plain text)</li>
- *   <li>{@code end}   — stream finished naturally (pod stopped / container exited)</li>
- *   <li>{@code error} — JSON {@code {"message":"..."}}; stream then completes</li>
+ *   <li>{@code log} — a single log line (plain text)
+ *   <li>{@code end} — stream finished naturally (pod stopped / container exited)
+ *   <li>{@code error} — JSON {@code {"message":"..."}}; stream then completes
  * </ul>
  *
  * <h6>Lifecycle / cleanup</h6>
+ *
  * <ul>
- *   <li><b>Client closes the panel</b> → EventSource fires {@code close()} →
- *       Spring invokes {@link SseEmitter#onCompletion} → we call
- *       {@link K8sLogStreamRegistry#close(String)} → Fabric8 LogWatch closed →
- *       virtual thread unblocks and exits.</li>
- *   <li><b>SSH session expires</b> → {@link SessionRegistry#remove} →
- *       {@link K8sLogStreamRegistry#closeAllBySession} shuts down every open
- *       stream for that session.</li>
+ *   <li><b>Client closes the panel</b> → EventSource fires {@code close()} → Spring invokes {@link
+ *       SseEmitter#onCompletion} → we call {@link K8sLogStreamRegistry#close(String)} → Fabric8
+ *       LogWatch closed → virtual thread unblocks and exits.
+ *   <li><b>SSH session expires</b> → {@link SessionRegistry#remove} → {@link
+ *       K8sLogStreamRegistry#closeAllBySession} shuts down every open stream for that session.
  * </ul>
  *
  * <h6>Virtual threads</h6>
- * <p>Each stream reads its log lines on a Project Loom virtual thread
- * ({@link Executors#newVirtualThreadPerTaskExecutor()}).  Blocking on
- * {@code readLine()} is cheap — virtual threads park without consuming a platform
- * thread while waiting for new log output.
+ *
+ * <p>Each stream reads its log lines on a Project Loom virtual thread ({@link
+ * Executors#newVirtualThreadPerTaskExecutor()}). Blocking on {@code readLine()} is cheap — virtual
+ * threads park without consuming a platform thread while waiting for new log output.
  */
 @Slf4j
 @Service
@@ -69,7 +68,10 @@ public class K8sLogStreamService {
     private final K8sLogStreamRegistry streamRegistry;
 
     public K8sLogStreamService(
-            SessionRegistry sessionRegistry, K8sClientPool k8sClientPool, K8sLogStreamRegistry streamRegistry, @Qualifier("virtualThreadExecutor") ExecutorService executor) {
+            SessionRegistry sessionRegistry,
+            K8sClientPool k8sClientPool,
+            K8sLogStreamRegistry streamRegistry,
+            @Qualifier("virtualThreadExecutor") ExecutorService executor) {
         this.executor = executor;
         this.sessionRegistry = sessionRegistry;
         this.k8sClientPool = k8sClientPool;
@@ -77,15 +79,15 @@ public class K8sLogStreamService {
     }
 
     /**
-     * Opens a live log stream for the specified pod and returns an {@link SseEmitter}
-     * that will push log lines to the connected browser.
+     * Opens a live log stream for the specified pod and returns an {@link SseEmitter} that will
+     * push log lines to the connected browser.
      *
-     * @param sessionId  UniFT session ID
-     * @param userId     authenticated user
-     * @param namespace  pod namespace
-     * @param podName    pod name
-     * @param container  optional container name (null → Kubernetes default container)
-     * @param tailLines  number of historical lines to replay before following
+     * @param sessionId UniFT session ID
+     * @param userId authenticated user
+     * @param namespace pod namespace
+     * @param podName pod name
+     * @param container optional container name (null → Kubernetes default container)
+     * @param tailLines number of historical lines to replay before following
      */
     public SseEmitter streamPodLogs(
             String sessionId, UUID userId, String namespace, String podName, String container, int tailLines) {
@@ -153,7 +155,8 @@ public class K8sLogStreamService {
             while ((line = reader.readLine()) != null) {
                 if (Thread.currentThread().isInterrupted()) break;
                 try {
-                    // name=log keeps the frontend listener tidy: source.addEventListener('log', ...)
+                    // name=log keeps the frontend listener tidy: source.addEventListener('log',
+                    // ...)
                     emitter.send(SseEmitter.event().name("log").data(line));
                 } catch (IllegalStateException | IOException e) {
                     // Client disconnected — exit the loop quietly

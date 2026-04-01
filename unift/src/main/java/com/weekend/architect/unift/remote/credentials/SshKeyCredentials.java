@@ -9,6 +9,7 @@ import lombok.Getter;
 public final class SshKeyCredentials extends RemoteCredentials {
 
     private final String username;
+
     /** PEM-encoded private key content (e.g. {@code -----BEGIN RSA PRIVATE KEY-----\n...}). */
     private final String privateKeyPem;
 

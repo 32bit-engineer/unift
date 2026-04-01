@@ -29,11 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @Tag(
         name = "Session Analytics",
-        description = "Real-time analytics for active SSH sessions: session duration, throughput, latency, "
-                + "packet loss, traffic analysis, connected-nodes map, session metadata, "
-                + "and remote-host system metrics (CPU / memory / disk). "
-                + "Every probe is automatically persisted so you can query historical data "
-                + "by session ID and date range.")
+        description = "Real-time analytics for active SSH sessions: session duration, throughput,"
+                + " latency, packet loss, traffic analysis, connected-nodes map, session"
+                + " metadata, and remote-host system metrics (CPU / memory / disk). Every probe"
+                + " is automatically persisted so you can query historical data by session ID"
+                + " and date range.")
 @SecurityRequirement(name = "BearerAuth")
 public class SessionAnalyticsController {
 
@@ -42,13 +42,13 @@ public class SessionAnalyticsController {
     @GetMapping("/sessions/{sessionId}/analytics")
     @Operation(
             summary = "Get live session analytics",
-            description = "Returns a real-time analytics snapshot for the given active session. "
-                    + "Includes session duration, throughput history, SSH exec latency, "
-                    + "ICMP packet-loss, remote CPU/memory/disk usage, connected-node map, "
-                    + "and SSH session metadata. "
-                    + "The snapshot is automatically saved to the database for future history queries. "
-                    + "Expensive probes (latency, ping, system metrics) run in parallel "
-                    + "and are time-bounded — the call always returns within ~12 s.",
+            description = "Returns a real-time analytics snapshot for the given active session. Includes"
+                    + " session duration, throughput history, SSH exec latency, ICMP"
+                    + " packet-loss, remote CPU/memory/disk usage, connected-node map, and SSH"
+                    + " session metadata. The snapshot is automatically saved to the database"
+                    + " for future history queries. Expensive probes (latency, ping, system"
+                    + " metrics) run in parallel and are time-bounded — the call always returns"
+                    + " within ~12 s.",
             parameters = {@Parameter(name = "sessionId", description = "Active session ID", required = true)},
             responses = {
                 @ApiResponse(
@@ -81,12 +81,12 @@ public class SessionAnalyticsController {
     @GetMapping("/sessions/{sessionId}/analytics/history")
     @Operation(
             summary = "Get historical analytics for a session",
-            description = "Returns previously captured analytics snapshots for the given session, "
-                    + "ordered newest-first. A snapshot is saved every time the live analytics "
-                    + "endpoint is called. "
-                    + "Optionally filter by date range with `from` / `to` (ISO-8601). "
-                    + "Works for both active and closed sessions. "
-                    + "Ownership is enforced at the database level — users can only query their own sessions.",
+            description = "Returns previously captured analytics snapshots for the given session, ordered"
+                    + " newest-first. A snapshot is saved every time the live analytics"
+                    + " endpoint is called. Optionally filter by date range with `from` / `to`"
+                    + " (ISO-8601). Works for both active and closed sessions. Ownership is"
+                    + " enforced at the database level — users can only query their own"
+                    + " sessions.",
             parameters = {
                 @Parameter(name = "sessionId", description = "Session ID", required = true),
                 @Parameter(name = "from", description = "Inclusive lower bound (ISO-8601, e.g. 2026-03-01T00:00:00Z)"),

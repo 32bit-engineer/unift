@@ -52,7 +52,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs.yaml")
                         .permitAll()
-                        // Static assets and SPA entry point (single-container build)
+                        // Static assets and SPA entry point (single-container
+                        // build)
                         .requestMatchers(
                                 "/",
                                 "/index.html",

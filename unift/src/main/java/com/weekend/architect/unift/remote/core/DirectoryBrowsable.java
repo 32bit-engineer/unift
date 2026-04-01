@@ -7,8 +7,8 @@ import java.util.List;
 /**
  * Capability interface for browsing and mutating a remote file-system hierarchy.
  *
- * <p>Implementations must be thread-safe: multiple request threads may invoke
- * these methods concurrently on the same connection handle.
+ * <p>Implementations must be thread-safe: multiple request threads may invoke these methods
+ * concurrently on the same connection handle.
  */
 public interface DirectoryBrowsable {
 
@@ -32,7 +32,7 @@ public interface DirectoryBrowsable {
      * Renames / moves {@code remotePath} to {@code newPath}.
      *
      * @param remotePath absolute path of the source entry
-     * @param newPath    absolute path of the destination (must be on same host)
+     * @param newPath absolute path of the destination (must be on same host)
      * @throws BrowseException if the operation fails
      */
     void rename(String remotePath, String newPath) throws BrowseException;

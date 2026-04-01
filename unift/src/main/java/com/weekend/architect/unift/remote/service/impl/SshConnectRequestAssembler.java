@@ -9,12 +9,12 @@ import org.springframework.stereotype.Component;
 /**
  * Assembles a {@link ConnectRequest} for SSH / SFTP connections.
  *
- * <p>Maps the persisted {@link SavedHost} fields and the on-the-fly decrypted
- * SSH credentials (password, private key, passphrase) into a fully-populated
- * {@link ConnectRequest} ready for the connection service.
+ * <p>Maps the persisted {@link SavedHost} fields and the on-the-fly decrypted SSH credentials
+ * (password, private key, passphrase) into a fully-populated {@link ConnectRequest} ready for the
+ * connection service.
  *
- * <p>Only handles {@link ProtocolType#SSH_SFTP}; other protocols must provide
- * their own {@link ConnectRequestAssembler} implementation.
+ * <p>Only handles {@link ProtocolType#SSH_SFTP}; other protocols must provide their own {@link
+ * ConnectRequestAssembler} implementation.
  */
 @Component
 public class SshConnectRequestAssembler implements ConnectRequestAssembler {

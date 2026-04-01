@@ -1,4 +1,6 @@
-CREATE TABLE public.users (
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS public.users (
     id uuid PRIMARY KEY,
     first_name varchar(100) NULL,
     last_name varchar(100) NULL,
@@ -22,7 +24,7 @@ CREATE TABLE public.users (
 
 ---
 
-CREATE TABLE refresh_tokens (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id      UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash   VARCHAR(255) NOT NULL UNIQUE,  -- NEVER store raw token
@@ -31,11 +33,11 @@ CREATE TABLE refresh_tokens (
     expires_at   TIMESTAMPTZ  NOT NULL,
     revoked_at   TIMESTAMPTZ  -- NULL = still valid
 );
-CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
 
 ---
 
-CREATE TABLE upload_sessions (
+CREATE TABLE IF NOT EXISTS upload_sessions (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id          UUID         NOT NULL REFERENCES users(id),
     filename         VARCHAR(512) NOT NULL,
@@ -51,7 +53,7 @@ CREATE TABLE upload_sessions (
 
 ---
 
-CREATE TABLE transfer_log (
+CREATE TABLE IF NOT EXISTS transfer_log (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id       UUID         REFERENCES users(id),
     filename      VARCHAR(512) NOT NULL,
@@ -64,37 +66,44 @@ CREATE TABLE transfer_log (
     error_message TEXT,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_transfer_log_user ON transfer_log(user_id, created_at DESC);
-
+CREATE INDEX IF NOT EXISTS idx_transfer_log_user ON transfer_log(user_id, created_at DESC);
 
 ---
 
-CREATE TABLE otp_tokens (
+CREATE TABLE IF NOT EXISTS otp_tokens (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id    UUID        NOT NULL REFERENCES users(id),
+    user_id    UUID         NOT NULL REFERENCES users(id),
     token_hash VARCHAR(255) NOT NULL,
     purpose    VARCHAR(30)  NOT NULL,  -- 'RESET' or 'PAIR'
     expires_at TIMESTAMPTZ  NOT NULL,
     used_at    TIMESTAMPTZ  -- NULL = not yet used
 );
 
+DO $$
+BEGIN
+    CREATE TYPE auth_type_enum AS ENUM (
+      'password',
+      'key',
+      'key_passphrase'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TYPE auth_type_enum AS ENUM (
-  'password',
-  'key',
-  'key_passphrase'
-);
+DO $$
+BEGIN
+    CREATE TYPE protocol_type_enum AS ENUM (
+      'ssh_sftp',
+      'ftp',
+      's3',
+      'azure_blob',
+      'gcs'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TYPE protocol_type_enum AS ENUM (
-  'ssh_sftp',
-  'ftp',
-  's3',
-  'azure_blob',
-  'gcs'
-);
-
-
-CREATE TABLE saved_hosts (
+CREATE TABLE IF NOT EXISTS saved_hosts (
   id          UUID PRIMARY KEY,
   user_id     UUID NOT NULL,          -- belongs to one user
   label       VARCHAR(100),           -- "My VPS", "Home Server"
@@ -125,7 +134,7 @@ CREATE TABLE saved_hosts (
 -- Unlike the in-memory SessionRegistry, rows here survive server restarts and
 -- session expiry, giving users a full connection history with OS/service details.
 
-CREATE TABLE session_log (
+CREATE TABLE IF NOT EXISTS session_log (
     id          UUID          PRIMARY KEY,                    -- UUID v7 from Java (time-ordered)
     user_id     UUID          NOT NULL REFERENCES users(id),
     label       VARCHAR(200),                                 -- friendly alias from ConnectRequest
@@ -138,7 +147,7 @@ CREATE TABLE session_log (
     closed_at   TIMESTAMPTZ                                   -- NULL while the session is active
 );
 
-CREATE INDEX idx_session_log_user ON session_log (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_session_log_user ON session_log (user_id, created_at DESC);
 
 ---
 
@@ -146,7 +155,7 @@ CREATE INDEX idx_session_log_user ON session_log (user_id, created_at DESC);
 -- Scalar metric columns allow efficient time-range queries and statistical aggregations.
 -- The full response (including traffic history and connected-node list) is replayed from snapshot_json.
 
-CREATE TABLE session_analytics_snapshot (
+CREATE TABLE IF NOT EXISTS session_analytics_snapshot (
     id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
 
     -- Ownership / lookup
@@ -194,11 +203,11 @@ CREATE TABLE session_analytics_snapshot (
 );
 
 -- Primary query pattern: all snapshots for a session, newest first
-CREATE INDEX idx_analytics_snapshot_session  ON session_analytics_snapshot (session_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_snapshot_session  ON session_analytics_snapshot (session_id, captured_at DESC);
 
 -- User-level history across all sessions
-CREATE INDEX idx_analytics_snapshot_user     ON session_analytics_snapshot (user_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_snapshot_user     ON session_analytics_snapshot (user_id, captured_at DESC);
 
 -- Time-based range scans
-CREATE INDEX idx_analytics_snapshot_captured ON session_analytics_snapshot (captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_snapshot_captured ON session_analytics_snapshot (captured_at DESC);
 

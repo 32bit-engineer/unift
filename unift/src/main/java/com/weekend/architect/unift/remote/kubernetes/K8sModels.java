@@ -9,10 +9,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Data transfer objects for Kubernetes cluster management.
- * All data is collected via {@code kubectl} CLI commands executed
- * over the existing SSH exec channel. JSON output is parsed
- * from {@code kubectl get ... -o json} responses.
+ * Data transfer objects for Kubernetes cluster management. All data is collected via {@code
+ * kubectl} CLI commands executed over the existing SSH exec channel. JSON output is parsed from
+ * {@code kubectl get ... -o json} responses.
  */
 public final class K8sModels {
 
@@ -307,6 +306,7 @@ public final class K8sModels {
 
         private String namespace;
         private String name;
+
         /** Cleaned YAML ready to display in an editor (managedFields + status stripped). */
         private String yaml;
     }
@@ -317,8 +317,10 @@ public final class K8sModels {
     @AllArgsConstructor
     public static class RolloutRevision {
         private int revision;
+
         /** Value of the {@code kubernetes.io/change-cause} annotation, or {@code "<none>"}. */
         private String changeCause;
+
         /** Container images in use at this revision. */
         private List<String> images;
 
@@ -332,8 +334,10 @@ public final class K8sModels {
     public static class RolloutHistoryPage {
         private String deploymentName;
         private String namespace;
+
         /** Revision number of the currently active ReplicaSet. */
         private int currentRevision;
+
         /** Sorted newest-first. */
         private List<RolloutRevision> revisions;
     }

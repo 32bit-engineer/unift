@@ -37,11 +37,11 @@ import org.yaml.snakeyaml.Yaml;
 /**
  * Docker management service backed by the docker-java SDK.
  *
- * <p>Each method obtains a {@link DockerClient} from {@link DockerClientPool}, which
- * is created once per session (SSH tunnel + docker-java HTTP transport) and cached.
+ * <p>Each method obtains a {@link DockerClient} from {@link DockerClientPool}, which is created
+ * once per session (SSH tunnel + docker-java HTTP transport) and cached.
  *
- * <p>{@link #getOverview} fans out system info, containers, and stats calls in parallel
- * via {@link CompletableFuture}, reducing typical response time from sequential calls.
+ * <p>{@link #getOverview} fans out system info, containers, and stats calls in parallel via {@link
+ * CompletableFuture}, reducing typical response time from sequential calls.
  */
 @Slf4j
 @Service
@@ -124,15 +124,19 @@ public class DockerServiceImpl implements DockerService {
     public DockerModels.DockerOverview getOverview(String sessionId, UUID userId) {
         DockerClient client = resolveClient(sessionId, userId);
         try {
-            var infoFuture = CompletableFuture.supplyAsync(() -> client.infoCmd().exec());
+            var infoFuture =
+                    CompletableFuture.supplyAsync(() -> client.infoCmd().exec());
             var containersFuture = CompletableFuture.supplyAsync(
                     () -> client.listContainersCmd().withShowAll(false).exec());
 
             CompletableFuture.allOf(infoFuture, containersFuture)
-                    .orTimeout(15, TimeUnit.SECONDS).join();
+                    .orTimeout(15, TimeUnit.SECONDS)
+                    .join();
 
             var sysInfo = DockerMappers.toSystemInfo(infoFuture.join());
-            var running = containersFuture.join().stream().map(DockerMappers::toContainer).toList();
+            var running = containersFuture.join().stream()
+                    .map(DockerMappers::toContainer)
+                    .toList();
 
             return DockerModels.DockerOverview.builder()
                     .info(sysInfo)
@@ -142,7 +146,9 @@ public class DockerServiceImpl implements DockerService {
         } catch (Exception e) {
             log.warn("[docker] Failed to get overview for session {}: {}", sessionId, e.getMessage());
             return DockerModels.DockerOverview.builder()
-                    .info(DockerModels.DockerSystemInfo.builder().available(false).build())
+                    .info(DockerModels.DockerSystemInfo.builder()
+                            .available(false)
+                            .build())
                     .runningContainers(List.of())
                     .stats(List.of())
                     .build();
@@ -157,20 +163,27 @@ public class DockerServiceImpl implements DockerService {
         DockerClient client = resolveClient(sessionId, userId);
         try {
             List<Container> raw = client.listContainersCmd().withShowAll(all).exec();
-            List<DockerModels.DockerContainer> mapped = raw.stream().map(DockerMappers::toContainer).toList();
+            List<DockerModels.DockerContainer> mapped =
+                    raw.stream().map(DockerMappers::toContainer).toList();
             int safePage = Math.max(1, page);
             int safeSize = Math.max(1, Math.min(pageSize, 100));
             int start = (safePage - 1) * safeSize;
             int end = Math.min(start + safeSize, mapped.size());
-            List<DockerModels.DockerContainer> slice = start < mapped.size()
-                    ? mapped.subList(start, end) : List.of();
+            List<DockerModels.DockerContainer> slice = start < mapped.size() ? mapped.subList(start, end) : List.of();
             return DockerModels.ContainerPage.builder()
-                    .containers(slice).total(mapped.size())
-                    .page(safePage).pageSize(safeSize).build();
+                    .containers(slice)
+                    .total(mapped.size())
+                    .page(safePage)
+                    .pageSize(safeSize)
+                    .build();
         } catch (Exception e) {
             log.warn("[docker] Failed to list containers for session {}: {}", sessionId, e.getMessage());
             return DockerModels.ContainerPage.builder()
-                    .containers(List.of()).total(0).page(page).pageSize(pageSize).build();
+                    .containers(List.of())
+                    .total(0)
+                    .page(page)
+                    .pageSize(pageSize)
+                    .build();
         }
     }
 
@@ -221,35 +234,55 @@ public class DockerServiceImpl implements DockerService {
     @Override
     public DockerModels.ContainerActionResult startContainer(String sessionId, UUID userId, String containerId) {
         validateContainerId(containerId);
-        return containerAction(sessionId, userId, containerId, "start",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "start",
                 c -> c.startContainerCmd(containerId).exec());
     }
 
     @Override
     public DockerModels.ContainerActionResult stopContainer(String sessionId, UUID userId, String containerId) {
         validateContainerId(containerId);
-        return containerAction(sessionId, userId, containerId, "stop",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "stop",
                 c -> c.stopContainerCmd(containerId).exec());
     }
 
     @Override
     public DockerModels.ContainerActionResult restartContainer(String sessionId, UUID userId, String containerId) {
         validateContainerId(containerId);
-        return containerAction(sessionId, userId, containerId, "restart",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "restart",
                 c -> c.restartContainerCmd(containerId).exec());
     }
 
     @Override
     public DockerModels.ContainerActionResult pauseContainer(String sessionId, UUID userId, String containerId) {
         validateContainerId(containerId);
-        return containerAction(sessionId, userId, containerId, "pause",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "pause",
                 c -> c.pauseContainerCmd(containerId).exec());
     }
 
     @Override
     public DockerModels.ContainerActionResult unpauseContainer(String sessionId, UUID userId, String containerId) {
         validateContainerId(containerId);
-        return containerAction(sessionId, userId, containerId, "unpause",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "unpause",
                 c -> c.unpauseContainerCmd(containerId).exec());
     }
 
@@ -257,7 +290,11 @@ public class DockerServiceImpl implements DockerService {
     public DockerModels.ContainerActionResult removeContainer(
             String sessionId, UUID userId, String containerId, boolean force) {
         validateContainerId(containerId);
-        return containerAction(sessionId, userId, containerId, "remove",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "remove",
                 c -> c.removeContainerCmd(containerId).withForce(force).exec());
     }
 
@@ -266,23 +303,28 @@ public class DockerServiceImpl implements DockerService {
             String sessionId, UUID userId, String containerId, String newName) {
         validateContainerId(containerId);
         validateContainerName(newName);
-        return containerAction(sessionId, userId, containerId, "rename",
+        return containerAction(
+                sessionId,
+                userId,
+                containerId,
+                "rename",
                 c -> c.renameContainerCmd(containerId).withName(newName).exec());
     }
 
     // -- Logs ------------------------------------------------------------------
 
     @Override
-    public String getContainerLogs(
-            String sessionId, UUID userId, String containerId, int tail, boolean timestamps) {
+    public String getContainerLogs(String sessionId, UUID userId, String containerId, int tail, boolean timestamps) {
         validateContainerId(containerId);
         DockerClient client = resolveClient(sessionId, userId);
         int safeTail = Math.max(1, Math.min(tail, 5_000));
         try {
             StringBuilder sb = new StringBuilder();
             client.logContainerCmd(containerId)
-                    .withStdOut(true).withStdErr(true)
-                    .withTail(safeTail).withTimestamps(timestamps)
+                    .withStdOut(true)
+                    .withStdErr(true)
+                    .withTail(safeTail)
+                    .withTimestamps(timestamps)
                     .exec(new ResultCallback.Adapter<Frame>() {
                         @Override
                         public void onNext(Frame frame) {
@@ -290,7 +332,8 @@ public class DockerServiceImpl implements DockerService {
                                 sb.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
                             }
                         }
-                    }).awaitCompletion(10, TimeUnit.SECONDS);
+                    })
+                    .awaitCompletion(10, TimeUnit.SECONDS);
             return sb.toString();
         } catch (Exception e) {
             log.warn("[docker] Failed to get logs for {} session {}: {}", containerId, sessionId, e.getMessage());
@@ -319,7 +362,8 @@ public class DockerServiceImpl implements DockerService {
         try {
             var execCreate = client.execCreateCmd(request.getContainerId())
                     .withCmd(request.getCommand().toArray(String[]::new))
-                    .withAttachStdout(true).withAttachStderr(true)
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
                     .exec();
 
             StringBuilder output = new StringBuilder();
@@ -331,15 +375,22 @@ public class DockerServiceImpl implements DockerService {
                                 output.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
                             }
                         }
-                    }).awaitCompletion(30, TimeUnit.SECONDS);
+                    })
+                    .awaitCompletion(30, TimeUnit.SECONDS);
 
             var inspect = client.inspectExecCmd(execCreate.getId()).exec();
-            int exitCode = inspect.getExitCodeLong() != null ? inspect.getExitCodeLong().intValue() : -1;
+            int exitCode = inspect.getExitCodeLong() != null
+                    ? inspect.getExitCodeLong().intValue()
+                    : -1;
             return DockerModels.ExecStartResult.builder()
-                    .output(output.toString()).exitCode(exitCode).build();
+                    .output(output.toString())
+                    .exitCode(exitCode)
+                    .build();
         } catch (Exception e) {
             return DockerModels.ExecStartResult.builder()
-                    .output("Error: " + e.getMessage()).exitCode(-1).build();
+                    .output("Error: " + e.getMessage())
+                    .exitCode(-1)
+                    .build();
         }
     }
 
@@ -349,12 +400,14 @@ public class DockerServiceImpl implements DockerService {
     public List<DockerModels.ContainerStats> getContainerStats(String sessionId, UUID userId) {
         DockerClient client = resolveClient(sessionId, userId);
         try {
-            List<Container> running = client.listContainersCmd().withShowAll(false).exec();
+            List<Container> running =
+                    client.listContainersCmd().withShowAll(false).exec();
             List<CompletableFuture<DockerModels.ContainerStats>> futures = running.stream()
                     .map(c -> CompletableFuture.supplyAsync(() -> fetchSingleStat(client, c.getId())))
                     .toList();
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                    .orTimeout(10, TimeUnit.SECONDS).join();
+                    .orTimeout(10, TimeUnit.SECONDS)
+                    .join();
             return futures.stream()
                     .map(CompletableFuture::join)
                     .filter(s -> s != null)
@@ -377,8 +430,12 @@ public class DockerServiceImpl implements DockerService {
         DockerClient client = resolveClient(sessionId, userId);
         try {
             List<Image> images = client.listImagesCmd().exec();
-            List<DockerModels.DockerImage> mapped = images.stream().map(DockerMappers::toImage).toList();
-            return DockerModels.ImagePage.builder().images(mapped).total(mapped.size()).build();
+            List<DockerModels.DockerImage> mapped =
+                    images.stream().map(DockerMappers::toImage).toList();
+            return DockerModels.ImagePage.builder()
+                    .images(mapped)
+                    .total(mapped.size())
+                    .build();
         } catch (Exception e) {
             log.warn("[docker] Failed to list images for session {}: {}", sessionId, e.getMessage());
             return DockerModels.ImagePage.builder().images(List.of()).total(0).build();
@@ -394,23 +451,31 @@ public class DockerServiceImpl implements DockerService {
 
         virtualExecutor.submit(() -> {
             try {
-                client.pullImageCmd(request.getRepository()).withTag(tag)
+                client.pullImageCmd(request.getRepository())
+                        .withTag(tag)
                         .exec(new ResultCallback.Adapter<PullResponseItem>() {
                             @Override
                             public void onNext(PullResponseItem item) {
-                                trySend(emitter, SseEmitter.event().name("progress").data(
-                                        DockerModels.PullImageProgress.builder()
-                                                .status(item.getStatus())
-                                                .progress(item.getProgress())
-                                                .id(item.getId()).build()));
+                                trySend(
+                                        emitter,
+                                        SseEmitter.event()
+                                                .name("progress")
+                                                .data(DockerModels.PullImageProgress.builder()
+                                                        .status(item.getStatus())
+                                                        .progress(item.getProgress())
+                                                        .id(item.getId())
+                                                        .build()));
                             }
-                        }).awaitCompletion();
+                        })
+                        .awaitCompletion();
                 trySend(emitter, SseEmitter.event().name("complete").data("done"));
                 emitter.complete();
             } catch (Exception e) {
-                trySend(emitter, SseEmitter.event().name("error")
-                        .data(Map.of("message", e.getMessage())));
-                try { emitter.complete(); } catch (Exception ignored) {}
+                trySend(emitter, SseEmitter.event().name("error").data(Map.of("message", e.getMessage())));
+                try {
+                    emitter.complete();
+                } catch (Exception ignored) {
+                }
             }
         });
         return emitter;
@@ -420,7 +485,11 @@ public class DockerServiceImpl implements DockerService {
     public DockerModels.ContainerActionResult removeImage(
             String sessionId, UUID userId, String imageId, boolean force) {
         validateContainerId(imageId);
-        return imageAction(sessionId, userId, imageId, "remove",
+        return imageAction(
+                sessionId,
+                userId,
+                imageId,
+                "remove",
                 c -> c.removeImageCmd(imageId).withForce(force).exec());
     }
 
@@ -429,7 +498,11 @@ public class DockerServiceImpl implements DockerService {
             String sessionId, UUID userId, String imageId, String repo, String tag) {
         validateContainerId(imageId);
         validateImageReference(repo + ":" + tag);
-        return imageAction(sessionId, userId, imageId, "tag",
+        return imageAction(
+                sessionId,
+                userId,
+                imageId,
+                "tag",
                 c -> c.tagImageCmd(imageId, repo, tag).exec());
     }
 
@@ -445,7 +518,9 @@ public class DockerServiceImpl implements DockerService {
     public List<DockerModels.DockerNetwork> listNetworks(String sessionId, UUID userId) {
         DockerClient client = resolveClient(sessionId, userId);
         try {
-            return client.listNetworksCmd().exec().stream().map(DockerMappers::toNetwork).toList();
+            return client.listNetworksCmd().exec().stream()
+                    .map(DockerMappers::toNetwork)
+                    .toList();
         } catch (Exception e) {
             log.warn("[docker] Failed to list networks for session {}: {}", sessionId, e.getMessage());
             return List.of();
@@ -455,7 +530,8 @@ public class DockerServiceImpl implements DockerService {
     @Override
     public DockerModels.DockerNetwork inspectNetwork(String sessionId, UUID userId, String networkId) {
         DockerClient client = resolveClient(sessionId, userId);
-        return DockerMappers.toNetwork(client.inspectNetworkCmd().withNetworkId(networkId).exec());
+        return DockerMappers.toNetwork(
+                client.inspectNetworkCmd().withNetworkId(networkId).exec());
     }
 
     @Override
@@ -488,7 +564,8 @@ public class DockerServiceImpl implements DockerService {
 
     @Override
     public DockerModels.DockerVolume inspectVolume(String sessionId, UUID userId, String volumeName) {
-        return DockerMappers.toVolume(resolveClient(sessionId, userId).inspectVolumeCmd(volumeName).exec());
+        return DockerMappers.toVolume(
+                resolveClient(sessionId, userId).inspectVolumeCmd(volumeName).exec());
     }
 
     @Override
@@ -516,19 +593,25 @@ public class DockerServiceImpl implements DockerService {
             Map<String, List<Container>> projects = new LinkedHashMap<>();
             for (Container c : all) {
                 if (c.getLabels() != null && c.getLabels().containsKey("com.docker.compose.project")) {
-                    projects.computeIfAbsent(c.getLabels().get("com.docker.compose.project"),
-                            k -> new ArrayList<>()).add(c);
+                    projects.computeIfAbsent(c.getLabels().get("com.docker.compose.project"), k -> new ArrayList<>())
+                            .add(c);
                 }
             }
-            return projects.entrySet().stream().map(e -> {
-                String cfgFiles = e.getValue().stream()
-                        .map(c -> c.getLabels().getOrDefault("com.docker.compose.project.config_files", ""))
-                        .findFirst().orElse("");
-                boolean allRunning = e.getValue().stream().allMatch(c -> "running".equals(c.getState()));
-                return DockerModels.ComposeProject.builder()
-                        .name(e.getKey()).status(allRunning ? "running" : "partial")
-                        .configFiles(cfgFiles).services(e.getValue().size()).build();
-            }).toList();
+            return projects.entrySet().stream()
+                    .map(e -> {
+                        String cfgFiles = e.getValue().stream()
+                                .map(c -> c.getLabels().getOrDefault("com.docker.compose.project.config_files", ""))
+                                .findFirst()
+                                .orElse("");
+                        boolean allRunning = e.getValue().stream().allMatch(c -> "running".equals(c.getState()));
+                        return DockerModels.ComposeProject.builder()
+                                .name(e.getKey())
+                                .status(allRunning ? "running" : "partial")
+                                .configFiles(cfgFiles)
+                                .services(e.getValue().size())
+                                .build();
+                    })
+                    .toList();
         } catch (Exception e) {
             log.warn("[docker] Failed to list compose projects: {}", e.getMessage());
             return List.of();
@@ -573,32 +656,50 @@ public class DockerServiceImpl implements DockerService {
 
     /** Executes a simple container lifecycle action with uniform result handling. */
     private DockerModels.ContainerActionResult containerAction(
-            String sessionId, UUID userId, String containerId, String action,
+            String sessionId,
+            UUID userId,
+            String containerId,
+            String action,
             java.util.function.Consumer<DockerClient> command) {
         try {
             command.accept(resolveClient(sessionId, userId));
             return DockerModels.ContainerActionResult.builder()
-                    .containerId(containerId).action(action).success(true)
-                    .message("Container " + containerId + " " + action + " successful").build();
+                    .containerId(containerId)
+                    .action(action)
+                    .success(true)
+                    .message("Container " + containerId + " " + action + " successful")
+                    .build();
         } catch (Exception e) {
             return DockerModels.ContainerActionResult.builder()
-                    .containerId(containerId).action(action).success(false)
-                    .message(e.getMessage()).build();
+                    .containerId(containerId)
+                    .action(action)
+                    .success(false)
+                    .message(e.getMessage())
+                    .build();
         }
     }
 
     private DockerModels.ContainerActionResult imageAction(
-            String sessionId, UUID userId, String imageId, String action,
+            String sessionId,
+            UUID userId,
+            String imageId,
+            String action,
             java.util.function.Consumer<DockerClient> command) {
         try {
             command.accept(resolveClient(sessionId, userId));
             return DockerModels.ContainerActionResult.builder()
-                    .containerId(imageId).action(action).success(true)
-                    .message("Image " + imageId + " " + action + " successful").build();
+                    .containerId(imageId)
+                    .action(action)
+                    .success(true)
+                    .message("Image " + imageId + " " + action + " successful")
+                    .build();
         } catch (Exception e) {
             return DockerModels.ContainerActionResult.builder()
-                    .containerId(imageId).action(action).success(false)
-                    .message(e.getMessage()).build();
+                    .containerId(imageId)
+                    .action(action)
+                    .success(false)
+                    .message(e.getMessage())
+                    .build();
         }
     }
 
@@ -609,7 +710,10 @@ public class DockerServiceImpl implements DockerService {
                 @Override
                 public void onNext(Statistics stats) {
                     holder[0] = stats;
-                    try { close(); } catch (IOException ignored) {}
+                    try {
+                        close();
+                    } catch (IOException ignored) {
+                    }
                 }
             };
             client.statsCmd(containerId).exec(cb);

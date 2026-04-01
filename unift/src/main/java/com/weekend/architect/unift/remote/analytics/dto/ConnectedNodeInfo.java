@@ -31,14 +31,14 @@ public class ConnectedNodeInfo {
     OffsetDateTime createdAt;
 
     /**
-     * Detected OS/service name (e.g. "Ubuntu 22.04.3 LTS").
-     * {@code null} if detection has not completed.
+     * Detected OS/service name (e.g. "Ubuntu 22.04.3 LTS"). {@code null} if detection has not
+     * completed.
      */
     String remoteOs;
 
     /**
-     * Instantaneous CPU utilisation on the remote host as a percentage (0–100).
-     * {@code null} if the SSH probe failed or the session is not an SSH connection.
+     * Instantaneous CPU utilisation on the remote host as a percentage (0–100). {@code null} if the
+     * SSH probe failed or the session is not an SSH connection.
      */
     Double cpuPercent;
 }

@@ -20,6 +20,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @Slf4j
@@ -87,14 +88,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status)
                 .body(errorBody(
                         status,
-                        "File is too large. Use the /upload/stream endpoint to send files as a raw "
-                                + "application/octet-stream body, which has no size limit."));
+                        "File is too large. Use the /upload/stream endpoint to send files"
+                                + " as a raw application/octet-stream body, which has no size"
+                                + " limit."));
     }
 
     @ExceptionHandler(UploadCancelledException.class)
     public ResponseEntity<ErrorResponse> handleUploadCancelled(UploadCancelledException ex) {
         log.info("Upload cancelled: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(errorBody(HttpStatus.CONFLICT, ex.getMessage()));
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponse> handleHandlerMethodValidation(HandlerMethodValidationException ex) {
+        log.warn("Method parameter validation error: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(HttpStatus.BAD_REQUEST, "Validation failed: invalid parameter value"));
     }
 
     @ExceptionHandler(Exception.class)
@@ -162,7 +171,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage()));
     }
 
-    /** Catch-all for any other remote-connection failure (connect errors, transfer errors, browse errors). */
+    /**
+     * Catch-all for any other remote-connection failure (connect errors, transfer errors, browse
+     * errors).
+     */
     @ExceptionHandler(RemoteConnectionException.class)
     public ResponseEntity<ErrorResponse> handleRemoteConnection(RemoteConnectionException ex) {
         log.error("Remote connection error: {}", ex.getMessage(), ex);

@@ -1,0 +1,79 @@
+package com.weekend.architect.unift.integration.support;
+
+import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * Utility for inserting controlled test fixtures directly into the integration-test PostgreSQL
+ * database.
+ *
+ * <p>Only used when building test pre-conditions that cannot be driven through the public API (e.g.
+ * pre-seeding transfer_log rows for history query tests). All other data setup must go through the
+ * real API endpoints.
+ */
+public class TestDataFactory {
+
+    private final JdbcTemplate jdbc;
+
+    public TestDataFactory(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * Inserts a {@code transfer_log} row with minimal fields.
+     *
+     * @param userId owning user ID
+     * @param filename file name to record
+     * @param status terminal state: COMPLETED, FAILED, or CANCELLED
+     * @return the generated log entry ID
+     */
+    public UUID insertTransferLog(UUID userId, String filename, String status) {
+        return insertTransferLogFull(userId, filename, status, 1024L, null, null, null);
+    }
+
+    /**
+     * Inserts a {@code transfer_log} row with all transfer metrics.
+     *
+     * @param userId owning user ID
+     * @param filename file name
+     * @param status COMPLETED | FAILED | CANCELLED
+     * @param sizeBytes bytes transferred
+     * @param avgSpeedBps average speed (nullable)
+     * @param durationMs wall-clock duration in ms (nullable)
+     * @param errorMsg error detail for FAILED entries (nullable)
+     * @return the generated log entry ID
+     */
+    public UUID insertTransferLogFull(
+            UUID userId,
+            String filename,
+            String status,
+            Long sizeBytes,
+            Long avgSpeedBps,
+            Long durationMs,
+            String errorMsg) {
+        UUID id = UUID.randomUUID();
+        jdbc.update(
+                """
+                INSERT INTO transfer_log
+                    (id, user_id, filename, source, destination,
+                     size_bytes, avg_speed_bps, duration_ms, status, error_message, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                """,
+                id,
+                userId,
+                filename,
+                "sftp://host/" + filename,
+                "client/" + filename,
+                sizeBytes,
+                avgSpeedBps,
+                durationMs,
+                status,
+                errorMsg);
+        return id;
+    }
+
+    /** Removes all {@code transfer_log} rows owned by the given user. */
+    public void deleteTransferLogsByUser(UUID userId) {
+        jdbc.update("DELETE FROM transfer_log WHERE user_id = ?", userId);
+    }
+}

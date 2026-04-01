@@ -12,15 +12,15 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * Tracks every live pod-log SSE stream.
  *
- * <p>Streams are keyed by {@code sessionId:namespace:podName[:container]}.  Two
- * cleanup paths exist:
+ * <p>Streams are keyed by {@code sessionId:namespace:podName[:container]}. Two cleanup paths exist:
+ *
  * <ol>
- *   <li><b>Client-initiated</b> — the browser closes the EventSource connection.
- *       Spring fires {@link SseEmitter#onCompletion}/{@link SseEmitter#onError},
- *       which call {@link #close(String)}.</li>
- *   <li><b>Server-initiated</b> — the parent SSH session expires or is explicitly
- *       removed.  {@link SessionRegistry} calls {@link #closeAllBySession(String)},
- *       which tears down every stream that belongs to that session.</li>
+ *   <li><b>Client-initiated</b> — the browser closes the EventSource connection. Spring fires
+ *       {@link SseEmitter#onCompletion}/{@link SseEmitter#onError}, which call {@link
+ *       #close(String)}.
+ *   <li><b>Server-initiated</b> — the parent SSH session expires or is explicitly removed. {@link
+ *       SessionRegistry} calls {@link #closeAllBySession(String)}, which tears down every stream
+ *       that belongs to that session.
  * </ol>
  */
 @Slf4j
@@ -34,9 +34,7 @@ public class K8sLogStreamRegistry {
         log.debug("[k8s-log] Registered stream {}", streamId);
     }
 
-    /**
-     * Closes a single stream.  Safe to call multiple times (idempotent).
-     */
+    /** Closes a single stream. Safe to call multiple times (idempotent). */
     public void close(String streamId) {
         LogStreamEntry entry = streams.remove(streamId);
         if (entry != null) {
@@ -46,8 +44,8 @@ public class K8sLogStreamRegistry {
     }
 
     /**
-     * Closes all log streams that belong to the given SSH session.
-     * Called automatically when the session expires or is disconnected.
+     * Closes all log streams that belong to the given SSH session. Called automatically when the
+     * session expires or is disconnected.
      */
     public void closeAllBySession(String sessionId) {
         String prefix = sessionId + ":";

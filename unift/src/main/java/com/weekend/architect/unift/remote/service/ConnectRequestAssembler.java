@@ -5,15 +5,15 @@ import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.model.SavedHost;
 
 /**
- * Strategy interface for assembling a protocol-specific {@link ConnectRequest} from a
- * persisted {@link SavedHost} and its on-the-fly decrypted credential material.
+ * Strategy interface for assembling a protocol-specific {@link ConnectRequest} from a persisted
+ * {@link SavedHost} and its on-the-fly decrypted credential material.
  *
- * <p>Keeps all protocol-specific field mapping out of the generic service layer.
- * Each protocol registers its own assembler as a Spring bean; the service discovers
- * them via injection and delegates to the correct one at connect time.
+ * <p>Keeps all protocol-specific field mapping out of the generic service layer. Each protocol
+ * registers its own assembler as a Spring bean; the service discovers them via injection and
+ * delegates to the correct one at connect time.
  *
- * <p>New protocols are supported by adding a new implementation — no changes to the
- * service class are needed (Open/Closed Principle).
+ * <p>New protocols are supported by adding a new implementation — no changes to the service class
+ * are needed (Open/Closed Principle).
  *
  * @see CredentialValidator
  */
@@ -27,13 +27,13 @@ public interface ConnectRequestAssembler {
     boolean supports(ProtocolType protocol);
 
     /**
-     * Constructs a fully-populated {@link ConnectRequest} from the host configuration
-     * and decrypted plaintext credentials.
+     * Constructs a fully-populated {@link ConnectRequest} from the host configuration and decrypted
+     * plaintext credentials.
      *
      * <p>Credential parameters that are not applicable to the protocol may be {@code null}.
      *
-     * @param host                the persisted host configuration (with encrypted fields)
-     * @param decryptedPassword   plaintext password; {@code null} if not used by this protocol
+     * @param host the persisted host configuration (with encrypted fields)
+     * @param decryptedPassword plaintext password; {@code null} if not used by this protocol
      * @param decryptedPrivateKey plaintext PEM private key; {@code null} if not used
      * @param decryptedPassphrase plaintext passphrase; {@code null} if not used
      * @return a ready-to-use {@link ConnectRequest} for the connection service

@@ -23,13 +23,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 /**
  * {@link RegistryCache} implementation backed by Redis via Spring {@link StringRedisTemplate}.
  *
- * <p>Values are serialized to JSON using Jackson {@link ObjectMapper}.  All keys are
- * prefixed with {@code unift:cache:{prefix}:} to isolate different named caches within
- * the same Redis database.
+ * <p>Values are serialized to JSON using Jackson {@link ObjectMapper}. All keys are prefixed with
+ * {@code unift:cache:{prefix}:} to isolate different named caches within the same Redis database.
  *
- * <p>This implementation is resilient to Redis failures: operations log warnings and
- * return null/empty rather than propagating exceptions, so the application continues
- * to function (in degraded mode) if Redis becomes unavailable.
+ * <p>This implementation is resilient to Redis failures: operations log warnings and return
+ * null/empty rather than propagating exceptions, so the application continues to function (in
+ * degraded mode) if Redis becomes unavailable.
  *
  * <p>Uses SCAN (never KEYS) for iteration to avoid blocking Redis in production.
  *
@@ -48,15 +47,11 @@ public class RedisCache<K, V> implements RegistryCache<K, V> {
 
     /**
      * @param redisTemplate Spring-managed template with String serializers for keys and values
-     * @param objectMapper  Jackson mapper used to serialize/deserialize cache values as JSON
-     * @param prefix        cache name used in the key namespace (e.g. "transfer")
-     * @param valueType     runtime class of V, needed for Jackson deserialization
+     * @param objectMapper Jackson mapper used to serialize/deserialize cache values as JSON
+     * @param prefix cache name used in the key namespace (e.g. "transfer")
+     * @param valueType runtime class of V, needed for Jackson deserialization
      */
-    public RedisCache(
-            StringRedisTemplate redisTemplate,
-            ObjectMapper objectMapper,
-            String prefix,
-            Class<V> valueType) {
+    public RedisCache(StringRedisTemplate redisTemplate, ObjectMapper objectMapper, String prefix, Class<V> valueType) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.keyPrefix = "unift:cache:" + prefix + ":";
@@ -216,7 +211,8 @@ public class RedisCache<K, V> implements RegistryCache<K, V> {
         return Collections.unmodifiableSet(result);
     }
 
-    // Counts entries via SCAN (no DBSIZE — that counts all keys, not just this namespace)
+    // Counts entries via SCAN (no DBSIZE — that counts all keys, not just this
+    // namespace)
     @Override
     public long estimatedSize() {
         long count = 0;

@@ -67,12 +67,9 @@ public class UserRepository {
         return results.stream().findFirst();
     }
 
-    /**
-     * Find by username or email — used at login time when caller may provide either.
-     */
+    /** Find by username or email — used at login time when caller may provide either. */
     public Optional<User> findByUsernameOrEmail(String usernameOrEmail) {
-        String sql =
-                """
+        String sql = """
                 SELECT * FROM users
                 WHERE (username = :val OR email = :val)
                   AND deleted_at IS NULL
@@ -95,8 +92,7 @@ public class UserRepository {
     }
 
     public void save(User user) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO users (
                     id, username, password, role,
                     first_name, last_name, email, phone_number,
@@ -139,8 +135,7 @@ public class UserRepository {
     }
 
     public void resetLoginState(UUID userId) {
-        String sql =
-                """
+        String sql = """
                 UPDATE users
                 SET failed_login_attempts = 0,
                     locked_until = NULL

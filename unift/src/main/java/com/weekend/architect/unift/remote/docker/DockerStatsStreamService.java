@@ -19,11 +19,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Streams live Docker container stats (CPU, memory, network I/O) to a browser
- * via Server-Sent Events (SSE).
+ * Streams live Docker container stats (CPU, memory, network I/O) to a browser via Server-Sent
+ * Events (SSE).
  *
- * <p>Each stream feeds Docker Engine {@code /containers/{id}/stats} data through
- * a docker-java {@link ResultCallback} and pushes computed metrics as SSE events.
+ * <p>Each stream feeds Docker Engine {@code /containers/{id}/stats} data through a docker-java
+ * {@link ResultCallback} and pushes computed metrics as SSE events.
  *
  * <p>SSE event types: {@code stats}, {@code end}, {@code error}.
  */
@@ -48,8 +48,8 @@ public class DockerStatsStreamService {
     /**
      * Opens a live stats stream for a single container.
      *
-     * @param sessionId   UniFT session ID
-     * @param userId      authenticated user
+     * @param sessionId UniFT session ID
+     * @param userId authenticated user
      * @param containerId Docker container ID or name
      */
     public SseEmitter streamContainerStats(String sessionId, UUID userId, String containerId) {
@@ -105,32 +105,41 @@ public class DockerStatsStreamService {
     private void closeStream(String streamId) {
         StatsStreamEntry entry = streams.remove(streamId);
         if (entry != null) {
-            try { entry.callback.close(); } catch (Exception ignored) {}
-            try { entry.emitter.complete(); } catch (Exception ignored) {}
+            try {
+                entry.callback.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                entry.emitter.complete();
+            } catch (Exception ignored) {
+            }
             log.debug("[docker-stats] Closed stream {}", streamId);
         }
     }
 
-    private void awaitAndFinalize(
-            ResultCallback.Adapter<Statistics> callback, SseEmitter emitter, String streamId) {
+    private void awaitAndFinalize(ResultCallback.Adapter<Statistics> callback, SseEmitter emitter, String streamId) {
         try {
             callback.awaitCompletion();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
             trySend(emitter, SseEmitter.event().name("end").data("stats stream ended"));
-            try { emitter.complete(); } catch (Exception ignored) {}
+            try {
+                emitter.complete();
+            } catch (Exception ignored) {
+            }
             streams.remove(streamId);
         }
     }
 
     /**
-     * Computes user-friendly metrics from raw Docker Statistics.
-     * CPU percentage follows the same formula as {@code docker stats} CLI.
+     * Computes user-friendly metrics from raw Docker Statistics. CPU percentage follows the same
+     * formula as {@code docker stats} CLI.
      */
     static DockerModels.ContainerStats computeStats(String containerId, Statistics stats) {
         double cpuPercent = 0.0;
-        if (stats.getCpuStats() != null && stats.getPreCpuStats() != null
+        if (stats.getCpuStats() != null
+                && stats.getPreCpuStats() != null
                 && stats.getCpuStats().getCpuUsage() != null
                 && stats.getPreCpuStats().getCpuUsage() != null
                 && stats.getCpuStats().getSystemCpuUsage() != null
@@ -140,16 +149,19 @@ public class DockerStatsStreamService {
             long sysDelta = stats.getCpuStats().getSystemCpuUsage()
                     - stats.getPreCpuStats().getSystemCpuUsage();
             int numCpus = stats.getCpuStats().getCpuUsage().getPercpuUsage() != null
-                    ? stats.getCpuStats().getCpuUsage().getPercpuUsage().size() : 1;
+                    ? stats.getCpuStats().getCpuUsage().getPercpuUsage().size()
+                    : 1;
             if (sysDelta > 0 && cpuDelta >= 0) {
                 cpuPercent = ((double) cpuDelta / sysDelta) * numCpus * 100.0;
             }
         }
 
         long memUsage = stats.getMemoryStats() != null && stats.getMemoryStats().getUsage() != null
-                ? stats.getMemoryStats().getUsage() : 0;
+                ? stats.getMemoryStats().getUsage()
+                : 0;
         long memLimit = stats.getMemoryStats() != null && stats.getMemoryStats().getLimit() != null
-                ? stats.getMemoryStats().getLimit() : 0;
+                ? stats.getMemoryStats().getLimit()
+                : 0;
         double memPercent = memLimit > 0 ? ((double) memUsage / memLimit) * 100.0 : 0.0;
 
         long netRx = 0, netTx = 0;
@@ -169,16 +181,21 @@ public class DockerStatsStreamService {
                 .memoryPercent(Math.round(memPercent * 100.0) / 100.0)
                 .networkRx(netRx)
                 .networkTx(netTx)
-                .pids(stats.getPidsStats() != null && stats.getPidsStats().getCurrent() != null
-                        ? stats.getPidsStats().getCurrent().intValue() : 0)
+                .pids(
+                        stats.getPidsStats() != null && stats.getPidsStats().getCurrent() != null
+                                ? stats.getPidsStats().getCurrent().intValue()
+                                : 0)
                 .build();
     }
 
     private void sendError(SseEmitter emitter, String message) {
-        trySend(emitter, SseEmitter.event()
-                .name("error")
-                .data(Map.of("message", message != null ? message : "Unknown error")));
-        try { emitter.complete(); } catch (Exception ignored) {}
+        trySend(
+                emitter,
+                SseEmitter.event().name("error").data(Map.of("message", message != null ? message : "Unknown error")));
+        try {
+            emitter.complete();
+        } catch (Exception ignored) {
+        }
     }
 
     private void trySend(SseEmitter emitter, SseEmitter.SseEventBuilder event) {

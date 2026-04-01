@@ -9,7 +9,6 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-
 import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -27,9 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-/**
- * Dedicated controller for streaming remote file content over an established SSH/SFTP session.
- */
+/** Dedicated controller for streaming remote file content over an established SSH/SFTP session. */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/stream")
@@ -43,19 +40,19 @@ public class RemoteStreamController {
     /**
      * Streams the content of a remote file directly to the HTTP response.
      *
-     * <p>The SFTP connection used here is the <strong>same</strong> connection already
-     * established via {@code POST /api/remote/sessions} — no new connection is opened.
-     * File bytes are copied from the SFTP {@link InputStream} to the response output
-     * stream in chunks by Spring MVC's async executor. The {@link InputStream} is always
-     * closed after the transfer (or on error).
+     * <p>The SFTP connection used here is the <strong>same</strong> connection already established
+     * via {@code POST /api/remote/sessions} — no new connection is opened. File bytes are copied
+     * from the SFTP {@link InputStream} to the response output stream in chunks by Spring MVC's
+     * async executor. The {@link InputStream} is always closed after the transfer (or on error).
      */
     @GetMapping(value = "/sessions/{sessionId}/files", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     @Operation(
             summary = "Stream a remote file",
-            description = "Downloads the content of a remote file chunk-by-chunk using StreamingResponseBody. "
-                    + "Uses the existing established SSH/SFTP session — no new connection is opened. "
-                    + "Spring MVC's async executor drains the SFTP InputStream into the HTTP response "
-                    + "without buffering the full file in memory.",
+            description = "Downloads the content of a remote file chunk-by-chunk using"
+                    + " StreamingResponseBody. Uses the existing established SSH/SFTP session —"
+                    + " no new connection is opened. Spring MVC's async executor drains the"
+                    + " SFTP InputStream into the HTTP response without buffering the full file"
+                    + " in memory.",
             responses = {
                 @ApiResponse(responseCode = "200", description = "Streaming file content"),
                 @ApiResponse(responseCode = "400", description = "Path is a root or directory", content = @Content),
@@ -79,8 +76,10 @@ public class RemoteStreamController {
 
         log.info("[stream] Streaming file in session {} → {}", sessionId, decodedPath);
 
-        // Open the SFTP InputStream eagerly on the request thread (fast — just opens the channel).
-        // Spring MVC's async executor will drain it to the response output stream on a separate thread.
+        // Open the SFTP InputStream eagerly on the request thread (fast — just opens
+        // the channel).
+        // Spring MVC's async executor will drain it to the response output stream on a
+        // separate thread.
         InputStream remoteStream =
                 streamService.streamFile(sessionId, principal.user().getId(), decodedPath);
 
