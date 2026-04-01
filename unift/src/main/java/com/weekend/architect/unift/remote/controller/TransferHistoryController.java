@@ -29,9 +29,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * REST API for querying the persistent file-transfer history.
  *
- * <p>Transfer log entries are automatically appended by the remote-connection
- * service whenever an upload or download completes, fails, or is cancelled.
- * This controller exposes read-only (plus delete) access to that log.
+ * <p>Transfer log entries are automatically appended by the remote-connection service whenever an
+ * upload or download completes, fails, or is cancelled. This controller exposes read-only (plus
+ * delete) access to that log.
  */
 @RestController
 @RequiredArgsConstructor
@@ -39,8 +39,9 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @Tag(
         name = "Transfer History",
-        description = "Query the persistent audit log of all completed, failed, and cancelled "
-                + "file transfers. Entries are written automatically when SFTP uploads and downloads finish.")
+        description = "Query the persistent audit log of all completed, failed, and cancelled file"
+                + " transfers. Entries are written automatically when SFTP uploads and"
+                + " downloads finish.")
 @SecurityRequirement(name = "BearerAuth")
 public class TransferHistoryController {
 
@@ -54,7 +55,11 @@ public class TransferHistoryController {
             responses = {@ApiResponse(responseCode = "200", description = "Transfer history page")})
     public ResponseEntity<List<TransferLogResponse>> listHistory(
             @Parameter(description = "0-based page index (default 0)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Page size, max 100 (default 20)") @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @Parameter(description = "Page size, max 100 (default 20)")
+                    @RequestParam(defaultValue = "20")
+                    @Min(1)
+                    @Max(100)
+                    int size,
             @AuthenticationPrincipal UniFtUserDetails principal) {
         UUID userId = principal.user().getId();
         log.debug("[transfer-history] Listing history for user {} (page={}, size={})", userId, page, size);

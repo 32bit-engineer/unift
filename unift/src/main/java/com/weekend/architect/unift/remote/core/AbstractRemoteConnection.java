@@ -12,9 +12,9 @@ import lombok.extern.slf4j.Slf4j;
  * Abstract base for all remote connections.
  *
  * <h6>Template Method Pattern</h6>
- * <p>This class owns the connection lifecycle (state machine) as
- * {@code final} methods and delegates the actual transport work to
- * abstract hooks that subclasses must implement:
+ *
+ * <p>This class owns the connection lifecycle (state machine) as {@code final} methods and
+ * delegates the actual transport work to abstract hooks that subclasses must implement:
  *
  * <pre>
  *  connect(creds)          → doConnect(creds)         [abstract]
@@ -24,12 +24,12 @@ import lombok.extern.slf4j.Slf4j;
  *  getSession()            → session field             [concrete, final]
  * </pre>
  *
- * <p>File-operation methods ({@link #upload}, {@link #download},
- * {@link #list}, {@link #delete}, {@link #rename}, {@link #mkdir},
- * {@link #homeDirectory}) are left abstract here so each subclass
+ * <p>File-operation methods ({@link #upload}, {@link #download}, {@link #list}, {@link #delete},
+ * {@link #rename}, {@link #mkdir}, {@link #homeDirectory}) are left abstract here so each subclass
  * provides a transport-specific implementation.
  *
  * <h6>Session lifecycle</h6>
+ *
  * <pre>
  *  INITIALIZING ──connect()──► ACTIVE ──close()──► CLOSED
  *                                  └──────────────► EXPIRED  (set by SessionReaper)
@@ -48,8 +48,8 @@ public abstract class AbstractRemoteConnection implements RemoteConnection {
     }
 
     /**
-     * Template method: validates credentials, delegates to {@link #doConnect},
-     * and transitions the session to {@link SessionState#ACTIVE}.
+     * Template method: validates credentials, delegates to {@link #doConnect}, and transitions the
+     * session to {@link SessionState#ACTIVE}.
      */
     @Override
     public final void connect(RemoteCredentials credentials) throws ConnectionException {
@@ -74,9 +74,8 @@ public abstract class AbstractRemoteConnection implements RemoteConnection {
     }
 
     /**
-     * Template method: calls {@link #preClose()} (no-op by default),
-     * then {@link #doClose()}, and transitions the session to
-     * {@link SessionState#CLOSED}.  Idempotent.
+     * Template method: calls {@link #preClose()} (no-op by default), then {@link #doClose()}, and
+     * transitions the session to {@link SessionState#CLOSED}. Idempotent.
      */
     @Override
     public final void close() {
@@ -111,8 +110,8 @@ public abstract class AbstractRemoteConnection implements RemoteConnection {
     }
 
     /**
-     * Asserts that the session is active and not expired.
-     * Call this at the top of every file-operation method.
+     * Asserts that the session is active and not expired. Call this at the top of every
+     * file-operation method.
      */
     protected final void assertActive() {
         if (session.isExpired()) {
@@ -130,30 +129,29 @@ public abstract class AbstractRemoteConnection implements RemoteConnection {
     // Template hooks — subclasses implement
 
     /**
-     * Validate the credentials before attempting a connection.
-     * Throw {@link com.weekend.architect.unift.remote.exception.CredentialValidationException}
-     * for invalid input.
+     * Validate the credentials before attempting a connection. Throw {@link
+     * com.weekend.architect.unift.remote.exception.CredentialValidationException} for invalid
+     * input.
      */
     protected abstract void validateCredentials(RemoteCredentials credentials);
 
     /**
      * Open the physical transport (e.g. JSch session + SFTP channel).
      *
-     * @throws Exception any transport-level error; wrapped into
-     *                   {@link ConnectionException} by the template
+     * @throws Exception any transport-level error; wrapped into {@link ConnectionException} by the
+     *     template
      */
     protected abstract void doConnect(RemoteCredentials credentials) throws Exception;
 
     /**
-     * Release all transport resources (channels, sockets, etc.).
-     * Must be idempotent. Called with the session still in ACTIVE or EXPIRED state.
+     * Release all transport resources (channels, sockets, etc.). Must be idempotent. Called with
+     * the session still in ACTIVE or EXPIRED state.
      */
     protected abstract void doClose();
 
     /**
-     * Optional hook called just before {@link #doClose()}.
-     * Subclasses may override to flush in-flight transfers or log statistics.
-     * Default implementation is a no-op.
+     * Optional hook called just before {@link #doClose()}. Subclasses may override to flush
+     * in-flight transfers or log statistics. Default implementation is a no-op.
      */
     protected void preClose() {
         // no-op; override in subclasses if needed

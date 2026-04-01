@@ -15,38 +15,42 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * {@link RegistryCache} implementation backed by a
- * <a href="https://github.com/ben-manes/caffeine">Caffeine</a> in-process cache.
+ * {@link RegistryCache} implementation backed by a <a
+ * href="https://github.com/ben-manes/caffeine">Caffeine</a> in-process cache.
  *
  * <h6>Per-entry TTL</h6>
- * <p>Caffeine's {@link Expiry} API controls eviction timing.  Because Caffeine
- * does not expose per-entry TTL through the standard {@code put()} call, this
- * class maintains a lightweight side-map ({@code ttlDeadlines}) of
- * {@code key → System.nanoTime() + ttl}.  The custom {@link Expiry} implementation
- * consults this map in both {@code expireAfterCreate} and {@code expireAfterUpdate},
- * returning {@link Long#MAX_VALUE} (never expire) for entries without a deadline.
  *
- * <p>The side-map is kept in sync with the main cache via a Caffeine removal
- * listener that deletes the deadline when any entry is evicted or explicitly removed.
+ * <p>Caffeine's {@link Expiry} API controls eviction timing. Because Caffeine does not expose
+ * per-entry TTL through the standard {@code put()} call, this class maintains a lightweight
+ * side-map ({@code ttlDeadlines}) of {@code key → System.nanoTime() + ttl}. The custom {@link
+ * Expiry} implementation consults this map in both {@code expireAfterCreate} and {@code
+ * expireAfterUpdate}, returning {@link Long#MAX_VALUE} (never expire) for entries without a
+ * deadline.
+ *
+ * <p>The side-map is kept in sync with the main cache via a Caffeine removal listener that deletes
+ * the deadline when any entry is evicted or explicitly removed.
  *
  * <h6>Eviction contract</h6>
+ *
  * <ul>
- *   <li>{@link #put(Object, Object)} — removes any existing deadline; entry lives
- *       until explicitly removed or size-cap eviction.</li>
- *   <li>{@link #put(Object, Object, Duration)} — records a nano-deadline; Caffeine
- *       evicts the entry once that deadline passes.</li>
+ *   <li>{@link #put(Object, Object)} — removes any existing deadline; entry lives until explicitly
+ *       removed or size-cap eviction.
+ *   <li>{@link #put(Object, Object, Duration)} — records a nano-deadline; Caffeine evicts the entry
+ *       once that deadline passes.
  * </ul>
  *
  * <h6>Thread-safety</h6>
- * <p>Caffeine is fully thread-safe.  {@code ttlDeadlines} is a
- * {@link ConcurrentHashMap}.  The ordering of {@code ttlDeadlines} writes and
- * {@code inner.put()} calls (deadline written <em>before</em> cache insert) ensures
- * the {@link Expiry} callbacks always see a consistent deadline.
+ *
+ * <p>Caffeine is fully thread-safe. {@code ttlDeadlines} is a {@link ConcurrentHashMap}. The
+ * ordering of {@code ttlDeadlines} writes and {@code inner.put()} calls (deadline written
+ * <em>before</em> cache insert) ensures the {@link Expiry} callbacks always see a consistent
+ * deadline.
  *
  * <h6>Future migration to Redis</h6>
- * <p>Swap this implementation by registering a {@code RedisRegistryCache} Spring
- * {@code @Bean} of the same generic type.  The registries depend only on
- * {@link RegistryCache} and require no code changes.
+ *
+ * <p>Swap this implementation by registering a {@code RedisRegistryCache} Spring {@code @Bean} of
+ * the same generic type. The registries depend only on {@link RegistryCache} and require no code
+ * changes.
  *
  * @param <K> key type
  * @param <V> value type
@@ -54,9 +58,9 @@ import java.util.function.Predicate;
 public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
 
     /**
-     * Nano-time deadlines for entries that were inserted with an explicit TTL.
-     * Entries without a deadline are absent from this map (= never expire).
-     * Cleaned up automatically via the Caffeine removal listener.
+     * Nano-time deadlines for entries that were inserted with an explicit TTL. Entries without a
+     * deadline are absent from this map (= never expire). Cleaned up automatically via the Caffeine
+     * removal listener.
      */
     private final ConcurrentHashMap<K, Long> ttlDeadlines = new ConcurrentHashMap<>();
 
@@ -73,11 +77,11 @@ public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
     /**
      * Creates a new {@link CaffeineRegistryCache} bounded to {@code maximumSize} entries.
      *
-     * <p>Once the cache reaches capacity, Caffeine evicts the entry estimated to be
-     * accessed least recently (approximate W-TinyLFU policy).
+     * <p>Once the cache reaches capacity, Caffeine evicts the entry estimated to be accessed least
+     * recently (approximate W-TinyLFU policy).
      *
-     * @param maximumSize upper bound on the number of entries; use a generous value
-     *                    (e.g. {@code 10_000}) for safety capping rather than strict limiting
+     * @param maximumSize upper bound on the number of entries; use a generous value (e.g. {@code
+     *     10_000}) for safety capping rather than strict limiting
      * @return a new {@code CaffeineRegistryCache} instance
      */
     public static <K, V> CaffeineRegistryCache<K, V> bounded(long maximumSize) {
@@ -85,10 +89,9 @@ public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
     }
 
     /**
-     * Stores the entry with no expiry.  Any prior TTL on this key is cancelled:
-     * {@code ttlDeadlines} is cleaned <em>before</em> the Caffeine insert so the
-     * {@link Expiry#expireAfterUpdate} callback sees no deadline and returns
-     * {@link Long#MAX_VALUE}.
+     * Stores the entry with no expiry. Any prior TTL on this key is cancelled: {@code ttlDeadlines}
+     * is cleaned <em>before</em> the Caffeine insert so the {@link Expiry#expireAfterUpdate}
+     * callback sees no deadline and returns {@link Long#MAX_VALUE}.
      */
     @Override
     public void put(K key, V value) {
@@ -97,9 +100,8 @@ public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
     }
 
     /**
-     * Stores the entry with the given TTL.  The nano-deadline is written to
-     * {@code ttlDeadlines} <em>before</em> the Caffeine insert so the
-     * {@link Expiry} callback sees it immediately.
+     * Stores the entry with the given TTL. The nano-deadline is written to {@code ttlDeadlines}
+     * <em>before</em> the Caffeine insert so the {@link Expiry} callback sees it immediately.
      */
     @Override
     public void put(K key, V value, Duration ttl) {
@@ -120,9 +122,9 @@ public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
     /**
      * Removes the entry and returns its previous value.
      *
-     * <p>Uses {@code asMap().remove()} which is ConcurrentHashMap-compatible:
-     * the Caffeine removal listener fires (cleaning up {@code ttlDeadlines})
-     * and the previous value is returned in one step.
+     * <p>Uses {@code asMap().remove()} which is ConcurrentHashMap-compatible: the Caffeine removal
+     * listener fires (cleaning up {@code ttlDeadlines}) and the previous value is returned in one
+     * step.
      */
     @Override
     public V remove(K key) {
@@ -163,11 +165,11 @@ public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
     }
 
     /**
-     * Builds a {@link Expiry} that returns the remaining nanos until the recorded
-     * deadline (for TTL entries) or {@link Long#MAX_VALUE} (for no-TTL entries).
+     * Builds a {@link Expiry} that returns the remaining nanos until the recorded deadline (for TTL
+     * entries) or {@link Long#MAX_VALUE} (for no-TTL entries).
      *
-     * <p>{@code expireAfterRead} returns {@code currentDuration} unchanged — read
-     * access does not reset the TTL clock.
+     * <p>{@code expireAfterRead} returns {@code currentDuration} unchanged — read access does not
+     * reset the TTL clock.
      */
     private Expiry<K, V> buildExpiry() {
         return new Expiry<>() {
@@ -195,8 +197,8 @@ public final class CaffeineRegistryCache<K, V> implements RegistryCache<K, V> {
     }
 
     /**
-     * Removal listener: keeps {@code ttlDeadlines} in sync with the main cache.
-     * Called for all removal causes: EXPLICIT, REPLACED, EXPIRED, SIZE, COLLECTED.
+     * Removal listener: keeps {@code ttlDeadlines} in sync with the main cache. Called for all
+     * removal causes: EXPLICIT, REPLACED, EXPIRED, SIZE, COLLECTED.
      */
     private void onRemoval(K key, V value, RemovalCause cause) {
         if (key != null) {

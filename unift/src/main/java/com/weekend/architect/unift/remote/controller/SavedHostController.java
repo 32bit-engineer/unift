@@ -33,11 +33,12 @@ import org.springframework.web.bind.annotation.RestController;
  * REST endpoints for managing saved remote host configurations.
  *
  * <p>Credentials flow:
+ *
  * <ol>
- *   <li>Client POSTs plaintext credentials over TLS → encrypted with AES-256-GCM → stored in DB</li>
- *   <li>Credentials are <strong>never</strong> returned in any response</li>
+ *   <li>Client POSTs plaintext credentials over TLS → encrypted with AES-256-GCM → stored in DB
+ *   <li>Credentials are <strong>never</strong> returned in any response
  *   <li>At connect time, credentials are decrypted on the fly, used to open the remote session,
- *       then discarded — they never leave the JVM heap in plaintext form</li>
+ *       then discarded — they never leave the JVM heap in plaintext form
  * </ol>
  */
 @RestController
@@ -82,7 +83,8 @@ public class SavedHostController {
     @GetMapping
     @Operation(
             summary = "List all saved hosts",
-            description = "Returns all saved host configurations for the current user. Credentials are never included.")
+            description =
+                    "Returns all saved host configurations for the current user. Credentials are" + " never included.")
     public ResponseEntity<List<SavedHostResponse>> list(@AuthenticationPrincipal UniFtUserDetails principal) {
         return ResponseEntity.ok(service.list(principal.user().getId()));
     }
@@ -117,8 +119,9 @@ public class SavedHostController {
     @PostMapping("/{id}/connect")
     @Operation(
             summary = "Connect to a saved host",
-            description = "Decrypts the stored credentials on the fly and opens a new SSH session. "
-                    + "Plaintext credentials exist only for the duration of the TCP handshake.",
+            description = "Decrypts the stored credentials on the fly and opens a new SSH session."
+                    + " Plaintext credentials exist only for the duration of the TCP"
+                    + " handshake.",
             responses = {
                 @ApiResponse(
                         responseCode = "201",
@@ -141,8 +144,9 @@ public class SavedHostController {
     @PatchMapping("/{id}/workspace-preference")
     @Operation(
             summary = "Update workspace preference",
-            description = "Sets the preferred workspace type (ssh, docker, kubernetes) for a saved host. "
-                    + "Determines which dedicated sidebar and landing page to show on reconnect.",
+            description = "Sets the preferred workspace type (ssh, docker, kubernetes) for a saved host."
+                    + " Determines which dedicated sidebar and landing page to show on"
+                    + " reconnect.",
             responses = {
                 @ApiResponse(responseCode = "204", description = "Preference updated"),
                 @ApiResponse(responseCode = "400", description = "Invalid preference value", content = @Content),
@@ -160,5 +164,6 @@ public class SavedHostController {
         return ResponseEntity.noContent().build();
     }
 
-    private static final java.util.Set<String> VALID_WORKSPACE_PREFERENCES = java.util.Set.of("ssh", "docker", "kubernetes");
+    private static final java.util.Set<String> VALID_WORKSPACE_PREFERENCES =
+            java.util.Set.of("ssh", "docker", "kubernetes");
 }

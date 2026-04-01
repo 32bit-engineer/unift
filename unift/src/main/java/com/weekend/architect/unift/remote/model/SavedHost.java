@@ -10,11 +10,11 @@ import lombok.Value;
 /**
  * Immutable domain model for a saved remote host configuration.
  *
- * <p>The {@code protocol} field drives which credentials are relevant and how a
- * {@link com.weekend.architect.unift.remote.dto.ConnectRequest} is assembled at connect time.
+ * <p>The {@code protocol} field drives which credentials are relevant and how a {@link
+ * com.weekend.architect.unift.remote.dto.ConnectRequest} is assembled at connect time.
  *
- * <p>All credential fields are stored AES-256-GCM encrypted — never in plaintext.
- * Decryption is performed on-the-fly in the service layer only at connect time.
+ * <p>All credential fields are stored AES-256-GCM encrypted — never in plaintext. Decryption is
+ * performed on-the-fly in the service layer only at connect time.
  *
  * <p>{@code authType} is SSH-specific and may be {@code null} for non-SSH protocols.
  */
@@ -23,34 +23,40 @@ import lombok.Value;
 public class SavedHost {
     UUID id;
     UUID userId;
+
     /** User-defined friendly label, e.g. "My VPS" or "Home Server". */
     String label;
+
     /** The remote protocol used for this host. */
     ProtocolType protocol;
 
     String hostname;
     int port;
     String username;
+
     /**
-     * SSH-specific authentication strategy.
-     * {@code null} for protocols other than {@link ProtocolType#SSH_SFTP}.
+     * SSH-specific authentication strategy. {@code null} for protocols other than {@link
+     * ProtocolType#SSH_SFTP}.
      */
     SshAuthType authType;
+
     /** AES-256-GCM encrypted password; {@code null} when not applicable. */
     String encryptedPassword;
+
     /** AES-256-GCM encrypted PEM private key; {@code null} when not applicable. */
     String encryptedPrivateKey;
+
     /** AES-256-GCM encrypted passphrase; {@code null} when not applicable. */
     String encryptedPassphrase;
 
     boolean strictHostKeyChecking;
+
     /** Expected server fingerprint, e.g. {@code SHA256:...}; may be {@code null}. */
     String expectedFingerprint;
 
     /**
-     * User's preferred workspace type for this host.
-     * Drives which dedicated sidebar and landing page to show on reconnect.
-     * Values: {@code ssh}, {@code kubernetes}. Defaults to {@code ssh}.
+     * User's preferred workspace type for this host. Drives which dedicated sidebar and landing
+     * page to show on reconnect. Values: {@code ssh}, {@code kubernetes}. Defaults to {@code ssh}.
      */
     String workspacePreference;
 

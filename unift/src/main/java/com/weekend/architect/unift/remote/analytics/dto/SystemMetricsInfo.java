@@ -15,15 +15,12 @@ import lombok.NoArgsConstructor;
 public class SystemMetricsInfo {
 
     /**
-     * CPU utilisation as a percentage (0–100), derived from {@code /proc/stat}.
-     * {@code null} when not available (e.g. non-Linux host or probe failure).
+     * CPU utilisation as a percentage (0–100), derived from {@code /proc/stat}. {@code null} when
+     * not available (e.g. non-Linux host or probe failure).
      */
     Double cpuPercent;
 
-    /**
-     * RAM utilisation as a percentage (0–100).
-     * {@code null} when not available.
-     */
+    /** RAM utilisation as a percentage (0–100). {@code null} when not available. */
     Double memoryUsedPercent;
 
     /** Used memory in bytes. {@code null} when not available. */
@@ -32,10 +29,7 @@ public class SystemMetricsInfo {
     /** Total installed memory in bytes. {@code null} when not available. */
     Long memoryTotalBytes;
 
-    /**
-     * Root filesystem utilisation as a percentage (0–100).
-     * {@code null} when not available.
-     */
+    /** Root filesystem utilisation as a percentage (0–100). {@code null} when not available. */
     Double diskUsedPercent;
 
     /** Used disk space on {@code /} in bytes. {@code null} when not available. */

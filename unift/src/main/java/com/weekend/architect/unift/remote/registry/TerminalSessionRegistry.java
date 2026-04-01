@@ -22,29 +22,31 @@ import org.springframework.web.socket.PingMessage;
  * Global in-memory registry of all active WebSocket terminal sessions.
  *
  * <h6>Responsibilities</h6>
+ *
  * <ol>
- *   <li>Atomic per-user session cap enforcement ({@link #registerIfUnderCap})</li>
- *   <li>Idempotent removal with guaranteed shell cleanup ({@link #remove})</li>
- *   <li>Activity tracking ({@link #touchActivity}) for idle detection</li>
- *   <li>Periodic ping to keep WebSocket connections alive through CDN/LB</li>
- *   <li>Idle reaper that force-closes sessions idle beyond {@code idleTimeoutMinutes}</li>
- *   <li>Propagates terminal activity to parent SSH session to maintain sliding TTL</li>
+ *   <li>Atomic per-user session cap enforcement ({@link #registerIfUnderCap})
+ *   <li>Idempotent removal with guaranteed shell cleanup ({@link #remove})
+ *   <li>Activity tracking ({@link #touchActivity}) for idle detection
+ *   <li>Periodic ping to keep WebSocket connections alive through CDN/LB
+ *   <li>Idle reaper that force-closes sessions idle beyond {@code idleTimeoutMinutes}
+ *   <li>Propagates terminal activity to parent SSH session to maintain sliding TTL
  * </ol>
  *
  * <h6>Backing store</h6>
- * <p>Uses an injected {@link TerminalSessionCache} (Caffeine-backed by default,
- * bounded to 10,000 entries).  No auto-TTL — the {@link #reapAndPing()} scheduler
- * owns eviction based on idle time.
+ *
+ * <p>Uses an injected {@link TerminalSessionCache} (Caffeine-backed by default, bounded to 10,000
+ * entries). No auto-TTL — the {@link #reapAndPing()} scheduler owns eviction based on idle time.
  *
  * <h6>Thread-safety</h6>
- * <p>Delegated to {@link TerminalSessionCache}.  {@link #registerIfUnderCap} uses a
- * {@code synchronized} block to serialise the count-check + put and prevent TOCTOU.
+ *
+ * <p>Delegated to {@link TerminalSessionCache}. {@link #registerIfUnderCap} uses a {@code
+ * synchronized} block to serialise the count-check + put and prevent TOCTOU.
  *
  * <h6>Concurrency model for WebSocket sends</h6>
- * <p>Both the pipe thread and the ping task send frames to the same
- * {@link org.springframework.web.socket.WebSocketSession}.  Callers <em>must</em>
- * wrap sessions with
- * {@link org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator}.
+ *
+ * <p>Both the pipe thread and the ping task send frames to the same {@link
+ * org.springframework.web.socket.WebSocketSession}. Callers <em>must</em> wrap sessions with {@link
+ * org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator}.
  */
 @Slf4j
 @Component
@@ -55,9 +57,9 @@ public class TerminalSessionRegistry {
     private final TerminalEventPublisher eventPublisher;
 
     /**
-     * Lazily resolved reference to the SSH connection cache. Breaks the circular dependency
-     * between SessionRegistry (depends on TerminalSessionRegistry for cascade) and
-     * TerminalSessionRegistry (needs SSH cache to renew parent TTL on terminal activity).
+     * Lazily resolved reference to the SSH connection cache. Breaks the circular dependency between
+     * SessionRegistry (depends on TerminalSessionRegistry for cascade) and TerminalSessionRegistry
+     * (needs SSH cache to renew parent TTL on terminal activity).
      */
     private final AtomicReference<SshConnectionCache> sessionRegistryRef = new AtomicReference<>();
 
@@ -73,14 +75,14 @@ public class TerminalSessionRegistry {
     }
 
     /**
-     * Atomically checks the per-user session cap and, if under the limit, registers
-     * the given terminal session.
+     * Atomically checks the per-user session cap and, if under the limit, registers the given
+     * terminal session.
      */
     public synchronized boolean registerIfUnderCap(TerminalSession session) {
         long current = countByOwner(session.ownerId());
         if (current >= props.getMaxSessionsPerUser()) {
             log.warn(
-                    "[terminal-registry] Per-user cap ({}) reached for user {} — rejecting new session {}",
+                    "[terminal-registry] Per-user cap ({}) reached for user {} — rejecting new" + " session {}",
                     props.getMaxSessionsPerUser(),
                     session.ownerId(),
                     session.wsSessionId());
@@ -101,8 +103,7 @@ public class TerminalSessionRegistry {
     }
 
     /**
-     * Removes the session, closes the underlying shell, and publishes a Kafka event.
-     * Idempotent.
+     * Removes the session, closes the underlying shell, and publishes a Kafka event. Idempotent.
      */
     public void remove(String wsSessionId, String reason) {
         TerminalSession session = store.remove(wsSessionId);
@@ -136,8 +137,8 @@ public class TerminalSessionRegistry {
     }
 
     /**
-     * Renews the TTL on the parent SSH session so that terminal activity
-     * keeps the underlying connection alive.
+     * Renews the TTL on the parent SSH session so that terminal activity keeps the underlying
+     * connection alive.
      */
     private void renewParentSessionTtl(String sshSessionId) {
         try {
@@ -165,9 +166,7 @@ public class TerminalSessionRegistry {
         return (int) store.estimatedSize();
     }
 
-    /**
-     * Closes every terminal session whose parent SSH session matches {@code sshSessionId}.
-     */
+    /** Closes every terminal session whose parent SSH session matches {@code sshSessionId}. */
     public void closeAllBySshSession(String sshSessionId, String reason) {
         List<TerminalSession> affected = store.values().stream()
                 .filter(s -> sshSessionId.equals(s.sshSessionId()))
@@ -176,7 +175,8 @@ public class TerminalSessionRegistry {
         if (affected.isEmpty()) return;
 
         log.info(
-                "[terminal-registry] Closing {} terminal session(s) because SSH session {} was closed (reason: {})",
+                "[terminal-registry] Closing {} terminal session(s) because SSH session {} was"
+                        + " closed (reason: {})",
                 affected.size(),
                 sshSessionId,
                 reason);
@@ -186,7 +186,7 @@ public class TerminalSessionRegistry {
                 session.wsSession().close(new CloseStatus(4000, "SSH session closed: " + reason));
             } catch (IOException e) {
                 log.debug(
-                        "[terminal-registry] Could not send close frame to terminal {} (already gone): {}",
+                        "[terminal-registry] Could not send close frame to terminal {} (already" + " gone): {}",
                         session.wsSessionId(),
                         e.getMessage());
             }
@@ -195,8 +195,8 @@ public class TerminalSessionRegistry {
     }
 
     /**
-     * Runs every {@code unift.terminal.reaper-interval-ms} (default: 30 s).
-     * Sends a WebSocket ping to every session and reaps idle sessions.
+     * Runs every {@code unift.terminal.reaper-interval-ms} (default: 30 s). Sends a WebSocket ping
+     * to every session and reaps idle sessions.
      */
     @Scheduled(fixedDelayString = "${unift.terminal.reaper-interval-ms:30000}")
     public void reapAndPing() {
@@ -210,7 +210,7 @@ public class TerminalSessionRegistry {
                     session.wsSession().sendMessage(new PingMessage());
                 } catch (IOException e) {
                     log.warn(
-                            "[terminal-reaper] Ping failed for session {} — closing dead connection: {}",
+                            "[terminal-reaper] Ping failed for session {} — closing dead" + " connection: {}",
                             session.wsSessionId(),
                             e.getMessage());
                     remove(session.wsSessionId(), "ping-failed");

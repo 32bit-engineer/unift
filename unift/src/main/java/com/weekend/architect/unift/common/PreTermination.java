@@ -12,29 +12,31 @@ import org.springframework.stereotype.Component;
  * Coordinates orderly shutdown of executor pools and SSH sessions.
  *
  * <h6>Thread ownership</h6>
+ *
  * <ul>
- *   <li><b>virtualThreadExecutor</b> — terminal pipe loops ({@code pipeShellToWebSocket})
- *       and analytics parallel probes.  Pipe loops block on {@code stdout.read()} and will
- *       only exit after the underlying SSH session is closed.</li>
- *   <li><b>platformThreadExecutor</b> — BCrypt hashing (auth service).  Tasks are
- *       short-lived (&lt; 1 s) and finish well within the drain window.</li>
- *   <li><b>Spring's own servlet / async threads</b> — SFTP stream uploads and
- *       {@link org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody}
- *       downloads run here and are <em>not</em> owned by our executors.  They are drained
- *       by Spring Boot's graceful shutdown ({@code server.shutdown=graceful}) which stops
- *       the servlet container and waits for in-flight HTTP requests to complete
- *       <em>before</em> any {@code @PreDestroy} method is called.  By the time
- *       {@link #destroy()} runs, all SFTP transfers are already finished.</li>
+ *   <li><b>virtualThreadExecutor</b> — terminal pipe loops ({@code pipeShellToWebSocket}) and
+ *       analytics parallel probes. Pipe loops block on {@code stdout.read()} and will only exit
+ *       after the underlying SSH session is closed.
+ *   <li><b>platformThreadExecutor</b> — BCrypt hashing (auth service). Tasks are short-lived (&lt;
+ *       1 s) and finish well within the drain window.
+ *   <li><b>Spring's own servlet / async threads</b> — SFTP stream uploads and {@link
+ *       org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody} downloads run
+ *       here and are <em>not</em> owned by our executors. They are drained by Spring Boot's
+ *       graceful shutdown ({@code server.shutdown=graceful}) which stops the servlet container and
+ *       waits for in-flight HTTP requests to complete <em>before</em> any {@code @PreDestroy}
+ *       method is called. By the time {@link #destroy()} runs, all SFTP transfers are already
+ *       finished.
  * </ul>
  *
  * <h6>Shutdown sequence</h6>
+ *
  * <ol>
- *   <li>Stop accepting new tasks on both executors.</li>
- *   <li>Close all SSH sessions — this is the signal that unblocks terminal pipe threads
- *       (their {@code read()} returns EOF) and cuts any residual SFTP streams.</li>
- *   <li>Await executor drain — pipe threads can now finish quickly because their streams
- *       are closed.  BCrypt tasks finish on their own.</li>
- *   <li>Force-interrupt any stragglers if the window expires.</li>
+ *   <li>Stop accepting new tasks on both executors.
+ *   <li>Close all SSH sessions — this is the signal that unblocks terminal pipe threads (their
+ *       {@code read()} returns EOF) and cuts any residual SFTP streams.
+ *   <li>Await executor drain — pipe threads can now finish quickly because their streams are
+ *       closed. BCrypt tasks finish on their own.
+ *   <li>Force-interrupt any stragglers if the window expires.
  * </ol>
  */
 @Slf4j
@@ -84,11 +86,11 @@ public class PreTermination {
     private void awaitTermination() {
         try {
             if (!virtualThreadExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                log.warn("[shutdown] Virtual-thread executor did not drain in 10 s — forcing shutdown");
+                log.warn("[shutdown] Virtual-thread executor did not drain in 10 s — forcing" + " shutdown");
                 virtualThreadExecutor.shutdownNow();
             }
             if (!platformThreadExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                log.warn("[shutdown] Platform-thread executor did not drain in 10 s — forcing shutdown");
+                log.warn("[shutdown] Platform-thread executor did not drain in 10 s — forcing" + " shutdown");
                 platformThreadExecutor.shutdownNow();
             }
         } catch (InterruptedException iex) {

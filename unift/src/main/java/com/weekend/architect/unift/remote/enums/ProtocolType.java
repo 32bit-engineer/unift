@@ -1,9 +1,8 @@
 package com.weekend.architect.unift.remote.enums;
 
 /**
- * Supported remote-connection protocols.
- * The sealed credentials hierarchy is keyed on this enum so that the
- * {@code ConnectionFactory} can dispatch via a pattern-matching switch.
+ * Supported remote-connection protocols. The sealed credentials hierarchy is keyed on this enum so
+ * that the {@code ConnectionFactory} can dispatch via a pattern-matching switch.
  */
 public enum ProtocolType {
     /** SSH File Transfer Protocol – implemented via JSch. */

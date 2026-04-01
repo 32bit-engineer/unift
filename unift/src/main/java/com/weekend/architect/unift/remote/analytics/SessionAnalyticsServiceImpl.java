@@ -41,16 +41,15 @@ import org.springframework.stereotype.Service;
 /**
  * Default implementation of {@link SessionAnalyticsService}.
  *
- *
- * <p>The three expensive sub-probes (SSH latency, local ping, remote system
- * metrics) are executed in parallel on virtual threads and merged with a
- * time-bounded {@code CompletableFuture.allOf()}, so the overall call
- * completes within a few seconds even when individual probes fail.
+ * <p>The three expensive sub-probes (SSH latency, local ping, remote system metrics) are executed
+ * in parallel on virtual threads and merged with a time-bounded {@code CompletableFuture.allOf()},
+ * so the overall call completes within a few seconds even when individual probes fail.
  *
  * <h6>Fallbacks</h6>
- * <p>Every probe catches its own exceptions and returns a sentinel value
- * (e.g. {@link LatencyInfo#unavailable()}) — the analytics endpoint never
- * returns a 5xx because a remote host is slow.
+ *
+ * <p>Every probe catches its own exceptions and returns a sentinel value (e.g. {@link
+ * LatencyInfo#unavailable()}) — the analytics endpoint never returns a 5xx because a remote host is
+ * slow.
  */
 @Slf4j
 @Service
@@ -108,7 +107,7 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
                     .orTimeout(PROBE_TIMEOUT_SECS, TimeUnit.SECONDS)
                     .exceptionally(ex -> {
                         log.warn(
-                                "[analytics] One or more probes timed out for session {}: {}",
+                                "[analytics] One or more probes timed out for session {}:" + " {}",
                                 sessionId,
                                 ex.getMessage());
                         return null;
@@ -227,10 +226,8 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
             Process proc = pb.start();
 
             String output;
-            try (
-                BufferedReader stdout = new BufferedReader(new InputStreamReader(proc.getInputStream()));
-                BufferedReader stderr = new BufferedReader(new InputStreamReader(proc.getErrorStream()))
-            ) {
+            try (BufferedReader stdout = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+                    BufferedReader stderr = new BufferedReader(new InputStreamReader(proc.getErrorStream()))) {
                 String out = stdout.lines().collect(Collectors.joining("\n"));
                 String err = stderr.lines().collect(Collectors.joining("\n"));
 
@@ -378,7 +375,9 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
                 .build();
     }
 
-    /** Runs an SSH exec command, swallowing all exceptions and returning empty string on failure. */
+    /**
+     * Runs an SSH exec command, swallowing all exceptions and returning empty string on failure.
+     */
     private String safeExec(RemoteShell shell, String command) {
         try {
             String result = shell.executeCommand(command);
@@ -397,7 +396,10 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
         }
     }
 
-    /** Parses {@code "value1 value2"} → {@code [Long, Long]}; entries are {@code null} on parse failure. */
+    /**
+     * Parses {@code "value1 value2"} → {@code [Long, Long]}; entries are {@code null} on parse
+     * failure.
+     */
     private Long[] parseLongPair(String s) {
         Long[] result = {null, null};
         if (s == null || s.isBlank()) return result;
@@ -418,8 +420,8 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
     }
 
     /**
-     * Attempts to derive a human-readable region string from the remote hostname.
-     * Checks for AWS and GCP hostname patterns; falls back to a reverse-DNS lookup.
+     * Attempts to derive a human-readable region string from the remote hostname. Checks for AWS
+     * and GCP hostname patterns; falls back to a reverse-DNS lookup.
      */
     private String resolveRegion(String host) {
         try {

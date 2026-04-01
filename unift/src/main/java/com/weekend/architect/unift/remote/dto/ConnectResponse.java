@@ -15,6 +15,7 @@ import lombok.Value;
 public class ConnectResponse {
 
     String sessionId;
+
     /** The friendly alias provided at connect-time. */
     String label;
 
@@ -25,11 +26,13 @@ public class ConnectResponse {
     SessionState state;
     OffsetDateTime createdAt;
     OffsetDateTime expiresAt;
+
     /** Home directory of the remote user; populated after successful connect. */
     String homeDirectory;
+
     /**
-     * Detected OS or service name, e.g. "Ubuntu 22.04.3 LTS", "Amazon S3".
-     * Populated after successful connect; {@code null} if detection failed.
+     * Detected OS or service name, e.g. "Ubuntu 22.04.3 LTS", "Amazon S3". Populated after
+     * successful connect; {@code null} if detection failed.
      */
     String remoteOs;
 

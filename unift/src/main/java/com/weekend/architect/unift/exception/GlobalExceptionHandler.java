@@ -88,8 +88,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status)
                 .body(errorBody(
                         status,
-                        "File is too large. Use the /upload/stream endpoint to send files as a raw "
-                                + "application/octet-stream body, which has no size limit."));
+                        "File is too large. Use the /upload/stream endpoint to send files"
+                                + " as a raw application/octet-stream body, which has no size"
+                                + " limit."));
     }
 
     @ExceptionHandler(UploadCancelledException.class)
@@ -170,7 +171,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage()));
     }
 
-    /** Catch-all for any other remote-connection failure (connect errors, transfer errors, browse errors). */
+    /**
+     * Catch-all for any other remote-connection failure (connect errors, transfer errors, browse
+     * errors).
+     */
     @ExceptionHandler(RemoteConnectionException.class)
     public ResponseEntity<ErrorResponse> handleRemoteConnection(RemoteConnectionException ex) {
         log.error("Remote connection error: {}", ex.getMessage(), ex);

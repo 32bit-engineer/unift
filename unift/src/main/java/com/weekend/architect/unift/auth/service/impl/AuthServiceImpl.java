@@ -40,10 +40,10 @@ public class AuthServiceImpl implements AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
 
     /**
-     * CPU-bound work executor — BCrypt hashing is computationally expensive.
-     * Using a pool bounded to {@code availableProcessors()} ensures concurrent
-     * login/register requests cannot saturate all CPU cores simultaneously.
-     * Lifecycle managed by {@link com.weekend.architect.unift.common.PreTermination}.
+     * CPU-bound work executor — BCrypt hashing is computationally expensive. Using a pool bounded
+     * to {@code availableProcessors()} ensures concurrent login/register requests cannot saturate
+     * all CPU cores simultaneously. Lifecycle managed by {@link
+     * com.weekend.architect.unift.common.PreTermination}.
      */
     private final ExecutorService platformThreadExecutor;
 

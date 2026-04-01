@@ -24,9 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * REST controller for Docker container management.
- * All operations tunnel through the session's SSH connection to the remote
- * Docker daemon socket.
+ * REST controller for Docker container management. All operations tunnel through the session's SSH
+ * connection to the remote Docker daemon socket.
  *
  * <p>Base path: {@code /api/remote/sessions/{sessionId}/docker}
  */
@@ -45,26 +44,26 @@ public class DockerController {
     @GetMapping("/status")
     @Operation(summary = "Check Docker daemon connectivity")
     public ResponseEntity<Map<String, Boolean>> checkDocker(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
-        boolean available = dockerService.isDockerAvailable(sessionId, principal.user().getId());
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        boolean available =
+                dockerService.isDockerAvailable(sessionId, principal.user().getId());
         return ResponseEntity.ok(Map.of("available", available));
     }
 
     @GetMapping("/info")
     @Operation(summary = "Get Docker daemon system information")
     public ResponseEntity<DockerModels.DockerSystemInfo> getDockerInfo(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.getDockerInfo(sessionId, principal.user().getId()));
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(
+                dockerService.getDockerInfo(sessionId, principal.user().getId()));
     }
 
     @GetMapping("/overview")
     @Operation(summary = "Full Docker overview: system info, running containers, stats")
     public ResponseEntity<DockerModels.DockerOverview> getOverview(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.getOverview(sessionId, principal.user().getId()));
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(
+                dockerService.getOverview(sessionId, principal.user().getId()));
     }
 
     // -- Containers ------------------------------------------------------------
@@ -87,7 +86,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.inspectContainer(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.inspectContainer(sessionId, principal.user().getId(), id));
     }
 
     @PostMapping("/containers")
@@ -106,7 +106,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.startContainer(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.startContainer(sessionId, principal.user().getId(), id));
     }
 
     @PostMapping("/containers/{id}/stop")
@@ -115,7 +116,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.stopContainer(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.stopContainer(sessionId, principal.user().getId(), id));
     }
 
     @PostMapping("/containers/{id}/restart")
@@ -124,7 +126,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.restartContainer(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.restartContainer(sessionId, principal.user().getId(), id));
     }
 
     @PostMapping("/containers/{id}/pause")
@@ -133,7 +136,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.pauseContainer(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.pauseContainer(sessionId, principal.user().getId(), id));
     }
 
     @PostMapping("/containers/{id}/unpause")
@@ -142,7 +146,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.unpauseContainer(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.unpauseContainer(sessionId, principal.user().getId(), id));
     }
 
     @DeleteMapping("/containers/{id}")
@@ -177,8 +182,7 @@ public class DockerController {
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "200") int tail,
             @RequestParam(defaultValue = "false") boolean timestamps) {
-        String logs = dockerService.getContainerLogs(
-                sessionId, principal.user().getId(), id, tail, timestamps);
+        String logs = dockerService.getContainerLogs(sessionId, principal.user().getId(), id, tail, timestamps);
         return ResponseEntity.ok(Map.of("logs", logs));
     }
 
@@ -190,8 +194,7 @@ public class DockerController {
             @AuthenticationPrincipal UniFtUserDetails principal,
             @RequestParam(defaultValue = "100") int tail,
             @RequestParam(defaultValue = "false") boolean timestamps) {
-        return dockerService.streamContainerLogs(
-                sessionId, principal.user().getId(), id, tail, timestamps);
+        return dockerService.streamContainerLogs(sessionId, principal.user().getId(), id, tail, timestamps);
     }
 
     // -- Container Exec --------------------------------------------------------
@@ -213,8 +216,7 @@ public class DockerController {
     @GetMapping("/containers/stats")
     @Operation(summary = "Get point-in-time stats for all running containers")
     public ResponseEntity<List<DockerModels.ContainerStats>> getContainerStats(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
         return ResponseEntity.ok(
                 dockerService.getContainerStats(sessionId, principal.user().getId()));
     }
@@ -233,9 +235,9 @@ public class DockerController {
     @GetMapping("/images")
     @Operation(summary = "List local Docker images")
     public ResponseEntity<DockerModels.ImagePage> listImages(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.listImages(sessionId, principal.user().getId()));
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(
+                dockerService.listImages(sessionId, principal.user().getId()));
     }
 
     @PostMapping(value = "/images/pull", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -273,8 +275,7 @@ public class DockerController {
     @PostMapping("/images/prune")
     @Operation(summary = "Remove all dangling images")
     public ResponseEntity<Void> pruneImages(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
         dockerService.pruneImages(sessionId, principal.user().getId());
         return ResponseEntity.noContent().build();
     }
@@ -284,9 +285,9 @@ public class DockerController {
     @GetMapping("/networks")
     @Operation(summary = "List Docker networks")
     public ResponseEntity<List<DockerModels.DockerNetwork>> listNetworks(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.listNetworks(sessionId, principal.user().getId()));
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(
+                dockerService.listNetworks(sessionId, principal.user().getId()));
     }
 
     @GetMapping("/networks/{id}")
@@ -295,7 +296,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String id,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.inspectNetwork(sessionId, principal.user().getId(), id));
+        return ResponseEntity.ok(
+                dockerService.inspectNetwork(sessionId, principal.user().getId(), id));
     }
 
     @PostMapping("/networks")
@@ -304,7 +306,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @Valid @RequestBody DockerModels.CreateNetworkRequest request) {
-        String networkId = dockerService.createNetwork(sessionId, principal.user().getId(), request);
+        String networkId =
+                dockerService.createNetwork(sessionId, principal.user().getId(), request);
         return ResponseEntity.ok(Map.of("id", networkId));
     }
 
@@ -323,9 +326,9 @@ public class DockerController {
     @GetMapping("/volumes")
     @Operation(summary = "List Docker volumes")
     public ResponseEntity<List<DockerModels.DockerVolume>> listVolumes(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.listVolumes(sessionId, principal.user().getId()));
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
+        return ResponseEntity.ok(
+                dockerService.listVolumes(sessionId, principal.user().getId()));
     }
 
     @GetMapping("/volumes/{name}")
@@ -334,7 +337,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @PathVariable String name,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        return ResponseEntity.ok(dockerService.inspectVolume(sessionId, principal.user().getId(), name));
+        return ResponseEntity.ok(
+                dockerService.inspectVolume(sessionId, principal.user().getId(), name));
     }
 
     @PostMapping("/volumes")
@@ -362,8 +366,7 @@ public class DockerController {
     @GetMapping("/compose/projects")
     @Operation(summary = "List detected Docker Compose projects")
     public ResponseEntity<List<DockerModels.ComposeProject>> listComposeProjects(
-            @PathVariable String sessionId,
-            @AuthenticationPrincipal UniFtUserDetails principal) {
+            @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
         return ResponseEntity.ok(
                 dockerService.listComposeProjects(sessionId, principal.user().getId()));
     }
@@ -374,7 +377,8 @@ public class DockerController {
             @PathVariable String sessionId,
             @AuthenticationPrincipal UniFtUserDetails principal,
             @Valid @RequestBody DockerModels.ComposeFileRequest request) {
-        String yaml = dockerService.generateComposeFile(sessionId, principal.user().getId(), request);
+        String yaml =
+                dockerService.generateComposeFile(sessionId, principal.user().getId(), request);
         return ResponseEntity.ok(Map.of("yaml", yaml));
     }
 }

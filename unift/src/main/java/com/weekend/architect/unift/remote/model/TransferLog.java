@@ -10,10 +10,9 @@ import lombok.NoArgsConstructor;
 /**
  * Persistent audit record for a completed (or failed / cancelled) file transfer.
  *
- * <p>Maps 1-to-1 to the {@code transfer_log} table. Rows are written
- * automatically by {@code RemoteConnectionServiceImpl} when a download or
- * upload reaches a terminal state (COMPLETED, FAILED, CANCELLED).
- * The table is also queryable through the {@code TransferHistoryController}
+ * <p>Maps 1-to-1 to the {@code transfer_log} table. Rows are written automatically by {@code
+ * RemoteConnectionServiceImpl} when a download or upload reaches a terminal state (COMPLETED,
+ * FAILED, CANCELLED). The table is also queryable through the {@code TransferHistoryController}
  * REST API so users can review their full transfer history.
  */
 @Data
@@ -24,13 +23,19 @@ public class TransferLog {
 
     private UUID id;
 
-    /** The UniFT user who performed the transfer. May be {@code null} for system-initiated transfers. */
+    /**
+     * The UniFT user who performed the transfer. May be {@code null} for system-initiated
+     * transfers.
+     */
     private UUID userId;
 
     /** Basename of the file (extracted from source or destination path). */
     private String filename;
 
-    /** Human-readable source descriptor, e.g. {@code "client"} for uploads or {@code "ssh://host:22/path"} for downloads. */
+    /**
+     * Human-readable source descriptor, e.g. {@code "client"} for uploads or {@code
+     * "ssh://host:22/path"} for downloads.
+     */
     private String source;
 
     /** Human-readable destination descriptor (mirror of source). */
@@ -46,9 +51,9 @@ public class TransferLog {
     private Long durationMs;
 
     /**
-     * Terminal state of the transfer.
-     * Values mirror {@link com.weekend.architect.unift.remote.enums.TransferState}:
-     * {@code COMPLETED}, {@code FAILED}, {@code CANCELLED}.
+     * Terminal state of the transfer. Values mirror {@link
+     * com.weekend.architect.unift.remote.enums.TransferState}: {@code COMPLETED}, {@code FAILED},
+     * {@code CANCELLED}.
      */
     private String status;
 

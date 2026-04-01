@@ -12,9 +12,9 @@ import lombok.Getter;
 /**
  * Tracks the progress of a single file-transfer operation.
  *
- * <p>{@code bytesTransferred} is an {@link AtomicLong} so that the
- * JSch progress-monitor callback (running on the transfer thread) can
- * safely update it while the API response thread reads the latest value.
+ * <p>{@code bytesTransferred} is an {@link AtomicLong} so that the JSch progress-monitor callback
+ * (running on the transfer thread) can safely update it while the API response thread reads the
+ * latest value.
  */
 @Data
 @Builder
@@ -37,9 +37,9 @@ public class RemoteTransfer {
     private volatile String errorMessage;
 
     /**
-     * Cancellation token for stream uploads; {@code null} for non-cancellable transfers
-     * (e.g. multipart uploads).  Set by {@code uploadStream} immediately after the transfer
-     * is created so the cancel endpoint can signal it.
+     * Cancellation token for stream uploads; {@code null} for non-cancellable transfers (e.g.
+     * multipart uploads). Set by {@code uploadStream} immediately after the transfer is created so
+     * the cancel endpoint can signal it.
      */
     private volatile CancellationToken cancellationToken;
 
@@ -49,8 +49,8 @@ public class RemoteTransfer {
     private final AtomicLong bytesTransferred = new AtomicLong(0L);
 
     /**
-     * Returns transfer progress as an integer percentage (0–100).
-     * Returns {@code -1} if total size is unknown.
+     * Returns transfer progress as an integer percentage (0–100). Returns {@code -1} if total size
+     * is unknown.
      */
     public int progressPercent() {
         if (totalBytes <= 0) {

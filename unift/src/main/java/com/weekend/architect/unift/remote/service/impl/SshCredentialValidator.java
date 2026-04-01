@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 /**
  * Validates SSH-specific credential fields in a {@link SavedHostRequest}.
  *
- * <p>Enforces that the correct credential fields ({@code password}, {@code privateKey},
- * {@code passphrase}) are present for the given {@code authType}.  Any protocol other
- * than {@link ProtocolType#SSH_SFTP} is not handled by this validator.
+ * <p>Enforces that the correct credential fields ({@code password}, {@code privateKey}, {@code
+ * passphrase}) are present for the given {@code authType}. Any protocol other than {@link
+ * ProtocolType#SSH_SFTP} is not handled by this validator.
  */
 @Component
 public class SshCredentialValidator implements CredentialValidator {
@@ -25,8 +25,8 @@ public class SshCredentialValidator implements CredentialValidator {
      * Validates SSH credential fields.
      *
      * <p>The {@code if} statements inside each switch arm are intentional: Java's {@code when}
-     * guard syntax only applies to type-pattern cases, not to enum-constant case labels.
-     * Sonar rule S6880 is a false positive for enum switches — suppressed below.
+     * guard syntax only applies to type-pattern cases, not to enum-constant case labels. Sonar rule
+     * S6880 is a false positive for enum switches — suppressed below.
      */
     @Override
     @SuppressWarnings({"java:S6880", "java:S6916"})

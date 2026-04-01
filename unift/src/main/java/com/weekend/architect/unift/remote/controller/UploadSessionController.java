@@ -33,16 +33,17 @@ import org.springframework.web.bind.annotation.RestController;
  * REST API for managing resumable chunked-upload sessions.
  *
  * <h4>Workflow</h4>
+ *
  * <ol>
- *   <li>Client calls {@code POST /api/uploads/sessions} to create a session and receives a
- *       session ID.</li>
- *   <li>Client uploads each chunk through the SFTP/stream endpoints (or any other channel)
- *       and then calls {@code POST /api/uploads/sessions/{id}/chunks/{chunkIndex}} to
- *       acknowledge receipt of that chunk (0-based index).</li>
- *   <li>When all chunks have been acknowledged the session status transitions automatically
- *       to {@code COMPLETED}.</li>
- *   <li>Sessions that are not completed within 48 hours are automatically marked
- *       {@code EXPIRED} on the next read.</li>
+ *   <li>Client calls {@code POST /api/uploads/sessions} to create a session and receives a session
+ *       ID.
+ *   <li>Client uploads each chunk through the SFTP/stream endpoints (or any other channel) and then
+ *       calls {@code POST /api/uploads/sessions/{id}/chunks/{chunkIndex}} to acknowledge receipt of
+ *       that chunk (0-based index).
+ *   <li>When all chunks have been acknowledged the session status transitions automatically to
+ *       {@code COMPLETED}.
+ *   <li>Sessions that are not completed within 48 hours are automatically marked {@code EXPIRED} on
+ *       the next read.
  * </ol>
  */
 @RestController
@@ -51,8 +52,8 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @Tag(
         name = "Upload Sessions",
-        description = "Manage resumable chunked-upload sessions. "
-                + "Track which file chunks have been acknowledged and monitor overall progress.")
+        description = "Manage resumable chunked-upload sessions. Track which file chunks have been"
+                + " acknowledged and monitor overall progress.")
 @SecurityRequirement(name = "BearerAuth")
 public class UploadSessionController {
 
@@ -86,8 +87,8 @@ public class UploadSessionController {
             responses = {@ApiResponse(responseCode = "200", description = "Session list")})
     public ResponseEntity<List<UploadSessionResponse>> listSessions(
             @Parameter(
-                            description = "Filter by status (PENDING, IN_PROGRESS, COMPLETED, FAILED, EXPIRED). "
-                                    + "Omit to return all.")
+                            description = "Filter by status (PENDING, IN_PROGRESS, COMPLETED, FAILED,"
+                                    + " EXPIRED). Omit to return all.")
                     @RequestParam(required = false)
                     UploadSessionStatus status,
             @AuthenticationPrincipal UniFtUserDetails principal) {
@@ -118,9 +119,9 @@ public class UploadSessionController {
     @PostMapping("/{sessionId}/chunks/{chunkIndex}")
     @Operation(
             summary = "Acknowledge a chunk",
-            description = "Marks chunk at the given 0-based index as received. "
-                    + "When all chunks are acknowledged the session status transitions to COMPLETED automatically. "
-                    + "Acknowledging a chunk that was already recorded is idempotent.",
+            description = "Marks chunk at the given 0-based index as received. When all chunks are"
+                    + " acknowledged the session status transitions to COMPLETED automatically."
+                    + " Acknowledging a chunk that was already recorded is idempotent.",
             responses = {
                 @ApiResponse(
                         responseCode = "200",
@@ -145,8 +146,8 @@ public class UploadSessionController {
     @DeleteMapping("/{sessionId}")
     @Operation(
             summary = "Abort an upload session",
-            description = "Cancels and removes the upload session. "
-                    + "Any partially-uploaded data on the remote host must be cleaned up separately.",
+            description = "Cancels and removes the upload session. Any partially-uploaded data on the"
+                    + " remote host must be cleaned up separately.",
             responses = {
                 @ApiResponse(responseCode = "204", description = "Session aborted"),
                 @ApiResponse(responseCode = "404", description = "Session not found", content = @Content)

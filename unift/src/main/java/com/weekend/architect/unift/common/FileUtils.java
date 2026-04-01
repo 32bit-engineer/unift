@@ -1,1 +1,14 @@
-package com.weekend.architect.unift.common;import java.net.URLEncoder;import java.nio.charset.StandardCharsets;import lombok.AccessLevel;import lombok.NoArgsConstructor;@NoArgsConstructor(access = AccessLevel.PRIVATE)public class FileUtils {  public static String encodeFilenameRFC6266(String filename) {    return URLEncoder.encode(filename, StandardCharsets.UTF_8)        .replaceAll("\\+", "%20");  }}
+package com.weekend.architect.unift.common;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
+public class FileUtils {
+
+    public static String encodeFilenameRFC6266(String filename) {
+        return URLEncoder.encode(filename, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
+    }
+}

@@ -45,8 +45,7 @@ public class RefreshTokenRepository {
     }
 
     public void save(RefreshToken token) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO refresh_tokens (id, user_id, token_hash, device_hint, issued_at, expires_at)
                 VALUES (:id, :userId, :tokenHash, :deviceHint, :issuedAt, :expiresAt)
                 """;
@@ -68,8 +67,7 @@ public class RefreshTokenRepository {
     }
 
     public void revokeAllByUserId(UUID userId) {
-        String sql =
-                """
+        String sql = """
                 UPDATE refresh_tokens
                 SET revoked_at = NOW()
                 WHERE user_id = :userId AND revoked_at IS NULL

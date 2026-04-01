@@ -31,14 +31,11 @@ public class AuthController {
 
     private final AuthService authService;
 
-    /**
-     * POST /api/auth/register
-     * Create a new account and return a token pair.
-     */
+    /** POST /api/auth/register Create a new account and return a token pair. */
     @PostMapping("/register")
     @Operation(
             summary = "Create a new account",
-            description = "Registers a new user and immediately returns a JWT access token + refresh token pair.",
+            description = "Registers a new user and immediately returns a JWT access token + refresh" + " token pair.",
             responses = {
                 @ApiResponse(
                         responseCode = "201",
@@ -52,14 +49,14 @@ public class AuthController {
     }
 
     /**
-     * POST /api/auth/login
-     * Authenticate with username (or email) + password and return a token pair.
+     * POST /api/auth/login Authenticate with username (or email) + password and return a token
+     * pair.
      */
     @PostMapping("/login")
     @Operation(
             summary = "Login",
-            description =
-                    "Authenticate with username (or email) and password. Returns a JWT access token and a refresh token.",
+            description = "Authenticate with username (or email) and password. Returns a JWT access token"
+                    + " and a refresh token.",
             responses = {
                 @ApiResponse(
                         responseCode = "200",
@@ -78,14 +75,14 @@ public class AuthController {
     }
 
     /**
-     * POST /api/auth/refresh
-     * Exchange a valid refresh token for a new access token (token rotation).
+     * POST /api/auth/refresh Exchange a valid refresh token for a new access token (token
+     * rotation).
      */
     @PostMapping("/refresh")
     @Operation(
             summary = "Refresh access token",
-            description =
-                    "Exchange a valid refresh token for a new access token. The old refresh token is rotated (revoked) and a brand new one is returned.",
+            description = "Exchange a valid refresh token for a new access token. The old refresh token"
+                    + " is rotated (revoked) and a brand new one is returned.",
             responses = {
                 @ApiResponse(
                         responseCode = "200",
@@ -100,14 +97,11 @@ public class AuthController {
         return ResponseEntity.ok(authService.refresh(request));
     }
 
-    /**
-     * POST /api/auth/logout
-     * Revoke the provided refresh token.
-     */
+    /** POST /api/auth/logout Revoke the provided refresh token. */
     @PostMapping("/logout")
     @Operation(
             summary = "Logout",
-            description = "Revoke the provided refresh token. The access token expires on its own (15 min TTL).",
+            description = "Revoke the provided refresh token. The access token expires on its own (15 min" + " TTL).",
             responses = {
                 @ApiResponse(responseCode = "200", description = "Logged out successfully"),
                 @ApiResponse(responseCode = "400", description = "Refresh token is required", content = @Content)

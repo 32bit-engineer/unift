@@ -9,15 +9,15 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * Abstract base class that implements {@link RegistryCache} entirely by delegating
- * every operation to an inner {@link RegistryCache} instance.
+ * Abstract base class that implements {@link RegistryCache} entirely by delegating every operation
+ * to an inner {@link RegistryCache} instance.
  *
  * <h6>Purpose</h6>
- * <p>Concrete named-cache classes (e.g. {@code SshConnectionCache},
- * {@code TerminalSessionCache}) extend this class with a fixed generic signature and
- * a specific backend (currently {@link CaffeineRegistryCache}).  Because each named
- * cache is a distinct Java type, Spring can inject them by type — no {@code @Qualifier}
- * or raw generic wiring required.
+ *
+ * <p>Concrete named-cache classes (e.g. {@code SshConnectionCache}, {@code TerminalSessionCache})
+ * extend this class with a fixed generic signature and a specific backend (currently {@link
+ * CaffeineRegistryCache}). Because each named cache is a distinct Java type, Spring can inject them
+ * by type — no {@code @Qualifier} or raw generic wiring required.
  *
  * <pre>
  *   DelegatingRegistryCache&lt;K, V&gt;        (abstract, all delegation here)
@@ -29,11 +29,11 @@ import java.util.function.Predicate;
  * </pre>
  *
  * <h6>Backend migration path</h6>
- * <p>Each subclass passes its backend to {@code super(delegate)}.  To switch the
- * entire application to Redis, update the delegate argument in each subclass
- * (or inject a {@code RedisRegistryCache} Spring {@code @Bean}).  The registry
- * layer — {@code SessionRegistry}, {@code TerminalSessionRegistry}, etc. — requires
- * <em>no changes</em>.
+ *
+ * <p>Each subclass passes its backend to {@code super(delegate)}. To switch the entire application
+ * to Redis, update the delegate argument in each subclass (or inject a {@code RedisRegistryCache}
+ * Spring {@code @Bean}). The registry layer — {@code SessionRegistry}, {@code
+ * TerminalSessionRegistry}, etc. — requires <em>no changes</em>.
  *
  * @param <K> key type
  * @param <V> value type
@@ -43,8 +43,8 @@ public abstract class DelegatingRegistryCache<K, V> implements RegistryCache<K, 
     private final RegistryCache<K, V> delegate;
 
     /**
-     * @param delegate the backing {@link RegistryCache} implementation;
-     *                 typically a {@link CaffeineRegistryCache} instance
+     * @param delegate the backing {@link RegistryCache} implementation; typically a {@link
+     *     CaffeineRegistryCache} instance
      */
     protected DelegatingRegistryCache(RegistryCache<K, V> delegate) {
         this.delegate = delegate;

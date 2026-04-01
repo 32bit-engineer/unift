@@ -32,7 +32,8 @@ public class SavedHostRepository {
                 .id(rs.getObject("id", UUID.class))
                 .userId(rs.getObject("user_id", UUID.class))
                 .label(rs.getString("label"))
-                // Fall back to SSH_SFTP for rows written before the protocol_type column was added
+                // Fall back to SSH_SFTP for rows written before the protocol_type column was
+                // added
                 .protocol(rawProtocol != null ? toProtocolType(rawProtocol) : ProtocolType.SSH_SFTP)
                 .hostname(rs.getString("hostname"))
                 .port(rs.getInt("port"))
@@ -51,8 +52,8 @@ public class SavedHostRepository {
     }
 
     /**
-     * Maps the Postgres {@code auth_type_enum} lowercase value to the Java {@link SshAuthType}.
-     * DB values: {@code password}, {@code key}, {@code key_passphrase}.
+     * Maps the Postgres {@code auth_type_enum} lowercase value to the Java {@link SshAuthType}. DB
+     * values: {@code password}, {@code key}, {@code key_passphrase}.
      */
     private static SshAuthType toSshAuthType(String dbValue) {
         return switch (dbValue) {
@@ -73,8 +74,8 @@ public class SavedHostRepository {
     }
 
     /**
-     * Maps the Postgres {@code protocol_type_enum} lowercase value to {@link ProtocolType}.
-     * DB values: {@code ssh_sftp}, {@code ftp}, {@code s3}, {@code azure_blob}, {@code gcs}.
+     * Maps the Postgres {@code protocol_type_enum} lowercase value to {@link ProtocolType}. DB
+     * values: {@code ssh_sftp}, {@code ftp}, {@code s3}, {@code azure_blob}, {@code gcs}.
      */
     private static ProtocolType toProtocolType(String dbValue) {
         return switch (dbValue) {
@@ -103,8 +104,7 @@ public class SavedHostRepository {
     }
 
     public void save(SavedHost host) {
-        String sql =
-                """
+        String sql = """
                 INSERT INTO saved_hosts (
                     id, user_id, label, protocol_type, hostname, port, username,
                     auth_type,
@@ -136,7 +136,9 @@ public class SavedHostRepository {
         return jdbc.query(sql, new MapSqlParameterSource(PARAM_USER_ID, userId), this::mapRow);
     }
 
-    /** Sets {@code last_used = NOW()} for the given row. Best-effort — callers may ignore failure. */
+    /**
+     * Sets {@code last_used = NOW()} for the given row. Best-effort — callers may ignore failure.
+     */
     public void touchLastUsed(UUID id) {
         String sql = "UPDATE saved_hosts SET last_used = NOW() WHERE id = :id";
         jdbc.update(sql, new MapSqlParameterSource(PARAM_ID, id));
@@ -148,7 +150,7 @@ public class SavedHostRepository {
      * @return {@code true} if a row was updated, {@code false} if not found / not owned
      */
     public boolean updateWorkspacePreference(UUID id, UUID userId, String preference) {
-        String sql = "UPDATE saved_hosts SET workspace_preference = :pref WHERE id = :id AND user_id = :userId";
+        String sql = "UPDATE saved_hosts SET workspace_preference = :pref WHERE id = :id AND user_id =" + " :userId";
         int rows = jdbc.update(
                 sql,
                 new MapSqlParameterSource()

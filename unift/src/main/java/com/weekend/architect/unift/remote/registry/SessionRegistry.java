@@ -22,21 +22,23 @@ import org.springframework.stereotype.Component;
  * In-memory registry of all active {@link RemoteConnection} instances.
  *
  * <h6>Backing store</h6>
- * <p>Uses an injected {@link SshConnectionCache} (Caffeine-backed by default,
- * bounded to 10,000 entries).  No automatic TTL — the {@link #reapExpiredSessions()}
- * scheduler manages eviction based on
- * {@link com.weekend.architect.unift.remote.model.RemoteSession#isExpired()}.
  *
- * <p>To swap to Redis: update {@link SshConnectionCache} to delegate to a
- * {@code RedisRegistryCache} instance.  No changes needed here.
+ * <p>Uses an injected {@link SshConnectionCache} (Caffeine-backed by default, bounded to 10,000
+ * entries). No automatic TTL — the {@link #reapExpiredSessions()} scheduler manages eviction based
+ * on {@link com.weekend.architect.unift.remote.model.RemoteSession#isExpired()}.
+ *
+ * <p>To swap to Redis: update {@link SshConnectionCache} to delegate to a {@code
+ * RedisRegistryCache} instance. No changes needed here.
  *
  * <h6>Thread-safety</h6>
+ *
  * <p>Delegated entirely to the {@link SshConnectionCache} implementation.
  *
  * <h6>Terminal cascade</h6>
- * <p>Every removal path ({@link #remove}, {@link #reapExpiredSessions},
- * {@link #clearAllSessions}) closes all WebSocket sub-sessions linked to the
- * departing SSH session via {@link TerminalSessionRegistry#closeAllBySshSession}.
+ *
+ * <p>Every removal path ({@link #remove}, {@link #reapExpiredSessions}, {@link #clearAllSessions})
+ * closes all WebSocket sub-sessions linked to the departing SSH session via {@link
+ * TerminalSessionRegistry#closeAllBySshSession}.
  */
 @Slf4j
 @Component
@@ -50,33 +52,32 @@ public class SessionRegistry {
     private final TransferRegistry transferRegistry;
     private final K8sLogStreamRegistry k8sLogStreamRegistry;
     private final TerminalSessionRegistry terminalSessionRegistry;
+
     /**
-     * Evicts the cached Fabric8 KubernetesClient (+ any SSH port-forward tunnel) when
-     * the parent SSH session is closed. Injected lazily to avoid a circular dependency.
+     * Evicts the cached Fabric8 KubernetesClient (+ any SSH port-forward tunnel) when the parent
+     * SSH session is closed. Injected lazily to avoid a circular dependency.
      */
     private final K8sClientPool k8sClientPool;
 
     /**
-     * Evicts the cached DockerClient (+ any SSH port-forward tunnel) when
-     * the parent SSH session is closed.
+     * Evicts the cached DockerClient (+ any SSH port-forward tunnel) when the parent SSH session is
+     * closed.
      */
     private final DockerClientPool dockerClientPool;
 
-    /**
-     * Registers a new (already-connected) session.
-     */
+    /** Registers a new (already-connected) session. */
     public void register(RemoteConnection connection) {
         store.put(connection.getSessionId(), connection);
         log.info("[registry] Registered session {}", connection.getSessionId());
     }
 
     /**
-     * Atomically checks the per-user session cap and, if under the limit, registers the
-     * given connection. Prevents the TOCTOU race where two concurrent openSession calls
-     * both pass the cap check and both register, exceeding the intended limit.
+     * Atomically checks the per-user session cap and, if under the limit, registers the given
+     * connection. Prevents the TOCTOU race where two concurrent openSession calls both pass the cap
+     * check and both register, exceeding the intended limit.
      *
      * @param connection the already-connected session to register
-     * @param ownerId    the user who owns this session
+     * @param ownerId the user who owns this session
      * @param maxSessions per-user session cap
      * @return true if registered, false if cap would be exceeded
      */
@@ -84,7 +85,7 @@ public class SessionRegistry {
         long current = getByOwner(ownerId).size();
         if (current >= maxSessions) {
             log.warn(
-                    "[registry] Per-user session cap ({}) reached for user {} — rejecting session {}",
+                    "[registry] Per-user session cap ({}) reached for user {} — rejecting session" + " {}",
                     maxSessions,
                     ownerId,
                     connection.getSessionId());
@@ -121,7 +122,7 @@ public class SessionRegistry {
      * Retrieves the connection for the given session ID.
      *
      * @throws SessionNotFoundException if the session does not exist
-     * @throws SessionExpiredException  if the session TTL has elapsed
+     * @throws SessionExpiredException if the session TTL has elapsed
      */
     public RemoteConnection require(String sessionId) {
         RemoteConnection conn = store.getIfPresent(sessionId);
@@ -136,8 +137,8 @@ public class SessionRegistry {
     }
 
     /**
-     * Closes the connection and removes it from the registry.
-     * Also cascades to terminal WebSocket sub-sessions. Idempotent.
+     * Closes the connection and removes it from the registry. Also cascades to terminal WebSocket
+     * sub-sessions. Idempotent.
      */
     public void remove(String sessionId) {
         RemoteConnection conn = store.remove(sessionId);
@@ -163,9 +164,8 @@ public class SessionRegistry {
         k8sLogStreamRegistry.closeAllBySession(sessionId);
         transferRegistry.removeBySession(sessionId);
     }
-    /**
-     * Returns all active sessions owned by the given user.
-     */
+
+    /** Returns all active sessions owned by the given user. */
     public List<RemoteConnection> getByOwner(UUID ownerId) {
         return store.values().stream()
                 .filter(c -> ownerId.equals(c.getSession().getOwnerId()))
@@ -174,8 +174,8 @@ public class SessionRegistry {
     }
 
     /**
-     * Returns the first active session that was opened from the given saved-host entry,
-     * or an empty Optional if no such session currently exists.
+     * Returns the first active session that was opened from the given saved-host entry, or an empty
+     * Optional if no such session currently exists.
      */
     public Optional<RemoteConnection> findBySavedHostId(UUID savedHostId) {
         return store.values().stream()
@@ -190,8 +190,8 @@ public class SessionRegistry {
     }
 
     /**
-     * Scheduled task that closes and evicts expired sessions.
-     * Rate driven by {@code unift.remote.reaper-interval-ms}.
+     * Scheduled task that closes and evicts expired sessions. Rate driven by {@code
+     * unift.remote.reaper-interval-ms}.
      */
     @Scheduled(fixedRateString = "${unift.remote.reaper-interval-ms:60000}")
     public void reapExpiredSessions() {
@@ -210,7 +210,8 @@ public class SessionRegistry {
     }
 
     public void clearAllSessions() {
-        // Snapshot keys first — remove() mutates the map and cascades to terminal sessions.
+        // Snapshot keys first — remove() mutates the map and cascades to terminal
+        // sessions.
         List.copyOf(store.keys()).forEach(this::remove);
     }
 }

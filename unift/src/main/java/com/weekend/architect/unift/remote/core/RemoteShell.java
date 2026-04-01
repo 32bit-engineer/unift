@@ -3,17 +3,15 @@ package com.weekend.architect.unift.remote.core;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-/**
- * Capability interface for connections that support interactive shell access.
- */
+/** Capability interface for connections that support interactive shell access. */
 public interface RemoteShell {
 
     /**
      * Executes a non-interactive command on the remote host and returns trimmed stdout.
      *
-     * <p>The default implementation throws {@link UnsupportedOperationException};
-     * SSH-capable subclasses (e.g. {@code SshRemoteConnection}) override this to open
-     * a short-lived exec channel and return the command's output.
+     * <p>The default implementation throws {@link UnsupportedOperationException}; SSH-capable
+     * subclasses (e.g. {@code SshRemoteConnection}) override this to open a short-lived exec
+     * channel and return the command's output.
      *
      * <p>Callers should treat any exception as a soft failure and fall back gracefully.
      *
@@ -29,16 +27,14 @@ public interface RemoteShell {
      * Opens a new interactive shell session.
      *
      * @param termType terminal type (e.g., "xterm-256color")
-     * @param cols     initial terminal width (columns)
-     * @param rows     initial terminal height (rows)
+     * @param cols initial terminal width (columns)
+     * @param rows initial terminal height (rows)
      * @return a live shell session; must be closed by the caller
      * @throws Exception if the shell cannot be opened
      */
     ShellSession openShell(String termType, int cols, int rows) throws Exception;
 
-    /**
-     * Represents a live interactive shell session.
-     */
+    /** Represents a live interactive shell session. */
     interface ShellSession extends AutoCloseable {
         InputStream getStdout();
 

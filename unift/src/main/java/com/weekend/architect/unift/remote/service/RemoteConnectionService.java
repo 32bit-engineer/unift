@@ -14,8 +14,8 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 /**
  * Service contract for all remote-connection operations.
  *
- * <p>All methods accept the {@code ownerId} of the currently-authenticated
- * user so that the implementation can enforce session ownership.
+ * <p>All methods accept the {@code ownerId} of the currently-authenticated user so that the
+ * implementation can enforce session ownership.
  */
 public interface RemoteConnectionService {
 
@@ -31,22 +31,22 @@ public interface RemoteConnectionService {
     /**
      * Returns status information for an existing session.
      *
-     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException  if not found
-     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not owned by user
+     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException if not found
+     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not
+     *     owned by user
      */
     ConnectResponse getSession(String sessionId, UUID ownerId);
 
     /**
      * Closes and removes the session, releasing all transport resources.
      *
-     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException  if not found
-     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not owned by user
+     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException if not found
+     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not
+     *     owned by user
      */
     void closeSession(String sessionId, UUID ownerId);
 
-    /**
-     * Returns all active sessions owned by the given user.
-     */
+    /** Returns all active sessions owned by the given user. */
     List<ConnectResponse> listSessions(UUID ownerId);
 
     /**
@@ -56,30 +56,26 @@ public interface RemoteConnectionService {
      */
     DirectoryListingResponse listDirectory(String sessionId, UUID ownerId, String path);
 
-    /**
-     * Deletes a file or empty directory at the given remote path.
-     */
+    /** Deletes a file or empty directory at the given remote path. */
     void deleteFile(String sessionId, UUID ownerId, String remotePath);
 
     /**
      * Renames / moves a remote file or directory.
      *
      * @param remotePath current absolute path
-     * @param newPath    target absolute path
+     * @param newPath target absolute path
      */
     void renameFile(String sessionId, UUID ownerId, String remotePath, String newPath);
 
-    /**
-     * Creates a directory (including any missing parents) at the given path.
-     */
+    /** Creates a directory (including any missing parents) at the given path. */
     void createDirectory(String sessionId, UUID ownerId, String remotePath);
 
     /**
      * Streams a file from the remote host to the HTTP response.
      *
      * @param remotePath source path on the remote host
-     * @return a {@link StreamingResponseBody} that pipes the remote bytes
-     *         into the HTTP response output stream
+     * @return a {@link StreamingResponseBody} that pipes the remote bytes into the HTTP response
+     *     output stream
      */
     StreamingResponseBody downloadFile(String sessionId, UUID ownerId, String remotePath);
 
@@ -87,50 +83,47 @@ public interface RemoteConnectionService {
      * Uploads a file to the remote host.
      *
      * @param remotePath target path on the remote host (must include filename)
-     * @param file       the multipart file from the HTTP request
+     * @param file the multipart file from the HTTP request
      * @return the transfer ID for progress tracking
      */
     String uploadFile(String sessionId, UUID ownerId, String remotePath, MultipartFile file);
 
     /**
-     * Uploads a file to the remote host by streaming raw bytes from the caller-supplied
-     * {@link InputStream}.  Unlike {@link #uploadFile}, this method bypasses Spring's
-     * multipart resolver entirely — the data is piped directly into the SFTP channel
-     * without ever being buffered in a server temp file.  Use this for large files.
+     * Uploads a file to the remote host by streaming raw bytes from the caller-supplied {@link
+     * InputStream}. Unlike {@link #uploadFile}, this method bypasses Spring's multipart resolver
+     * entirely — the data is piped directly into the SFTP channel without ever being buffered in a
+     * server temp file. Use this for large files.
      *
      * <p>The caller is responsible for closing {@code inputStream}.
      *
-     * @param remotePath    target path on the remote host (must include filename)
-     * @param inputStream   raw byte stream of the file content
+     * @param remotePath target path on the remote host (must include filename)
+     * @param inputStream raw byte stream of the file content
      * @param contentLength total byte count; pass {@code -1} if unknown
      * @return the transfer ID for progress tracking
      */
     String uploadStream(String sessionId, UUID ownerId, String remotePath, InputStream inputStream, long contentLength);
 
     /**
-     * Cancels an in-progress stream upload, stops the data transfer, and removes
-     * any partial file written to the remote host.
+     * Cancels an in-progress stream upload, stops the data transfer, and removes any partial file
+     * written to the remote host.
      *
-     * <p>Cancellation is asynchronous: this method sets the cancellation signal and
-     * returns immediately.  The upload thread will detect the signal on its next read,
-     * abort the SFTP transfer, and delete the partial remote file.
+     * <p>Cancellation is asynchronous: this method sets the cancellation signal and returns
+     * immediately. The upload thread will detect the signal on its next read, abort the SFTP
+     * transfer, and delete the partial remote file.
      *
-     * @param sessionId  the session the transfer belongs to
-     * @param ownerId    ID of the authenticated user (ownership check)
+     * @param sessionId the session the transfer belongs to
+     * @param ownerId ID of the authenticated user (ownership check)
      * @param transferId ID of the upload transfer to cancel
-     * @throws IllegalArgumentException if the transfer is not an upload or does not support cancellation
-     * @throws IllegalStateException    if the transfer has already completed, failed, or been canceled
+     * @throws IllegalArgumentException if the transfer is not an upload or does not support
+     *     cancellation
+     * @throws IllegalStateException if the transfer has already completed, failed, or been canceled
      */
     void cancelTransfer(String sessionId, UUID ownerId, String transferId);
 
-    /**
-     * Returns the status of all transfers associated with the given session.
-     */
+    /** Returns the status of all transfers associated with the given session. */
     List<TransferStatusResponse> getTransfers(String sessionId, UUID ownerId);
 
-    /**
-     * Returns the status of a single transfer.
-     */
+    /** Returns the status of a single transfer. */
     TransferStatusResponse getTransfer(String sessionId, UUID ownerId, String transferId);
 
     /**

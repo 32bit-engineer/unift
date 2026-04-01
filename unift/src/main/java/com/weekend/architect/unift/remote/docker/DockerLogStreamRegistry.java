@@ -12,11 +12,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * Tracks every live Docker container log SSE stream.
  *
  * <p>Streams are keyed by {@code sessionId:containerId}. Two cleanup paths:
+ *
  * <ol>
- *   <li><b>Client-initiated</b> — browser closes EventSource, Spring fires
- *       {@link SseEmitter#onCompletion}, which calls {@link #close(String)}.</li>
- *   <li><b>Server-initiated</b> — SSH session expires or is removed, calling
- *       {@link #closeAllBySession(String)} to tear down every open stream.</li>
+ *   <li><b>Client-initiated</b> — browser closes EventSource, Spring fires {@link
+ *       SseEmitter#onCompletion}, which calls {@link #close(String)}.
+ *   <li><b>Server-initiated</b> — SSH session expires or is removed, calling {@link
+ *       #closeAllBySession(String)} to tear down every open stream.
  * </ol>
  */
 @Slf4j
@@ -28,8 +29,8 @@ public class DockerLogStreamRegistry {
     /**
      * Registers a new log stream.
      *
-     * @param streamId    composite key ({@code sessionId:containerId})
-     * @param emitter     the SSE emitter pushing data to the browser
+     * @param streamId composite key ({@code sessionId:containerId})
+     * @param emitter the SSE emitter pushing data to the browser
      * @param logCallback the docker-java callback (Closeable) that feeds log frames
      */
     public void register(String streamId, SseEmitter emitter, Closeable logCallback) {
@@ -47,8 +48,8 @@ public class DockerLogStreamRegistry {
     }
 
     /**
-     * Closes all log streams belonging to the given SSH session.
-     * Called when the session expires or is explicitly disconnected.
+     * Closes all log streams belonging to the given SSH session. Called when the session expires or
+     * is explicitly disconnected.
      */
     public void closeAllBySession(String sessionId) {
         String prefix = sessionId + ":";

@@ -10,21 +10,22 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Factory that creates the correct {@link RemoteConnection} implementation
- * for a given {@link RemoteCredentials} object.
+ * Factory that creates the correct {@link RemoteConnection} implementation for a given {@link
+ * RemoteCredentials} object.
  *
- * <p>Dispatches on {@code credentials.getProtocol()} using a sealed-class
- * switch expression.  Adding a new protocol requires only:
+ * <p>Dispatches on {@code credentials.getProtocol()} using a sealed-class switch expression. Adding
+ * a new protocol requires only:
+ *
  * <ol>
- *   <li>Adding the new credential subclass to the sealed hierarchy.</li>
- *   <li>Adding a new branch in the switch below.</li>
- *   <li>Implementing {@link com.weekend.architect.unift.remote.core.AbstractRemoteConnection}
- *       for the new protocol.</li>
+ *   <li>Adding the new credential subclass to the sealed hierarchy.
+ *   <li>Adding a new branch in the switch below.
+ *   <li>Implementing {@link com.weekend.architect.unift.remote.core.AbstractRemoteConnection} for
+ *       the new protocol.
  * </ol>
  *
- * <p>The factory does <strong>not</strong> call {@link RemoteConnection#connect};
- * that is the service layer's responsibility so that it can handle errors
- * and roll back the session registration.
+ * <p>The factory does <strong>not</strong> call {@link RemoteConnection#connect}; that is the
+ * service layer's responsibility so that it can handle errors and roll back the session
+ * registration.
  */
 @Slf4j
 @Component
@@ -37,7 +38,7 @@ public class ConnectionFactory {
      * Instantiates the protocol-specific connection implementation.
      *
      * @param credentials typed credentials (protocol is derived from subclass type)
-     * @param session     pre-built session envelope
+     * @param session pre-built session envelope
      * @return a disconnected {@link RemoteConnection} ready to be connected
      * @throws UnsupportedOperationException if the protocol is not yet implemented
      */

@@ -7,13 +7,12 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Wraps an {@link InputStream} and disconnects the dedicated download {@link ChannelSftp}
- * when the stream is closed.
+ * Wraps an {@link InputStream} and disconnects the dedicated download {@link ChannelSftp} when the
+ * stream is closed.
  *
- * <p>Stacked on top of {@link ProgressTrackingInputStream}:
- * {@code close()} → closes the tracked stream → closes the raw JSch stream → then
- * disconnects the dedicated channel. This ensures the channel is released whether the
- * download completes normally, is canceled, or fails mid-transfer.
+ * <p>Stacked on top of {@link ProgressTrackingInputStream}: {@code close()} → closes the tracked
+ * stream → closes the raw JSch stream → then disconnects the dedicated channel. This ensures the
+ * channel is released whether the download completes normally, is canceled, or fails mid-transfer.
  */
 public class ChannelClosingInputStream extends FilterInputStream {
 

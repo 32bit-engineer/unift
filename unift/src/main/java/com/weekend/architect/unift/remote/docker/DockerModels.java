@@ -11,9 +11,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Data transfer objects for Docker container management.
- * All data is collected via the Docker Engine API accessed through an SSH tunnel
- * to the remote host's Docker daemon socket.
+ * Data transfer objects for Docker container management. All data is collected via the Docker
+ * Engine API accessed through an SSH tunnel to the remote host's Docker daemon socket.
  */
 public final class DockerModels {
 
@@ -126,8 +125,10 @@ public final class DockerModels {
     @AllArgsConstructor
     public static class CreateContainerRequest {
         private String name;
+
         @NotBlank(message = "Image is required")
         private String image;
+
         private List<String> env;
         private Map<String, String> ports;
         private Map<String, String> volumes;
@@ -314,6 +315,7 @@ public final class DockerModels {
     public static class ExecCreateRequest {
         @NotBlank(message = "Container ID is required")
         private String containerId;
+
         @NotEmpty(message = "Command must not be empty")
         private List<String> command;
     }

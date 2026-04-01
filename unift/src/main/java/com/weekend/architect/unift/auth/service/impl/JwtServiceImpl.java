@@ -60,8 +60,8 @@ public class JwtServiceImpl implements JwtService {
     }
 
     /**
-     * Generate a cryptographically secure random refresh token string
-     * (sent to the client as a raw value).
+     * Generate a cryptographically secure random refresh token string (sent to the client as a raw
+     * value).
      */
     @Override
     public String generateRawRefreshToken() {
@@ -70,10 +70,7 @@ public class JwtServiceImpl implements JwtService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    /**
-     * SHA-256 hash of a raw token value — stored in the database.
-     * Never store the raw token.
-     */
+    /** SHA-256 hash of a raw token value — stored in the database. Never store the raw token. */
     @Override
     public String hashToken(String rawToken) {
         try {

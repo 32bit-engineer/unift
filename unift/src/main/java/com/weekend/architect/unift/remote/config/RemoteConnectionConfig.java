@@ -9,9 +9,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Configuration for the remote-connection feature.
  *
  * <ul>
- *   <li>{@code @EnableScheduling} activates the {@code SessionReaper} cron.</li>
- *   <li>{@link WebMvcConfigurer#configureAsyncSupport} sets a generous async
- *       timeout so that large-file streaming downloads are not killed mid-stream.</li>
+ *   <li>{@code @EnableScheduling} activates the {@code SessionReaper} cron.
+ *   <li>{@link WebMvcConfigurer#configureAsyncSupport} sets a generous async timeout so that
+ *       large-file streaming downloads are not killed mid-stream.
  * </ul>
  */
 @Configuration

@@ -1,1 +1,281 @@
-package com.weekend.architect.unift.integration.remote;import static org.hamcrest.Matchers.greaterThanOrEqualTo;import static org.hamcrest.Matchers.notNullValue;import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;import com.weekend.architect.unift.integration.config.IntegrationTestBase;import com.weekend.architect.unift.integration.support.MockSftpServer;import com.weekend.architect.unift.integration.support.TestAuthHelper;import com.weekend.architect.unift.integration.support.TestAuthHelper.AuthTokens;import com.weekend.architect.unift.remote.dto.ConnectRequest;import com.weekend.architect.unift.remote.dto.RenameRequest;import com.weekend.architect.unift.remote.enums.ProtocolType;import com.weekend.architect.unift.remote.enums.SshAuthType;import org.junit.jupiter.api.AfterAll;import org.junit.jupiter.api.BeforeAll;import org.junit.jupiter.api.DisplayName;import org.junit.jupiter.api.Test;import org.junit.jupiter.api.TestInstance;import org.springframework.http.HttpHeaders;import org.springframework.http.MediaType;import org.springframework.mock.web.MockMultipartFile;import org.springframework.test.web.servlet.MvcResult;/** * Integration tests for file operations, transfers, and test-connection * ({@code /api/remote/sessions/{id}/files/**}, {@code /api/remote/test-connection}). * * <p>A single MINA SSHD server and one open session are shared across all tests * in this class. Tests that create files must use unique names to avoid ordering * conflicts; tests that delete or rename a file must create it themselves first. */@DisplayName("Remote File & Transfer API")@TestInstance(TestInstance.Lifecycle.PER_CLASS)class RemoteFileApiIT extends IntegrationTestBase {    private static final String SESSIONS    = "/api/remote/sessions";    private static final String TEST_CONN   = "/api/remote/test-connection";    private static final String PASSWORD    = "P@ssw0rd!";    private MockSftpServer sftpServer;    private String sessionId;    private String bearerToken;    @BeforeAll    void setUp() throws Exception {        sftpServer = new MockSftpServer();        sftpServer.start();        // Pre-create a file the list and download tests can use        sftpServer.createTestFile("readme.txt", "Hello SFTP World");        TestAuthHelper auth = new TestAuthHelper(mockMvc, objectMapper);        String username = auth.uniqueUsername();        AuthTokens tokens = auth.register(username, PASSWORD);        bearerToken = tokens.bearer();        sessionId = openSession();    }    @AfterAll    void tearDown() throws Exception {        if (sessionId != null) {            mockMvc.perform(delete(SESSIONS + "/" + sessionId)                            .header(HttpHeaders.AUTHORIZATION, bearerToken))                    .andReturn();        }        sftpServer.close();    }    // ─── Directory listing ────────────────────────────────────────────────────    @Test    @DisplayName("GET /files?path=/ → 200 with directory entries")    void listDirectory_rootPath() throws Exception {        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files")                        .param("path", "/")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isOk())                .andExpect(jsonPath("$.path").value("/"))                .andExpect(jsonPath("$.totalEntries", greaterThanOrEqualTo(1)));    }    @Test    @DisplayName("GET /files?path=/ → 401 when no JWT is provided")    void listDirectory_unauthenticated() throws Exception {        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files").param("path", "/"))                .andExpect(status().isUnauthorized());    }    @Test    @DisplayName("GET /files → 403 when session belongs to a different user")    void listDirectory_crossUserForbidden() throws Exception {        TestAuthHelper auth = new TestAuthHelper(mockMvc, objectMapper);        AuthTokens other = auth.register(auth.uniqueUsername(), PASSWORD);        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files")                        .param("path", "/")                        .header(HttpHeaders.AUTHORIZATION, other.bearer()))                .andExpect(status().isForbidden());    }    // ─── Create directory ─────────────────────────────────────────────────────    @Test    @DisplayName("POST /directories?path → 201 when directory is created")    void createDirectory_success() throws Exception {        mockMvc.perform(post(SESSIONS + "/" + sessionId + "/directories")                        .param("path", "/new-dir-" + System.nanoTime())                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isCreated());    }    // ─── Upload (multipart) ───────────────────────────────────────────────────    @Test    @DisplayName("POST /files/upload → 200 and returns transferId for multipart upload")    void uploadFile_multipart_success() throws Exception {        MockMultipartFile file = new MockMultipartFile(                "file", "upload-test.txt", "text/plain", "uploaded content".getBytes());        mockMvc.perform(multipart(SESSIONS + "/" + sessionId + "/files/upload")                        .file(file)                        .param("path", "/upload-test.txt")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isOk())                .andExpect(jsonPath("$", notNullValue())); // returns transferId string    }    // ─── Upload (stream) ──────────────────────────────────────────────────────    @Test    @DisplayName("POST /files/upload/stream → 200 and returns transferId for raw-byte upload")    void uploadFile_stream_success() throws Exception {        byte[] content = "streaming upload content".getBytes();        mockMvc.perform(post(SESSIONS + "/" + sessionId + "/files/upload/stream")                        .param("path", "/stream-upload.txt")                        .contentType(MediaType.APPLICATION_OCTET_STREAM)                        .content(content)                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isOk())                .andExpect(jsonPath("$", notNullValue()));    }    // ─── Download ─────────────────────────────────────────────────────────────    @Test    @DisplayName("GET /files/download?path → 200 with Content-Disposition header")    void downloadFile_success() throws Exception {        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files/download")                        .param("path", "/readme.txt")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isOk())                .andExpect(header().exists(HttpHeaders.CONTENT_DISPOSITION));    }    @Test    @DisplayName("GET /files/download?path=/ → 400 when path is a root (no filename)")    void downloadFile_rootPath_badRequest() throws Exception {        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files/download")                        .param("path", "/")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isBadRequest());    }    // ─── Rename ───────────────────────────────────────────────────────────────    @Test    @DisplayName("PATCH /files/rename → 200 when file is renamed successfully")    void renameFile_success() throws Exception {        sftpServer.createTestFile("to-rename.txt", "rename me");        RenameRequest body = new RenameRequest();        body.setRemotePath("/to-rename.txt");        body.setNewPath("/renamed.txt");        mockMvc.perform(patch(SESSIONS + "/" + sessionId + "/files/rename")                        .header(HttpHeaders.AUTHORIZATION, bearerToken)                        .contentType(MediaType.APPLICATION_JSON)                        .content(objectMapper.writeValueAsString(body)))                .andExpect(status().isOk());    }    // ─── Delete ───────────────────────────────────────────────────────────────    @Test    @DisplayName("DELETE /files?path → 204 when file is deleted successfully")    void deleteFile_success() throws Exception {        sftpServer.createTestFile("to-delete.txt", "delete me");        mockMvc.perform(delete(SESSIONS + "/" + sessionId + "/files")                        .param("path", "/to-delete.txt")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isNoContent());    }    // ─── Transfer tracking ────────────────────────────────────────────────────    @Test    @DisplayName("GET /transfers → 200 returns list (possibly empty if uploads finished)")    void getTransfers_returnsList() throws Exception {        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/transfers")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isOk())                .andExpect(jsonPath("$").isArray());    }    @Test    @DisplayName("GET /transfers/{id} → 502 when transfer ID does not exist (RemoteOperationException)")    void getTransfer_notFound() throws Exception {        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/transfers/nonexistent-transfer-id")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isBadGateway());    }    @Test    @DisplayName("DELETE /transfers/{id} → 502 when transfer ID does not exist (RemoteOperationException)")    void cancelTransfer_notFound() throws Exception {        mockMvc.perform(delete(SESSIONS + "/" + sessionId + "/transfers/ghost-transfer-id")                        .header(HttpHeaders.AUTHORIZATION, bearerToken))                .andExpect(status().isBadGateway());    }    // ─── Test connection ──────────────────────────────────────────────────────    @Test    @DisplayName("POST /test-connection → 200 success=true for valid credentials")    void testConnection_success() throws Exception {        ConnectRequest body = validConnectRequest();        mockMvc.perform(post(TEST_CONN)                        .header(HttpHeaders.AUTHORIZATION, bearerToken)                        .contentType(MediaType.APPLICATION_JSON)                        .content(objectMapper.writeValueAsString(body)))                .andExpect(status().isOk())                .andExpect(jsonPath("$.success").value(true))                .andExpect(jsonPath("$.host").value(sftpServer.getHost()));    }    @Test    @DisplayName("POST /test-connection → 200 success=false for wrong password")    void testConnection_badCredentials() throws Exception {        ConnectRequest body = ConnectRequest.builder()                .protocol(ProtocolType.SSH_SFTP)                .host(sftpServer.getHost())                .port(sftpServer.getPort())                .username(MockSftpServer.TEST_USER)                .sshAuthType(SshAuthType.PASSWORD)                .password("bad-password")                .strictHostKeyChecking(false)                .build();        mockMvc.perform(post(TEST_CONN)                        .header(HttpHeaders.AUTHORIZATION, bearerToken)                        .contentType(MediaType.APPLICATION_JSON)                        .content(objectMapper.writeValueAsString(body)))                .andExpect(status().isOk())                .andExpect(jsonPath("$.success").value(false));    }    @Test    @DisplayName("POST /test-connection → 401 when no JWT is provided")    void testConnection_unauthenticated() throws Exception {        mockMvc.perform(post(TEST_CONN)                        .contentType(MediaType.APPLICATION_JSON)                        .content(objectMapper.writeValueAsString(validConnectRequest())))                .andExpect(status().isUnauthorized());    }    // ─── Helpers ──────────────────────────────────────────────────────────────    private String openSession() throws Exception {        MvcResult result = mockMvc.perform(post(SESSIONS)                        .header(HttpHeaders.AUTHORIZATION, bearerToken)                        .contentType(MediaType.APPLICATION_JSON)                        .content(objectMapper.writeValueAsString(validConnectRequest())))                .andExpect(status().isCreated())                .andReturn();        return objectMapper.readTree(result.getResponse().getContentAsString())                .get("sessionId")                .asText();    }    private ConnectRequest validConnectRequest() {        return ConnectRequest.builder()                .protocol(ProtocolType.SSH_SFTP)                .host(sftpServer.getHost())                .port(sftpServer.getPort())                .username(MockSftpServer.TEST_USER)                .sshAuthType(SshAuthType.PASSWORD)                .password(MockSftpServer.TEST_PASS)                .strictHostKeyChecking(false)                .build();    }}
+package com.weekend.architect.unift.integration.remote;
+
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.weekend.architect.unift.integration.config.IntegrationTestBase;
+import com.weekend.architect.unift.integration.support.MockSftpServer;
+import com.weekend.architect.unift.integration.support.TestAuthHelper;
+import com.weekend.architect.unift.integration.support.TestAuthHelper.AuthTokens;
+import com.weekend.architect.unift.remote.dto.ConnectRequest;
+import com.weekend.architect.unift.remote.dto.RenameRequest;
+import com.weekend.architect.unift.remote.enums.ProtocolType;
+import com.weekend.architect.unift.remote.enums.SshAuthType;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MvcResult;
+
+/**
+ * Integration tests for file operations, transfers, and test-connection ({@code
+ * /api/remote/sessions/{id}/files/**}, {@code /api/remote/test-connection}).
+ *
+ * <p>A single MINA SSHD server and one open session are shared across all tests in this class.
+ * Tests that create files must use unique names to avoid ordering conflicts; tests that delete or
+ * rename a file must create it themselves first.
+ */
+@DisplayName("Remote File & Transfer API")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class RemoteFileApiIT extends IntegrationTestBase {
+
+    private static final String SESSIONS = "/api/remote/sessions";
+    private static final String TEST_CONN = "/api/remote/test-connection";
+    private static final String PASSWORD = "P@ssw0rd!";
+
+    private MockSftpServer sftpServer;
+    private String sessionId;
+    private String bearerToken;
+
+    @BeforeAll
+    void setUp() throws Exception {
+        sftpServer = new MockSftpServer();
+        sftpServer.start();
+
+        // Pre-create a file the list and download tests can use
+        sftpServer.createTestFile("readme.txt", "Hello SFTP World");
+
+        TestAuthHelper auth = new TestAuthHelper(mockMvc, objectMapper);
+        String username = auth.uniqueUsername();
+        AuthTokens tokens = auth.register(username, PASSWORD);
+        bearerToken = tokens.bearer();
+        sessionId = openSession();
+    }
+
+    @AfterAll
+    void tearDown() throws Exception {
+        if (sessionId != null) {
+            mockMvc.perform(delete(SESSIONS + "/" + sessionId).header(HttpHeaders.AUTHORIZATION, bearerToken))
+                    .andReturn();
+        }
+        sftpServer.close();
+    }
+
+    @Test
+    @DisplayName("GET /files?path=/ → 200 with directory entries")
+    void listDirectory_rootPath() throws Exception {
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files")
+                        .param("path", "/")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.path").value("/"))
+                .andExpect(jsonPath("$.totalEntries", greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    @DisplayName("GET /files?path=/ → 401 when no JWT is provided")
+    void listDirectory_unauthenticated() throws Exception {
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files").param("path", "/"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /files → 403 when session belongs to a different user")
+    void listDirectory_crossUserForbidden() throws Exception {
+        TestAuthHelper auth = new TestAuthHelper(mockMvc, objectMapper);
+        AuthTokens other = auth.register(auth.uniqueUsername(), PASSWORD);
+
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files")
+                        .param("path", "/")
+                        .header(HttpHeaders.AUTHORIZATION, other.bearer()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("POST /directories?path → 201 when directory is created")
+    void createDirectory_success() throws Exception {
+        mockMvc.perform(post(SESSIONS + "/" + sessionId + "/directories")
+                        .param("path", "/new-dir-" + System.nanoTime())
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("POST /files/upload → 200 and returns transferId for multipart upload")
+    void uploadFile_multipart_success() throws Exception {
+        MockMultipartFile file =
+                new MockMultipartFile("file", "upload-test.txt", "text/plain", "uploaded content".getBytes());
+
+        mockMvc.perform(multipart(SESSIONS + "/" + sessionId + "/files/upload")
+                        .file(file)
+                        .param("path", "/upload-test.txt")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", notNullValue())); // returns transferId string
+    }
+
+    @Test
+    @DisplayName("POST /files/upload/stream → 200 and returns transferId for raw-byte upload")
+    void uploadFile_stream_success() throws Exception {
+        byte[] content = "streaming upload content".getBytes();
+
+        mockMvc.perform(post(SESSIONS + "/" + sessionId + "/files/upload/stream")
+                        .param("path", "/stream-upload.txt")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content(content)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", notNullValue()));
+    }
+
+    @Test
+    @DisplayName("GET /files/download?path → 200 with Content-Disposition header")
+    void downloadFile_success() throws Exception {
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files/download")
+                        .param("path", "/readme.txt")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(header().exists(HttpHeaders.CONTENT_DISPOSITION));
+    }
+
+    @Test
+    @DisplayName("GET /files/download?path=/ → 400 when path is a root (no filename)")
+    void downloadFile_rootPath_badRequest() throws Exception {
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/files/download")
+                        .param("path", "/")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH /files/rename → 200 when file is renamed successfully")
+    void renameFile_success() throws Exception {
+        sftpServer.createTestFile("to-rename.txt", "rename me");
+
+        RenameRequest body = new RenameRequest();
+        body.setRemotePath("/to-rename.txt");
+        body.setNewPath("/renamed.txt");
+
+        mockMvc.perform(patch(SESSIONS + "/" + sessionId + "/files/rename")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("DELETE /files?path → 204 when file is deleted successfully")
+    void deleteFile_success() throws Exception {
+        sftpServer.createTestFile("to-delete.txt", "delete me");
+
+        mockMvc.perform(delete(SESSIONS + "/" + sessionId + "/files")
+                        .param("path", "/to-delete.txt")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @DisplayName("GET /transfers → 200 returns list (possibly empty if uploads finished)")
+    void getTransfers_returnsList() throws Exception {
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/transfers").header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+    }
+
+    @Test
+    @DisplayName("GET /transfers/{id} → 502 when transfer ID does not exist (RemoteOperationException)")
+    void getTransfer_notFound() throws Exception {
+        mockMvc.perform(get(SESSIONS + "/" + sessionId + "/transfers/nonexistent-transfer-id")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("DELETE /transfers/{id} → 502 when transfer ID does not exist" + " (RemoteOperationException)")
+    void cancelTransfer_notFound() throws Exception {
+        mockMvc.perform(delete(SESSIONS + "/" + sessionId + "/transfers/ghost-transfer-id")
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("POST /test-connection → 200 success=true for valid credentials")
+    void testConnection_success() throws Exception {
+        ConnectRequest body = validConnectRequest();
+
+        mockMvc.perform(post(TEST_CONN)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.host").value(sftpServer.getHost()));
+    }
+
+    @Test
+    @DisplayName("POST /test-connection → 200 success=false for wrong password")
+    void testConnection_badCredentials() throws Exception {
+        ConnectRequest body = ConnectRequest.builder()
+                .protocol(ProtocolType.SSH_SFTP)
+                .host(sftpServer.getHost())
+                .port(sftpServer.getPort())
+                .username(MockSftpServer.TEST_USER)
+                .sshAuthType(SshAuthType.PASSWORD)
+                .password("bad-password")
+                .strictHostKeyChecking(false)
+                .build();
+
+        mockMvc.perform(post(TEST_CONN)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("POST /test-connection → 401 when no JWT is provided")
+    void testConnection_unauthenticated() throws Exception {
+        mockMvc.perform(post(TEST_CONN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validConnectRequest())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private String openSession() throws Exception {
+        MvcResult result = mockMvc.perform(post(SESSIONS)
+                        .header(HttpHeaders.AUTHORIZATION, bearerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validConnectRequest())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("sessionId")
+                .asText();
+    }
+
+    private ConnectRequest validConnectRequest() {
+        return ConnectRequest.builder()
+                .protocol(ProtocolType.SSH_SFTP)
+                .host(sftpServer.getHost())
+                .port(sftpServer.getPort())
+                .username(MockSftpServer.TEST_USER)
+                .sshAuthType(SshAuthType.PASSWORD)
+                .password(MockSftpServer.TEST_PASS)
+                .strictHostKeyChecking(false)
+                .build();
+    }
+}

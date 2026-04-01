@@ -10,8 +10,8 @@ import lombok.NoArgsConstructor;
 /**
  * Request body for {@code POST /api/uploads/sessions}.
  *
- * <p>The caller must pre-compute the chunk layout (chunk size and count) before
- * creating the session.  A sensible default chunk size is 5 MB.
+ * <p>The caller must pre-compute the chunk layout (chunk size and count) before creating the
+ * session. A sensible default chunk size is 5 MB.
  */
 @Data
 @Builder

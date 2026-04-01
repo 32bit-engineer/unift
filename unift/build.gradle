@@ -73,6 +73,11 @@ dependencies {
 	// Swagger / OpenAPI
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2'
 
+	// Flyway — schema versioning and migration on startup
+	// flyway-database-postgresql is required since Flyway 10 (dialect extracted from core)
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 
@@ -101,11 +106,10 @@ dependencies {
 
 spotless {
 	java {
-		palantirJavaFormat()
+		palantirJavaFormat('2.90.0')
 		target 'src/**/*.java'
 	}
 }
-
 tasks.named('test') {
 	useJUnitPlatform()
 }

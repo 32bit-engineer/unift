@@ -5,9 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * Externalized configuration for the remote-connection feature.
- * All properties live under the {@code unift.remote.*} prefix in
- * {@code application.yaml}.
+ * Externalized configuration for the remote-connection feature. All properties live under the
+ * {@code unift.remote.*} prefix in {@code application.yaml}.
  */
 @Data
 @Component
@@ -30,30 +29,28 @@ public class RemoteConnectionProperties {
     private int channelTimeoutMs = 10_000;
 
     /**
-     * How often JSch sends SSH-level keep-alive packets to the remote host (milliseconds).
-     * Set lower than the shortest expected firewall/NAT idle-connection timeout (commonly 30–60 s).
+     * How often JSch sends SSH-level keep-alive packets to the remote host (milliseconds). Set
+     * lower than the shortest expected firewall/NAT idle-connection timeout (commonly 30–60 s).
      * Default: 30 s.
      */
     private int sshKeepAliveIntervalMs = 30_000;
 
     /**
-     * Number of unanswered SSH keep-alive packets before JSch treats the connection as dead
-     * and closes it.  Default: 3.
+     * Number of unanswered SSH keep-alive packets before JSch treats the connection as dead and
+     * closes it. Default: 3.
      */
     private int sshKeepAliveCountMax = 3;
 
     /**
-     * When {@code true} the session TTL is reset (slid forward) on each
-     * API activity.  When {@code false} the session expires exactly
-     * {@code sessionTtlMinutes} after it was created.
+     * When {@code true} the session TTL is reset (slid forward) on each API activity. When {@code
+     * false} the session expires exactly {@code sessionTtlMinutes} after it was created.
      */
     private boolean slidingTtl = true;
 
     /**
-     * How long completed/failed/cancelled transfers remain in the registry
-     * before Caffeine automatically evicts them.  Keeps recent transfer
-     * history visible to the UI without leaking memory indefinitely.
-     * Default: 30 min.
+     * How long completed/failed/cancelled transfers remain in the registry before Caffeine
+     * automatically evicts them. Keeps recent transfer history visible to the UI without leaking
+     * memory indefinitely. Default: 30 min.
      */
     private long transferTerminalTtlMinutes = 30;
 }

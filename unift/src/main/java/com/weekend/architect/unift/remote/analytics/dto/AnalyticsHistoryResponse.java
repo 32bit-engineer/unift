@@ -17,9 +17,8 @@ public class AnalyticsHistoryResponse {
     int count;
 
     /**
-     * Whether more rows exist beyond the current page.
-     * Use the {@code before} query parameter with the {@code capturedAt}
-     * of the oldest entry to fetch the next page.
+     * Whether more rows exist beyond the current page. Use the {@code before} query parameter with
+     * the {@code capturedAt} of the oldest entry to fetch the next page.
      */
     boolean hasMore;
 

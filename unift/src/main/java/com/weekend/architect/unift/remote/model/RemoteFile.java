@@ -6,8 +6,8 @@ import lombok.Builder;
 import lombok.Value;
 
 /**
- * Immutable snapshot of a single remote file-system entry.
- * Returned by directory-listing operations.
+ * Immutable snapshot of a single remote file-system entry. Returned by directory-listing
+ * operations.
  */
 @Value
 @Builder
@@ -28,8 +28,8 @@ public class RemoteFile {
     OffsetDateTime lastModified;
 
     /**
-     * POSIX permission string, e.g. {@code -rwxr-xr-x}.
-     * May be {@code null} for non-POSIX stores (e.g., S3).
+     * POSIX permission string, e.g. {@code -rwxr-xr-x}. May be {@code null} for non-POSIX stores
+     * (e.g., S3).
      */
     String permissions;
 

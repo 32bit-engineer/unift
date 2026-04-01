@@ -35,35 +35,58 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * WebSocket handler that bridges a terminal UI (e.g., Xterm.js) with a remote PTY shell.
  *
  * <h6>Security controls</h6>
+ *
  * <ol>
- *   <li><b>Authentication</b> — JWT validated at handshake time by {@link TerminalHandshakeInterceptor}.
- *       Only authenticated requests reach this handler.</li>
- *   <li><b>Ownership</b> — every connection attempt verifies that the authenticated user owns
- *       the requested SSH session.  Any mismatch is logged as a security warning and rejected
- *       with close code {@code 4001}.</li>
- *   <li><b>Per-user cap</b> — enforced atomically by {@link TerminalSessionRegistry#registerIfUnderCap}.
- *       Excess connections are rejected with close code {@code 4029}.</li>
- *   <li><b>Global cap / thread exhaustion</b> — the pipe-thread pool is bounded to
- *       {@code maxConcurrentSessions} threads with a {@code AbortPolicy}; overflow is rejected
- *       gracefully.</li>
+ *   <li><b>Authentication</b> — JWT validated at handshake time by {@link
+ *       TerminalHandshakeInterceptor}. Only authenticated requests reach this handler.
+ *   <li><b>Ownership</b> — every connection attempt verifies that the authenticated user owns the
+ *       requested SSH session. Any mismatch is logged as a security warning and rejected with close
+ *       code {@code 4001}.
+ *   <li><b>Per-user cap</b> — enforced atomically by {@link
+ *       TerminalSessionRegistry#registerIfUnderCap}. Excess connections are rejected with close
+ *       code {@code 4029}.
+ *   <li><b>Global cap / thread exhaustion</b> — the pipe-thread pool is bounded to {@code
+ *       maxConcurrentSessions} threads with a {@code AbortPolicy}; overflow is rejected gracefully.
  * </ol>
  *
  * <h6>Wire protocol</h6>
+ *
  * <p>Client → Server (JSON text frames):
+ *
  * <pre>
  *   { "type": "input",  "data": "ls -la\n" }
  *   { "type": "resize", "cols": 220, "rows": 50 }
  * </pre>
+ *
  * <p>Server → Client: raw terminal output as UTF-8 text frames (Xterm.js compatible).
  *
  * <h6>WebSocket close codes</h6>
+ *
  * <table>
- *   <tr><th>Code</th><th>Meaning</th></tr>
- *   <tr><td>4001</td><td>Access denied — session not owned by authenticated user</td></tr>
- *   <tr><td>4000</td><td>SSH session not found, expired, or shell open failed</td></tr>
- *   <tr><td>4003</td><td>Remote connection does not support terminal access</td></tr>
- *   <tr><td>4008</td><td>Idle timeout (sent by {@link TerminalSessionRegistry} reaper)</td></tr>
- *   <tr><td>4029</td><td>Per-user or global terminal session cap exceeded</td></tr>
+ * <tr>
+ * <th>Code</th>
+ * <th>Meaning</th>
+ * </tr>
+ * <tr>
+ * <td>4001</td>
+ * <td>Access denied — session not owned by authenticated user</td>
+ * </tr>
+ * <tr>
+ * <td>4000</td>
+ * <td>SSH session not found, expired, or shell open failed</td>
+ * </tr>
+ * <tr>
+ * <td>4003</td>
+ * <td>Remote connection does not support terminal access</td>
+ * </tr>
+ * <tr>
+ * <td>4008</td>
+ * <td>Idle timeout (sent by {@link TerminalSessionRegistry} reaper)</td>
+ * </tr>
+ * <tr>
+ * <td>4029</td>
+ * <td>Per-user or global terminal session cap exceeded</td>
+ * </tr>
  * </table>
  */
 @Slf4j
@@ -77,15 +100,15 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
     private final TerminalSessionRegistry terminalRegistry;
 
     /**
-     * Shared virtual-thread executor injected from {@link com.weekend.architect.unift.common.CommonBeans}.
+     * Shared virtual-thread executor injected from {@link
+     * com.weekend.architect.unift.common.CommonBeans}.
      *
-     * <p>Each pipe task blocks on {@code stdout.read()} for the lifetime of the session.
-     * Virtual threads unmount from their carrier thread while blocked on I/O, so hundreds
-     * of concurrent terminal sessions cost almost no OS resources.
+     * <p>Each pipe task blocks on {@code stdout.read()} for the lifetime of the session. Virtual
+     * threads unmount from their carrier thread while blocked on I/O, so hundreds of concurrent
+     * terminal sessions cost almost no OS resources.
      *
-     * <p>Lifecycle (shutdown) is managed centrally by
-     * {@link com.weekend.architect.unift.common.PreTermination} — do NOT call
-     * {@code shutdown()} here.
+     * <p>Lifecycle (shutdown) is managed centrally by {@link
+     * com.weekend.architect.unift.common.PreTermination} — do NOT call {@code shutdown()} here.
      */
     private final ExecutorService outputExecutor;
 
@@ -150,7 +173,8 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         UUID sessionOwner = conn.getSession().getOwnerId();
         if (!sessionOwner.equals(ownerId)) {
             log.warn(
-                    "[ws-terminal] SECURITY VIOLATION: user {} attempted to open terminal on session owned by {} (sshSession={})",
+                    "[ws-terminal] SECURITY VIOLATION: user {} attempted to open terminal on"
+                            + " session owned by {} (sshSession={})",
                     ownerId,
                     sessionOwner,
                     sshSessionId);
@@ -171,7 +195,8 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         // 6. Wrap WS session for thread-safe concurrent sends
 
         // Both the pipe thread (stdout→WS) and the registry's ping task write to this
-        // session concurrently. ConcurrentWebSocketSessionDecorator serialises those sends.
+        // session concurrently. ConcurrentWebSocketSessionDecorator serialises those
+        // sends.
         ConcurrentWebSocketSessionDecorator concurrentWsSession = new ConcurrentWebSocketSessionDecorator(
                 rawWsSession, props.getSendTimeoutMs(), props.getSendBufferSizeLimitBytes());
 
@@ -184,7 +209,8 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             shell.close();
             rawWsSession.close(new CloseStatus(
                     4029,
-                    "Maximum terminal sessions (" + props.getMaxSessionsPerUser()
+                    "Maximum terminal sessions ("
+                            + props.getMaxSessionsPerUser()
                             + ") reached. Close an existing terminal first."));
             return;
         }
@@ -236,7 +262,7 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
                 terminal.shellSession().resize(cols, rows);
                 terminalRegistry.touchActivity(wsSession.getId());
             }
-            case "ping" -> { 
+            case "ping" -> {
                 // Application-level keepalive: reply with pong so the client
                 // clears its pong-timeout and does not self-close the connection.
                 terminal.wsSession().sendMessage(new TextMessage("{\"type\":\"pong\"}"));
@@ -248,8 +274,8 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * Called when the browser sends a Pong frame in response to a server-sent Ping.
-     * Updates the idle timer so the reaper does not close a responsive-but-quiet session.
+     * Called when the browser sends a Pong frame in response to a server-sent Ping. Updates the
+     * idle timer so the reaper does not close a responsive-but-quiet session.
      */
     @Override
     protected void handlePongMessage(@NonNull WebSocketSession wsSession, @NonNull PongMessage message) {
@@ -273,18 +299,19 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
     // Shell pipe
 
     /**
-     * Reads continuously from the shell's stdout and forwards each chunk as a UTF-8
-     * text frame to the WebSocket client (Xterm.js compatible).
+     * Reads continuously from the shell's stdout and forwards each chunk as a UTF-8 text frame to
+     * the WebSocket client (Xterm.js compatible).
      *
      * <p>Runs on a thread from {@link #outputExecutor}. Exits when:
+     *
      * <ul>
-     *   <li>the shell's stdout returns EOF ({@code read} returns {@code -1})</li>
-     *   <li>the WebSocket session is closed</li>
-     *   <li>a send fails (broken pipe to the browser)</li>
+     *   <li>the shell's stdout returns EOF ({@code read} returns {@code -1})
+     *   <li>the WebSocket session is closed
+     *   <li>a send fails (broken pipe to the browser)
      * </ul>
      *
-     * <p>The {@code finally} block calls {@link TerminalSessionRegistry#remove} which is
-     * idempotent — it is safe if {@link #afterConnectionClosed} has already removed the entry.
+     * <p>The {@code finally} block calls {@link TerminalSessionRegistry#remove} which is idempotent
+     * — it is safe if {@link #afterConnectionClosed} has already removed the entry.
      */
     private void pipeShellToWebSocket(WebSocketSession wsSession, RemoteShell.ShellSession shell) {
         InputStream stdout = shell.getStdout();

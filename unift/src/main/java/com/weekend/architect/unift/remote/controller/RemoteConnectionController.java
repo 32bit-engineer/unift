@@ -3,14 +3,14 @@ package com.weekend.architect.unift.remote.controller;
 import static com.weekend.architect.unift.common.FileUtils.encodeFilenameRFC6266;
 
 import com.weekend.architect.unift.remote.core.RemoteConnection;
+import com.weekend.architect.unift.remote.docker.DockerClientPool;
+import com.weekend.architect.unift.remote.docker.DockerLogStreamRegistry;
 import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
 import com.weekend.architect.unift.remote.dto.RenameRequest;
 import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
-import com.weekend.architect.unift.remote.docker.DockerClientPool;
-import com.weekend.architect.unift.remote.docker.DockerLogStreamRegistry;
 import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
 import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
 import com.weekend.architect.unift.remote.kubernetes.K8sLogStreamRegistry;
@@ -77,7 +77,7 @@ public class RemoteConnectionController {
     @Operation(
             summary = "Test connection credentials",
             description =
-                    "Validates if the provided credentials can establish a connection without creating a session.",
+                    "Validates if the provided credentials can establish a connection without" + " creating a session.",
             responses = {
                 @ApiResponse(
                         responseCode = "200",
@@ -85,10 +85,15 @@ public class RemoteConnectionController {
                         content = @Content(schema = @Schema(implementation = TestConnectionResponse.class))),
                 @ApiResponse(responseCode = "400", description = "Invalid request", content = @Content)
             })
-    public ResponseEntity<TestConnectionResponse> testConnection(@AuthenticationPrincipal UniFtUserDetails principal,
-        @Valid @RequestBody ConnectRequest request) {
+    public ResponseEntity<TestConnectionResponse> testConnection(
+            @AuthenticationPrincipal UniFtUserDetails principal, @Valid @RequestBody ConnectRequest request) {
         UUID userId = principal.user().getId();
-        log.info("Testing connection for {}:{} ({}) as initiated by user: {}", request.getHost(), request.getPort(), request.getProtocol(), userId);
+        log.info(
+                "Testing connection for {}:{} ({}) as initiated by user: {}",
+                request.getHost(),
+                request.getPort(),
+                request.getProtocol(),
+                userId);
         TestConnectionResponse response = service.testConnection(request);
         log.info(
                 "Connection test {} for {}:{}",
@@ -175,7 +180,8 @@ public class RemoteConnectionController {
     @PostMapping("/sessions/{sessionId}/workspaces/{type}")
     @Operation(
             summary = "Activate a workspace type",
-            description = "Adds a workspace type to the session's active set. Valid types: ssh, docker, kubernetes.",
+            description =
+                    "Adds a workspace type to the session's active set. Valid types: ssh, docker," + " kubernetes.",
             responses = {
                 @ApiResponse(responseCode = "200", description = "Workspace activated; returns updated set"),
                 @ApiResponse(responseCode = "400", description = "Invalid workspace type", content = @Content),
@@ -201,7 +207,10 @@ public class RemoteConnectionController {
             description = "Removes a workspace type from the session. Cannot deactivate 'ssh'.",
             responses = {
                 @ApiResponse(responseCode = "200", description = "Workspace deactivated; returns updated set"),
-                @ApiResponse(responseCode = "400", description = "Cannot deactivate SSH or invalid type", content = @Content),
+                @ApiResponse(
+                        responseCode = "400",
+                        description = "Cannot deactivate SSH or invalid type",
+                        content = @Content),
                 @ApiResponse(responseCode = "404", description = "Session not found", content = @Content)
             })
     public ResponseEntity<Set<String>> deactivateWorkspace(
@@ -231,7 +240,7 @@ public class RemoteConnectionController {
     @GetMapping("/sessions/{sessionId}/files")
     @Operation(
             summary = "List remote directory",
-            description = "Returns all entries at the given path. Omit `path` to list the user's home directory.",
+            description = "Returns all entries at the given path. Omit `path` to list the user's home" + " directory.",
             responses = {
                 @ApiResponse(
                         responseCode = "200",
@@ -293,7 +302,7 @@ public class RemoteConnectionController {
     @GetMapping("/sessions/{sessionId}/files/download")
     @Operation(
             summary = "Stream-download a remote file",
-            description = "Streams the remote file directly to the HTTP response. No buffering on the server.",
+            description = "Streams the remote file directly to the HTTP response. No buffering on the" + " server.",
             responses = {
                 @ApiResponse(responseCode = "200", description = "File stream"),
                 @ApiResponse(responseCode = "502", description = "Remote read error", content = @Content)
@@ -326,7 +335,7 @@ public class RemoteConnectionController {
     @PostMapping(value = "/sessions/{sessionId}/files/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
             summary = "Stream-upload a file to the remote host",
-            description = "Uploads a file to the given remote path. Returns a transfer ID for progress tracking.",
+            description = "Uploads a file to the given remote path. Returns a transfer ID for progress" + " tracking.",
             responses = {
                 @ApiResponse(responseCode = "200", description = "Upload complete; returns transferId"),
                 @ApiResponse(responseCode = "502", description = "Remote write error", content = @Content)
@@ -346,11 +355,12 @@ public class RemoteConnectionController {
     /**
      * Streaming upload that bypasses Spring's multipart resolver entirely.
      *
-     * <p>Send the raw file bytes as {@code Content-Type: application/octet-stream}.
-     * The request body is piped directly into the SFTP channel without ever
-     * being buffered in a server temp file, so there is no effective size limit.
+     * <p>Send the raw file bytes as {@code Content-Type: application/octet-stream}. The request
+     * body is piped directly into the SFTP channel without ever being buffered in a server temp
+     * file, so there is no effective size limit.
      *
      * <p>Usage example (curl):
+     *
      * <pre>
      *   curl -X POST \
      *     "http(s)://host/api/remote/sessions/{id}/files/upload/stream?path=/remote/dir/file.bin" \
@@ -364,11 +374,11 @@ public class RemoteConnectionController {
             consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     @Operation(
             summary = "Stream-upload a file (no size limit)",
-            description = "Uploads a file by streaming raw bytes (Content-Type: application/octet-stream) "
-                    + "directly into the SFTP channel. No multipart parsing occurs, so very large files "
-                    + "are handled without buffering them on the server. "
-                    + "Set the Content-Length header when the file size is known so transfer progress "
-                    + "is tracked accurately; omit it (or pass -1) if the size is unknown.",
+            description = "Uploads a file by streaming raw bytes (Content-Type: application/octet-stream)"
+                    + " directly into the SFTP channel. No multipart parsing occurs, so very"
+                    + " large files are handled without buffering them on the server. Set the"
+                    + " Content-Length header when the file size is known so transfer progress"
+                    + " is tracked accurately; omit it (or pass -1) if the size is unknown.",
             responses = {
                 @ApiResponse(responseCode = "200", description = "Upload complete; returns transferId"),
                 @ApiResponse(responseCode = "400", description = "Invalid remote path", content = @Content),
@@ -426,15 +436,15 @@ public class RemoteConnectionController {
     @DeleteMapping("/sessions/{sessionId}/transfers/{transferId}")
     @Operation(
             summary = "Cancel an in-progress stream upload",
-            description = "Signals cancellation to a stream upload that is PENDING or IN_PROGRESS. "
-                    + "The upload thread stops on its next read and any partially-written file "
-                    + "on the remote host is automatically deleted. "
-                    + "Only uploads started via POST .../files/upload/stream support cancellation.",
+            description = "Signals cancellation to a stream upload that is PENDING or IN_PROGRESS. The"
+                    + " upload thread stops on its next read and any partially-written file on"
+                    + " the remote host is automatically deleted. Only uploads started via POST"
+                    + " .../files/upload/stream support cancellation.",
             responses = {
                 @ApiResponse(responseCode = "204", description = "Cancellation signal accepted"),
                 @ApiResponse(
                         responseCode = "400",
-                        description = "Transfer is not cancellable (wrong direction or started via multipart)",
+                        description = "Transfer is not cancellable (wrong direction or started via" + " multipart)",
                         content = @Content),
                 @ApiResponse(responseCode = "404", description = "Session or transfer not found", content = @Content),
                 @ApiResponse(

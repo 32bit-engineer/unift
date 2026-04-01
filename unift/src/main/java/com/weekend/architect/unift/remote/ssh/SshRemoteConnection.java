@@ -49,15 +49,17 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * SSH/SFTP implementation of {@link com.weekend.architect.unift.remote.core.RemoteConnection}.
  *
- * <p>Uses the <a href="https://github.com/mwiede/jsch">mwiede/jsch</a> fork of JSch
- * for SSH transport and SFTP file operations.
+ * <p>Uses the <a href="https://github.com/mwiede/jsch">mwiede/jsch</a> fork of JSch for SSH
+ * transport and SFTP file operations.
  *
  * <h6>Thread-safety</h6>
- * <p>A single {@link ChannelSftp} is kept open for the lifetime of the session.
- * All SFTP operations are {@code synchronized} on the channel instance to prevent
- * concurrent access from multiple request threads.
+ *
+ * <p>A single {@link ChannelSftp} is kept open for the lifetime of the session. All SFTP operations
+ * are {@code synchronized} on the channel instance to prevent concurrent access from multiple
+ * request threads.
  *
  * <h6>Connection lifecycle</h6>
+ *
  * <pre>
  *   doConnect() → open JSch Session → open ChannelSftp
  *   doClose()   → disconnect ChannelSftp → disconnect Session
@@ -115,7 +117,8 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                         jschSession = jsch.getSession(pw.getUsername(), pw.getHost(), pw.getPort());
                         jschSession.setPassword(pw.getPassword());
                         // Required for servers that use keyboard-interactive (PAM) instead of
-                        // the plain "password" auth method (common on Ubuntu/Debian with UsePAM yes).
+                        // the plain "password" auth method (common on Ubuntu/Debian with UsePAM
+                        // yes).
                         jschSession.setUserInfo(new PasswordUserInfo(pw.getPassword()));
                         yield pw.getUsername();
                     }
@@ -159,7 +162,8 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 jsch.setHostKeyRepository(new FingerprintHostKeyRepository(credentials.getExpectedFingerprint()));
             }
         }
-        // Include keyboard-interactive so PAM-based servers (Ubuntu/Debian with UsePAM yes)
+        // Include keyboard-interactive so PAM-based servers (Ubuntu/Debian with UsePAM
+        // yes)
         // work alongside servers that use the plain "password" method.
         jschSession.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
 
@@ -170,7 +174,8 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
                 credentials.getHost(),
                 credentials.getPort());
         try {
-            // TCP-level keep-alive (OS sends ACK probes — works even when app-level traffic is silent)
+            // TCP-level keep-alive (OS sends ACK probes — works even when app-level traffic
+            // is silent)
             jschSession.setConfig("TCPKeepAlive", "yes");
             // SSH-level keep-alive: send an SSH_MSG_GLOBAL_REQUEST every N ms.
             // Use a value well below the shortest expected firewall/NAT idle timeout.
@@ -216,11 +221,11 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Opens a local-to-remote port forward through the JSch session.
-     * Passing {@code 0} lets the OS pick a free port; the bound port is returned.
+     * Opens a local-to-remote port forward through the JSch session. Passing {@code 0} lets the OS
+     * pick a free port; the bound port is returned.
      *
-     * <p>Used by {@code K8sClientPool} to tunnel Kubernetes API traffic when the
-     * API server is not directly reachable from the UniFT host.
+     * <p>Used by {@code K8sClientPool} to tunnel Kubernetes API traffic when the API server is not
+     * directly reachable from the UniFT host.
      */
     @Override
     public int forwardLocalPort(String remoteHost, int remotePort) throws Exception {
@@ -254,11 +259,12 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
      * Detects the remote OS by running a short exec command over the existing SSH session.
      *
      * <p>Strategy (in order):
+     *
      * <ol>
-     *   <li>Read {@code PRETTY_NAME} from {@code /etc/os-release} — covers all modern
-     *       Linux distros (Ubuntu, Debian, Fedora, RHEL, Alpine, …).</li>
-     *   <li>Fall back to {@code uname -sr} — covers macOS, BSDs, and older Linux.</li>
-     *   <li>Return {@code "SSH Server"} if both commands fail or produce empty output.</li>
+     *   <li>Read {@code PRETTY_NAME} from {@code /etc/os-release} — covers all modern Linux distros
+     *       (Ubuntu, Debian, Fedora, RHEL, Alpine, …).
+     *   <li>Fall back to {@code uname -sr} — covers macOS, BSDs, and older Linux.
+     *   <li>Return {@code "SSH Server"} if both commands fail or produce empty output.
      * </ol>
      *
      * <p>This method must never throw; all errors are logged as warnings.
@@ -270,7 +276,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         }
         try {
             // /etc/os-release is present on virtually all systemd-based Linux distros
-            String os = runCommand("grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '\"'");
+            String os = runCommand("grep -s PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d" + " '\"'");
             if (!os.isBlank()) {
                 log.debug("[{}] Detected remote OS via /etc/os-release: {}", session.getSessionId(), os);
                 return os;
@@ -288,9 +294,9 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Public implementation of {@link RemoteShell#executeCommand} — delegates to
-     * the internal {@link #runCommand} after asserting the session is active.
-     * Used by the analytics layer for system-metric probes.
+     * Public implementation of {@link RemoteShell#executeCommand} — delegates to the internal
+     * {@link #runCommand} after asserting the session is active. Used by the analytics layer for
+     * system-metric probes.
      */
     @Override
     public String executeCommand(String command) throws Exception {
@@ -299,10 +305,10 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Returns the first entry of the configured SSH client-to-server cipher preference
-     * list (e.g. {@code "chacha20-poly1305@openssh.com"}).  This approximates the
-     * actually-negotiated cipher; JSch does not expose the negotiated value via a
-     * public API.  Returns {@code null} when the session is not yet connected.
+     * Returns the first entry of the configured SSH client-to-server cipher preference list (e.g.
+     * {@code "chacha20-poly1305@openssh.com"}). This approximates the actually-negotiated cipher;
+     * JSch does not expose the negotiated value via a public API. Returns {@code null} when the
+     * session is not yet connected.
      */
     public String getCipherName() {
         if (jschSession == null) return null;
@@ -312,33 +318,33 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Opens a short-lived exec channel on the existing SSH session, runs {@code command},
-     * reads stdout, and returns the trimmed result.
+     * Opens a short-lived exec channel on the existing SSH session, runs {@code command}, reads
+     * stdout, and returns the trimmed result.
      *
      * <h6>Read strategy</h6>
-     * <p>JSch's {@code ChannelExec} delivers stdout via an internal
-     * {@code PipedInputStream}.  Two termination modes exist:
+     *
+     * <p>JSch's {@code ChannelExec} delivers stdout via an internal {@code PipedInputStream}. Two
+     * termination modes exist:
      *
      * <ol>
-     *   <li><b>Channel closes normally</b> — the remote shell exits, the SSH server
-     *       sends {@code SSH_MSG_CHANNEL_EOF} (which closes the pipe's write-side)
-     *       then {@code SSH_MSG_CHANNEL_CLOSE} ({@code exec.isClosed() == true}).
-     *       At that point a <em>blocking</em> {@code in.read()} will drain any
-     *       remaining buffered bytes and then return {@code -1}.</li>
-     *   <li><b>Channel stays open</b> — a backgrounder process (e.g. {@code socat})
-     *       inherits the channel's file descriptors and keeps it alive.  The echo
-     *       output arrives well before the deadline; the polling loop reads it via
-     *       {@code in.available()}.  When the deadline fires we return whatever
-     *       was collected.</li>
+     *   <li><b>Channel closes normally</b> — the remote shell exits, the SSH server sends {@code
+     *       SSH_MSG_CHANNEL_EOF} (which closes the pipe's write-side) then {@code
+     *       SSH_MSG_CHANNEL_CLOSE} ({@code exec.isClosed() == true}). At that point a
+     *       <em>blocking</em> {@code in.read()} will drain any remaining buffered bytes and then
+     *       return {@code -1}.
+     *   <li><b>Channel stays open</b> — a backgrounder process (e.g. {@code socat}) inherits the
+     *       channel's file descriptors and keeps it alive. The echo output arrives well before the
+     *       deadline; the polling loop reads it via {@code in.available()}. When the deadline fires
+     *       we return whatever was collected.
      * </ol>
      *
      * <h6>Why not {@code !exec.isConnected()}?</h6>
-     * <p>{@code isConnected()} is cleared inside {@code disconnect()}, which also
-     * calls {@code io.close()} — closing the {@code PipedInputStream} itself.
-     * Attempting {@code in.available()} or {@code in.read()} after that returns 0
-     * or throws, silently losing any buffered data.  {@code isClosed()} is set by
-     * the SSH {@code CLOSE} packet handler <em>before</em> {@code disconnect()} runs,
-     * so the pipe is still readable.
+     *
+     * <p>{@code isConnected()} is cleared inside {@code disconnect()}, which also calls {@code
+     * io.close()} — closing the {@code PipedInputStream} itself. Attempting {@code in.available()}
+     * or {@code in.read()} after that returns 0 or throws, silently losing any buffered data.
+     * {@code isClosed()} is set by the SSH {@code CLOSE} packet handler <em>before</em> {@code
+     * disconnect()} runs, so the pipe is still readable.
      *
      * @param command shell command to execute on the remote host
      * @return trimmed stdout, or an empty string if the command produced no output
@@ -406,9 +412,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         return new JSchShellSession(shell);
     }
 
-    /**
-     * Internal implementation of {@link ShellSession} for JSch.
-     */
+    /** Internal implementation of {@link ShellSession} for JSch. */
     private static class JSchShellSession implements ShellSession {
         private final ChannelShell channel;
         private final InputStream stdout;
@@ -447,10 +451,10 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Pre-flight check called at the top of every SFTP operation that uses the
-     * shared {@link #sftpChannel}.  Detects a silently-dropped connection
-     * (e.g. NAT/firewall idle timeout) <em>before</em> submitting work to JSch,
-     * so we get a clean 410 rather than an obscure "Pipe closed" 502.
+     * Pre-flight check called at the top of every SFTP operation that uses the shared {@link
+     * #sftpChannel}. Detects a silently-dropped connection (e.g. NAT/firewall idle timeout)
+     * <em>before</em> submitting work to JSch, so we get a clean 410 rather than an obscure "Pipe
+     * closed" 502.
      */
     private void assertSftpChannelAlive() {
         if (jschSession == null || !jschSession.isConnected()) {
@@ -466,11 +470,10 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Called inside every SFTP {@code catch} block.  If the root cause is a
-     * broken-pipe / closed-pipe {@link IOException} (the signature of a silently
-     * dropped idle connection), the session is marked {@code ERROR} and a
-     * {@link SessionExpiredException} (→ HTTP 410) is thrown so the client knows
-     * to reconnect.  If the exception is unrelated, this method does nothing.
+     * Called inside every SFTP {@code catch} block. If the root cause is a broken-pipe /
+     * closed-pipe {@link IOException} (the signature of a silently dropped idle connection), the
+     * session is marked {@code ERROR} and a {@link SessionExpiredException} (→ HTTP 410) is thrown
+     * so the client knows to reconnect. If the exception is unrelated, this method does nothing.
      */
     private void guardDeadPipe(Throwable t) {
         Throwable cause = t;
@@ -646,17 +649,23 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
         assertActive();
         log.info("[{}] ⬇️  Download starting ← '{}'", session.getSessionId(), remotePath);
 
-        // Open a *dedicated* ChannelSftp for this download — never reuse the shared sftpChannel.
+        // Open a *dedicated* ChannelSftp for this download — never reuse the shared
+        // sftpChannel.
         //
-        // JSch's SFTP InputStream is backed by an internal PipedInputStream tied to the channel.
-        // If two concurrent requests both call sftpChannel.get() on the same ChannelSftp —
-        // even if the get() calls are serialized by channelLock — the second stream's pipe
-        // setup overwrites the first stream's pipe state while it is still being drained.
+        // JSch's SFTP InputStream is backed by an internal PipedInputStream tied to the
+        // channel.
+        // If two concurrent requests both call sftpChannel.get() on the same
+        // ChannelSftp —
+        // even if the get() calls are serialized by channelLock — the second stream's
+        // pipe
+        // setup overwrites the first stream's pipe state while it is still being
+        // drained.
         // Whichever stream reads or closes next gets "inputstream is closed".
         //
         // A JSch Session multiplexes many Channels over a single TCP/SSH connection, so
         // opening a fresh ChannelSftp per download is correct and inexpensive.
-        // ChannelClosingInputStream guarantees the dedicated channel is disconnected when
+        // ChannelClosingInputStream guarantees the dedicated channel is disconnected
+        // when
         // the caller closes the stream (or on error).
         ChannelSftp downloadChannel = null;
         try {
@@ -664,8 +673,10 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
             downloadChannel.connect(props.getChannelTimeoutMs());
 
             // Omit the SftpProgressMonitor overload to skip JSch's internal _stat() call.
-            // get(path, monitor) calls _stat() first, which triggers an IndexOutOfBoundsException
-            // in mwiede/jsch 0.2.x + certain OpenSSH server versions. Progress is tracked via
+            // get(path, monitor) calls _stat() first, which triggers an
+            // IndexOutOfBoundsException
+            // in mwiede/jsch 0.2.x + certain OpenSSH server versions. Progress is tracked
+            // via
             // ProgressTrackingInputStream instead.
             InputStream raw = downloadChannel.get(remotePath);
             InputStream tracked = new ProgressTrackingInputStream(raw, callback);
@@ -690,14 +701,13 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     // Helpers
 
     /**
-     * Checks whether a {@link SftpException} represents a remote permission denial
-     * (SFTP status code {@code SSH_FX_PERMISSION_DENIED = 3}) and, if so, throws
-     * {@link RemotePermissionDeniedException} immediately — before the caller wraps
-     * the error in a generic {@link BrowseException} or {@link TransferException}.
+     * Checks whether a {@link SftpException} represents a remote permission denial (SFTP status
+     * code {@code SSH_FX_PERMISSION_DENIED = 3}) and, if so, throws {@link
+     * RemotePermissionDeniedException} immediately — before the caller wraps the error in a generic
+     * {@link BrowseException} or {@link TransferException}.
      *
-     * <p>This ensures the {@code GlobalExceptionHandler} can distinguish a real
-     * Unix filesystem permission denial (→ 403 Forbidden) from a genuine gateway
-     * failure (→ 502 Bad Gateway).
+     * <p>This ensures the {@code GlobalExceptionHandler} can distinguish a real Unix filesystem
+     * permission denial (→ 403 Forbidden) from a genuine gateway failure (→ 502 Bad Gateway).
      */
     private void guardPermission(SftpException e, String path) {
         if (e.id == ChannelSftp.SSH_FX_PERMISSION_DENIED) {
@@ -731,7 +741,7 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
 
         OffsetDateTime lastModified = OffsetDateTime.ofInstant(Instant.ofEpochSecond(attrs.getMTime()), ZoneOffset.UTC);
 
-        // longname example: "-rwxr-xr-x  1 ubuntu ubuntu 4096 Mar 15 10:00 filename"
+        // longname example: "-rwxr-xr-x 1 ubuntu ubuntu 4096 Mar 15 10:00 filename"
         String permissions =
                 entry.getLongname().length() >= 10 ? entry.getLongname().substring(0, 10) : "";
 
@@ -755,8 +765,8 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     }
 
     /**
-     * Custom {@link HostKeyRepository} that validates the server's public key fingerprint
-     * against a single expected value provided by the user.
+     * Custom {@link HostKeyRepository} that validates the server's public key fingerprint against a
+     * single expected value provided by the user.
      */
     private static final class FingerprintHostKeyRepository implements HostKeyRepository {
         private final String expectedFingerprint;

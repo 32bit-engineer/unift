@@ -10,10 +10,11 @@ import org.springframework.web.socket.WebSocketSession;
 /**
  * Immutable value object representing one live WebSocket terminal session.
  *
- * <p>{@code lastActivityAt} uses an {@link AtomicReference} so the reaper thread
- * and the WebSocket I/O threads can both update it without locking the entire record.
+ * <p>{@code lastActivityAt} uses an {@link AtomicReference} so the reaper thread and the WebSocket
+ * I/O threads can both update it without locking the entire record.
  *
  * <h6>Lifecycle</h6>
+ *
  * <pre>
  *   afterConnectionEstablished  → TerminalSession.create() → register in TerminalSessionRegistry
  *   handleTextMessage / pong    → touch() updates lastActivityAt
@@ -21,13 +22,14 @@ import org.springframework.web.socket.WebSocketSession;
  *   reapIdleSessions (reaper)   → closes WS + calls remove() if idle &gt; timeout
  * </pre>
  *
- * @param wsSessionId      Spring WebSocket session ID (registry key)
- * @param sshSessionId     Owning SSH session ID in {@link com.weekend.architect.unift.remote.registry.SessionRegistry}
- * @param ownerId          UUID of the authenticated UniFT user
- * @param openedAt         Wall-clock instant when the shell was opened
- * @param lastActivityAt   Mutable; updated on every input, output, or pong
- * @param shellSession     Live JSch {@link RemoteShell.ShellSession}; closed on registry removal
- * @param wsSession        The thread-safe {@link WebSocketSession} wrapper for concurrent sends
+ * @param wsSessionId Spring WebSocket session ID (registry key)
+ * @param sshSessionId Owning SSH session ID in {@link
+ *     com.weekend.architect.unift.remote.registry.SessionRegistry}
+ * @param ownerId UUID of the authenticated UniFT user
+ * @param openedAt Wall-clock instant when the shell was opened
+ * @param lastActivityAt Mutable; updated on every input, output, or pong
+ * @param shellSession Live JSch {@link RemoteShell.ShellSession}; closed on registry removal
+ * @param wsSession The thread-safe {@link WebSocketSession} wrapper for concurrent sends
  */
 public record TerminalSession(
         String wsSessionId,
@@ -38,9 +40,7 @@ public record TerminalSession(
         RemoteShell.ShellSession shellSession,
         WebSocketSession wsSession) {
 
-    /**
-     * Factory method. Sets {@code openedAt} and {@code lastActivityAt} to now.
-     */
+    /** Factory method. Sets {@code openedAt} and {@code lastActivityAt} to now. */
     public static TerminalSession create(
             String wsSessionId,
             String sshSessionId,

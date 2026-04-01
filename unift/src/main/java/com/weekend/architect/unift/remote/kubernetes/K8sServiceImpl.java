@@ -73,25 +73,26 @@ import org.yaml.snakeyaml.Yaml;
  * Kubernetes management service backed by the Fabric8 Kubernetes Java SDK.
  *
  * <h3>Performance design</h3>
- * <p>Each method obtains a {@link KubernetesClient} from {@link K8sClientPool}, which is
- * created once per session (one-time kubeconfig read + optional SSH tunnel) and cached.
- * Subsequent calls reuse the same HTTP/2 connection pool to the k8s API server.
  *
- * <p>{@link #getOverview} fans all five API calls out in parallel via
- * {@link CompletableFuture}, reducing typical response time from 30-60 s (sequential
- * kubectl) to 1-3 s.
+ * <p>Each method obtains a {@link KubernetesClient} from {@link K8sClientPool}, which is created
+ * once per session (one-time kubeconfig read + optional SSH tunnel) and cached. Subsequent calls
+ * reuse the same HTTP/2 connection pool to the k8s API server.
+ *
+ * <p>{@link #getOverview} fans all five API calls out in parallel via {@link CompletableFuture},
+ * reducing typical response time from 30-60 s (sequential kubectl) to 1-3 s.
  *
  * <h3>Network reachability</h3>
- * <p>If the k8s API server URL in the kubeconfig is reachable directly from the UniFT
- * host the client calls it directly.  When it is only accessible from inside the SSH
- * server (e.g. {@code localhost:6443} or a private cluster IP), {@link K8sClientPool}
- * automatically opens an SSH local port-forward and rewrites the master URL —
- * completely transparent to this service.
+ *
+ * <p>If the k8s API server URL in the kubeconfig is reachable directly from the UniFT host the
+ * client calls it directly. When it is only accessible from inside the SSH server (e.g. {@code
+ * localhost:6443} or a private cluster IP), {@link K8sClientPool} automatically opens an SSH local
+ * port-forward and rewrites the master URL — completely transparent to this service.
  *
  * <h3>Direct kubeconfig path (future)</h3>
- * <p>When a user uploads a kubeconfig directly (no SSH), call
- * {@code k8sClientPool.registerDirect(key, kubeconfigYaml)} and pass that key here.
- * This service needs no changes.
+ *
+ * <p>When a user uploads a kubeconfig directly (no SSH), call {@code
+ * k8sClientPool.registerDirect(key, kubeconfigYaml)} and pass that key here. This service needs no
+ * changes.
  */
 @Slf4j
 @Service
@@ -469,8 +470,6 @@ public class K8sServiceImpl implements K8sService {
         return k8sClientPool.resolveForSession(sessionId, shell);
     }
 
-    // ─SDK → domain model mappers ──────────────────────────────────────────
-
     private Pod toPod(io.fabric8.kubernetes.api.model.Pod p) {
         var meta = p.getMetadata();
         var status = p.getStatus();
@@ -735,7 +734,7 @@ public class K8sServiceImpl implements K8sService {
         String ns = resolveNamespace(namespace);
         try {
             // Fabric8 7.x DaemonSetResource does not implement RollableScalableResource,
-            // so .rolling().restart() is unavailable.  Patch the pod template annotation
+            // so .rolling().restart() is unavailable. Patch the pod template annotation
             // instead — this is exactly what `kubectl rollout restart daemonset/name` does.
             resolveClient(sessionId, userId)
                     .apps()
@@ -899,7 +898,8 @@ public class K8sServiceImpl implements K8sService {
                         .build();
             }
             resourceId = hm.getKind() + "/" + hm.getMetadata().getName();
-            // Server-side apply with force-conflict so field manager conflicts don't block saves
+            // Server-side apply with force-conflict so field manager conflicts don't block
+            // saves
             client.resource(hm).forceConflicts().serverSideApply();
             return PodActionResult.builder()
                     .podName(hm.getMetadata().getName())
@@ -1198,9 +1198,7 @@ public class K8sServiceImpl implements K8sService {
                 .build();
     }
 
-    /**
-     * Fetches a named resource by kind string. Returns {@code null} for unknown kinds.
-     */
+    /** Fetches a named resource by kind string. Returns {@code null} for unknown kinds. */
     private HasMetadata fetchResource(KubernetesClient client, String kind, String namespace, String name) {
         return switch (kind.toLowerCase()) {
             case "deployment" ->
@@ -1268,8 +1266,8 @@ public class K8sServiceImpl implements K8sService {
     }
 
     /**
-     * Uses SnakeYAML to strip the {@code status} key from the top-level map so the
-     * editor only shows spec-level fields.
+     * Uses SnakeYAML to strip the {@code status} key from the top-level map so the editor only
+     * shows spec-level fields.
      */
     @SuppressWarnings("unchecked")
     private String cleanYamlForEditor(String raw) {

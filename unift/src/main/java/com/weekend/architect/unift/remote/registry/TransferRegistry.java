@@ -16,23 +16,27 @@ import org.springframework.stereotype.Component;
  * In-memory registry of all in-flight and recently-completed file transfers.
  *
  * <h6>Eviction strategy</h6>
+ *
  * <p>Backed by a {@link TransferCache} (Caffeine by default, swappable to Redis):
+ *
  * <ul>
- *   <li>Active transfers ({@code PENDING}, {@code IN_PROGRESS}) — stored with no TTL;
- *       they live until {@link #removeBySession} / {@link #remove} is called.</li>
- *   <li>Terminal transfers ({@code COMPLETED}, {@code FAILED}, {@code CANCELLED}) —
- *       stored with an explicit TTL of {@code unift.remote.transfer-terminal-ttl-minutes}
- *       (default 30 min).  The cache evicts them automatically, resolving the H3 memory
- *       leak without any separate scheduler.</li>
+ *   <li>Active transfers ({@code PENDING}, {@code IN_PROGRESS}) — stored with no TTL; they live
+ *       until {@link #removeBySession} / {@link #remove} is called.
+ *   <li>Terminal transfers ({@code COMPLETED}, {@code FAILED}, {@code CANCELLED}) — stored with an
+ *       explicit TTL of {@code unift.remote.transfer-terminal-ttl-minutes} (default 30 min). The
+ *       cache evicts them automatically, resolving the H3 memory leak without any separate
+ *       scheduler.
  * </ul>
  *
  * <h6>TTL trigger</h6>
- * <p>When {@link #updateState} transitions a transfer to a terminal state it calls
- * {@code store.put(id, transfer, ttl)}.  This explicitly passes the expiry to the
- * {@link TransferCache} — no re-insert trick, no Caffeine-specific API required.
- * A Redis implementation handles it identically via {@code SET k v EX seconds}.
+ *
+ * <p>When {@link #updateState} transitions a transfer to a terminal state it calls {@code
+ * store.put(id, transfer, ttl)}. This explicitly passes the expiry to the {@link TransferCache} —
+ * no re-insert trick, no Caffeine-specific API required. A Redis implementation handles it
+ * identically via {@code SET k v EX seconds}.
  *
  * <h6>Thread-safety</h6>
+ *
  * <p>Delegated entirely to the {@link TransferCache} implementation.
  */
 @Slf4j
@@ -49,8 +53,8 @@ public class TransferRegistry {
     private final TransferCache store;
 
     /**
-     * Registers a new transfer (typically in {@link TransferState#PENDING}).
-     * No TTL is applied — active transfers live until explicitly removed.
+     * Registers a new transfer (typically in {@link TransferState#PENDING}). No TTL is applied —
+     * active transfers live until explicitly removed.
      */
     public void register(RemoteTransfer transfer) {
         store.put(transfer.getTransferId(), transfer);
@@ -73,15 +77,14 @@ public class TransferRegistry {
     /**
      * Transitions a transfer to a new state.
      *
-     * <p>When {@code newState} is terminal ({@code COMPLETED}, {@code FAILED},
-     * {@code CANCELLED}), the entry is re-stored with an explicit TTL so the cache
-     * automatically evicts it after {@code unift.remote.transfer-terminal-ttl-minutes}.
-     * No scheduler or Caffeine-specific API is needed — the TTL is passed directly
-     * to {@link TransferCache#put(Object, Object, Duration)}, making the behaviour
-     * identical for any cache backend (Caffeine today, Redis tomorrow).
+     * <p>When {@code newState} is terminal ({@code COMPLETED}, {@code FAILED}, {@code CANCELLED}),
+     * the entry is re-stored with an explicit TTL so the cache automatically evicts it after {@code
+     * unift.remote.transfer-terminal-ttl-minutes}. No scheduler or Caffeine-specific API is needed
+     * — the TTL is passed directly to {@link TransferCache#put(Object, Object, Duration)}, making
+     * the behaviour identical for any cache backend (Caffeine today, Redis tomorrow).
      *
      * @param transferId target transfer ID
-     * @param newState   the state to transition to
+     * @param newState the state to transition to
      */
     public void updateState(String transferId, TransferState newState) {
         RemoteTransfer t = store.getIfPresent(transferId);
@@ -102,9 +105,7 @@ public class TransferRegistry {
         }
     }
 
-    /**
-     * Returns all transfers associated with the given session.
-     */
+    /** Returns all transfers associated with the given session. */
     public List<RemoteTransfer> getBySession(String sessionId) {
         return store.values().stream()
                 .filter(t -> sessionId.equals(t.getSessionId()))
@@ -112,8 +113,8 @@ public class TransferRegistry {
     }
 
     /**
-     * Immediately removes all transfers for the given session (called on session close).
-     * Performs eager cleanup regardless of any pending TTL window.
+     * Immediately removes all transfers for the given session (called on session close). Performs
+     * eager cleanup regardless of any pending TTL window.
      */
     public void removeBySession(String sessionId) {
         int removed = store.removeIf(t -> sessionId.equals(t.getSessionId()));

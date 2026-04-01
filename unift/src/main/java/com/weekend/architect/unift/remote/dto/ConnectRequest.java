@@ -15,8 +15,8 @@ import lombok.NoArgsConstructor;
 /**
  * Request body for {@code POST /api/remote/sessions}.
  *
- * <p>Cross-field validation (password/key required depending on authType)
- * is enforced in the service layer, not here, to keep the DTO clean.
+ * <p>Cross-field validation (password/key required depending on authType) is enforced in the
+ * service layer, not here, to keep the DTO clean.
  */
 @Data
 @Builder
@@ -28,15 +28,15 @@ public class ConnectRequest {
     private ProtocolType protocol;
 
     /**
-     * Optional: Friendly alias for this connection (e.g. "Production Server", "Staging").
-     * Returned back in the ConnectResponse.
+     * Optional: Friendly alias for this connection (e.g. "Production Server", "Staging"). Returned
+     * back in the ConnectResponse.
      */
     private String label;
 
     /**
-     * Optional: The saved-host ID this session originates from.
-     * Populated automatically when connecting via {@code POST /api/hosts/{id}/connect}.
-     * Used to correlate active sessions back to their saved-host entry.
+     * Optional: The saved-host ID this session originates from. Populated automatically when
+     * connecting via {@code POST /api/hosts/{id}/connect}. Used to correlate active sessions back
+     * to their saved-host entry.
      */
     private UUID savedHostId;
 
@@ -57,30 +57,33 @@ public class ConnectRequest {
     /** Required when {@code sshAuthType = PASSWORD}. */
     private String password;
 
-    /** PEM-encoded private key. Required when {@code sshAuthType} is {@code PRIVATE_KEY} or {@code PRIVATE_KEY_PASSPHRASE}. */
+    /**
+     * PEM-encoded private key. Required when {@code sshAuthType} is {@code PRIVATE_KEY} or {@code
+     * PRIVATE_KEY_PASSPHRASE}.
+     */
     private String privateKey;
 
     /** Required when {@code sshAuthType = PRIVATE_KEY_PASSPHRASE}. */
     private String passphrase;
 
     /**
-     * Desired session TTL in minutes.  {@code 0} means "use server default".
-     * Capped by {@code unift.remote.session-ttl-minutes}.
+     * Desired session TTL in minutes. {@code 0} means "use server default". Capped by {@code
+     * unift.remote.session-ttl-minutes}.
      */
     @Min(value = 0, message = "sessionTtlMinutes must be ≥ 0")
     @Builder.Default
     private long sessionTtlMinutes = 0;
 
     /**
-     * If true, the SSH client will verify the server's host key against known_hosts.
-     * If true (default), host key is validated against a known fingerprint or known_hosts.
+     * If true, the SSH client will verify the server's host key against known_hosts. If true
+     * (default), host key is validated against a known fingerprint or known_hosts.
      */
     @Builder.Default
     private boolean strictHostKeyChecking = true;
 
     /**
-     * Optional: The expected SSH host key fingerprint (e.g. "SHA256:...", "MD5:...").
-     * Required if strictHostKeyChecking is true and no known_hosts file is configured.
+     * Optional: The expected SSH host key fingerprint (e.g. "SHA256:...", "MD5:..."). Required if
+     * strictHostKeyChecking is true and no known_hosts file is configured.
      */
     private String expectedFingerprint;
 }
