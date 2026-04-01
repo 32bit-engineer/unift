@@ -1,19 +1,35 @@
-# UniFT — Personal Command Centre for Self-Hosters
+# UniFT — Unified Remote Infrastructure Workspace
 
-**UniFT** is a unified file transfer and media streaming platform built for self-hosters. Browse, transfer, and stream files across your remote servers from a single, unified interface. No more juggling between cloud services—take full control of your data with a tool that respects power users.
+**UniFT** is a browser-based, self-hostable remote infrastructure workspace. Connect to your servers over SSH, browse and manage files, edit configs, and run a full terminal — all from a single browser tab. Nothing leaves your network.
+
+> "The single browser tab where engineers connect to any server, browse any storage, and manage any cluster — self-hosted, nothing leaves your network."
 
 ## What is UniFT?
 
-UniFT is your personal command centre for server management. Whether you're managing multiple remote servers, NAS devices, or self-hosted storage, UniFT provides:
+DevOps engineers, backend developers, and sysadmins manage remote servers using 4–7 disconnected tools — a terminal emulator, an SFTP client, a code editor, a dashboard. Every context switch costs time and focus. UniFT replaces all of them with a single, unified workspace.
 
-- **Dense, keyboard-first UI** — Browse files, run a terminal, and stream media from the same screen without modal clutter
-- **File Management** — Browse, upload, download, delete, rename, and create directories on remote servers via SSH/SFTP
-- **Media Streaming** — Stream video and audio files from any connected SSH server directly in the browser
-- **Browser Terminal** — Full PTY shell over WebSocket with resize, copy/paste, and auto-reconnect
-- **Session Management** — Persistent SSH sessions with automatic cleanup and TTL-based expiration
-- **In-memory Transfer Progress** — Track active file transfer progress in real time for the duration of a session
-- **JWT Authentication** — Secure access with short-lived access tokens and rotating refresh tokens
-- **User Management** — Role-based access control with admin permissions for multi-user deployments
+### Current Capabilities
+
+- **SSH Connection Management** — Store connection profiles (host, port, user, auth method), establish sessions, and manage their lifecycle
+- **File Browser** — Navigate the remote filesystem over SFTP with metadata (size, permissions, modification time), create folders, rename, and delete
+- **File Editor** — Open and edit remote files in the browser with syntax highlighting for JS/TS, Python, Bash, YAML, JSON, Dockerfiles, and more
+- **Browser Terminal** — Full PTY shell over WebSocket with resize support, copy/paste, and automatic reconnect
+- **File Upload / Download** — Chunked upload and direct streaming download over SFTP with real-time transfer progress tracking
+- **JWT Authentication** — Short-lived access tokens (15 min) with rotating refresh tokens (7 days)
+
+### In Progress (Phase 0 completion)
+
+- Host key verification UI (TOFU flow with fingerprint confirmation)
+- Credential encryption at rest (AES-256-GCM)
+- Basic audit log (server-side)
+- Connection state machine with all 7 states visible in the UI
+
+### What Is NOT in Scope
+
+- Media streaming (different product, different legal risk — not part of the infrastructure workspace vision)
+- VPN or network mesh (integrate Tailscale or ZeroTier instead)
+- Full cloud provider console — UniFT is cloud-agnostic, not cloud-native
+- Code-only IDE — VS Code exists; UniFT is an infrastructure workspace
 
 ## Quick Start with Docker
 
@@ -76,39 +92,7 @@ docker run -p 8080:8080 --env-file .env unift:latest
 
 1. Register a new account at `http://localhost:8080/?page=login`
 2. Create a remote connection by providing SSH credentials (host, port, username, password/key)
-3. Start browsing, uploading, downloading, and streaming files
-
-## Core Features
-
-### Session-Based SSH Connections
-
-Connect to any remote server via SSH and maintain a persistent session. Sessions are automatically managed and expire after configurable TTL (default: 30 minutes).
-
-**Session Workflow:**
-1. Authenticate with JWT token
-2. Create a remote session with SSH credentials
-3. Use the session ID for all subsequent file operations
-4. Sessions auto-renew on activity or manually close when done
-
-### File Management
-
-- **List directories** — Browse remote filesystem with metadata (size, permissions, modification time)
-- **Download files** — Stream download directly without server buffering
-- **Upload files** — Chunked upload with automatic resume on network interruption
-- **Delete files/folders** — Remove files and empty directories
-- **Rename/Move** — Rename files or move them to different directories
-- **Create directories** — Create new folders on remote servers
-
-### Media Streaming
-
-- **Direct stream** — Stream video and audio files from any connected SSH server to the browser via a dedicated range-request endpoint
-- **Format support** — Browser-native formats (MP4/H.264, WebM, MP3, AAC, FLAC) play without conversion
-- Media player UI and HLS relay are planned for a future release (Phase 5)
-
-### Transfer Progress
-
-- In-memory progress tracking for all active uploads and downloads within a session
-- Progress is visible for the lifetime of the transfer; persistent transfer history is planned (Phase 3)
+3. Start browsing files, editing configs, and running terminal commands
 
 ## API Reference
 
@@ -150,24 +134,14 @@ All API endpoints require JWT authentication via `Authorization: Bearer <token>`
 | `GET` | `/api/remote/sessions/{sessionId}/transfers` | List all transfers for a session |
 | `GET` | `/api/remote/sessions/{sessionId}/transfers/{transferId}` | Get transfer progress |
 
-## Authentication & Security
+## Security
 
-### JWT-Based Authentication
-
-UniFT uses JWT (JSON Web Tokens) for stateless authentication:
-
-- **Access Token** — Short-lived (15 minutes), used for API requests
-- **Refresh Token** — Long-lived (7 days), used to obtain new access tokens
-- **Device Hint** — Tracks device info from User-Agent for token management
-
-### Credentials
-
-All SSH credentials are sent over HTTPS (in production) and never stored in plain text. Only the session token is used for API communication.
-
-### Supported SSH Authentication
-
-- **Password Authentication** — Standard SSH username/password
-- **Public Key Authentication** — SSH key-based authentication (Ed25519, RSA)
+- **JWT**: Access tokens expire in 15 minutes. Refresh tokens rotate on each use and expire after 7 days.
+- **SSH auth**: Password and public key authentication supported (Ed25519, RSA).
+- **Credential storage**: Credential encryption at rest (AES-256-GCM) is in progress as part of Phase 0 completion.
+- **Path validation**: All file paths are validated server-side. Path traversal attempts (`../`) are rejected and logged.
+- **Transport**: All API and WebSocket traffic must run over HTTPS/WSS in production. The UI warns if HTTPS is not detected.
+- **Rate limiting**: Planned for Phase 0 completion (login: max 5 attempts / min / IP).
 
 ## Configuration
 
@@ -285,34 +259,37 @@ cd unift-fe && npm run test
 
 ## Roadmap
 
-See [product-info/PRODUCT_ROADMAP.md](unift/product-info/PRODUCT_ROADMAP.md) for the full map. Headlines:
+### Phase 1 — Stickiness
+- [ ] Server health dashboard (CPU / memory / disk over SSH)
+- [ ] Session recording (asciicast format, opt-in)
+- [ ] Multiple terminal tabs per connection
+- [ ] tmux auto-attach on reconnect
+- [ ] Resumable file transfers
+- [ ] File transfer queue UI (pause, cancel, resume)
+- [ ] Keyboard shortcut map
+- [ ] Search within file tree
+- [ ] Mobile-responsive layout
 
-### v1.2.0 — Q2 2026
-- [ ] Local file browser (browse files mounted on the UniFT server itself)
-- [ ] My Files UI page
-- [ ] Session management UI (list and revoke active tokens)
-- [ ] Rate limiting (Bucket4j)
+### Phase 2 — Teams
+- [ ] User invitations and organizations
+- [ ] RBAC (Owner / Admin / Editor / Viewer)
+- [ ] Shared connection pools
+- [ ] Audit log UI (searchable, filterable, exportable)
+- [ ] Time-bound access grants
+- [ ] Email notifications for connection failures and access changes
 
-### v1.3.0 — Q3 2026
-- [ ] Resumable chunked upload API (schema and DB tables are already in place)
-- [ ] Persistent transfer history to `transfer_log`
-- [ ] SSE upload progress events
-- [ ] QR code mobile pairing for phone-to-server uploads
+### Phase 3 — Expansion
+- [ ] S3 object storage (browse, upload, download, delete)
+- [ ] Docker container management (list, logs, exec, lifecycle)
+- [ ] Database browser (PostgreSQL + MySQL via SSH tunnel)
+- [ ] GCS and Azure Blob integration
+- [ ] SSO / SAML / OIDC
 
-### v1.4.0 — Q3 2026
-- [ ] Media player UI (Video.js + hls.js)
-- [ ] FFmpeg on-demand transcoding for unsupported formats
-- [ ] HLS live stream relay
-
-### v2.0.0 — Q4 2026
-- [ ] Admin panel and per-folder ACL
-- [ ] Multi-protocol support (FTP/FTPS, Amazon S3, Azure Blob, GCS, SMB)
-- [ ] Multi-arch Docker image (ARM64 + x86\_64)
-- [ ] Password reset and email verification
-
----
-
-Protocol connector stubs (credential model exists in DB) for FTP, S3, Azure Blob, and GCS are already in the codebase and will be filled in during Phase 7.
+### Phase 4 — Enterprise
+- [ ] Kubernetes cluster management (pods, deployments, logs)
+- [ ] LDAP / Active Directory integration
+- [ ] Compliance report export
+- [ ] On-premise enterprise installer (air-gapped)
 
 ## License
 
@@ -326,4 +303,4 @@ For issues, feature requests, or contributions:
 
 ## Credits
 
-Built for self-hosters, power users, and anyone who wants a direct window into their own infrastructure.
+Built for DevOps engineers, backend developers, and sysadmins who want a direct, self-hosted window into their own infrastructure.

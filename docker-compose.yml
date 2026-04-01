@@ -1,7 +1,4 @@
 services:
-  # ─────────────────────────────────────────────
-  # Redis — distributed cache for transfer state
-  # ─────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: unift-redis
@@ -30,9 +27,6 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  # ─────────────────────────────────────────────
-  # UniFT API — Spring Boot backend
-  # ─────────────────────────────────────────────
   unift-api:
     image: ghcr.io/32bit-engineer/unift/unift-api:latest
     container_name: unift-api
@@ -47,25 +41,27 @@ services:
     environment:
 
       # ── Database (required — set in .env file, see .env.example)
-      DB_URL: ${DB_URL}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_URL: jdbc:postgresql://weekend-architect-faizmohd12511251-4e7e.c.aivencloud.com:12746/postgres
+      DB_USERNAME: avnadmin
+      DB_PASSWORD: AVNS_4zS3xT1mgcix5Jb3LYr
 
       # ── Kafka (optional — Kafka is wired but not actively consumed yet)
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
       KAFKA_CONSUMER_GROUP_ID: ${KAFKA_CONSUMER_GROUP_ID:-unift-group}
 
       # ── JWT (required — generate with: openssl rand -base64 64)
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: T3BlblNlc3NhbWVTZWNyZXRLZXkyMDI2Rm9yVW5pRlRKV1RBdXRoU2VjdXJpdHk=
       JWT_ACCESS_TOKEN_EXPIRATION_MS: ${JWT_ACCESS_TOKEN_EXPIRATION_MS:-900000}
       JWT_REFRESH_TOKEN_EXPIRATION_MS: ${JWT_REFRESH_TOKEN_EXPIRATION_MS:-604800000}
 
       # ── Encryption key (required — generate with: openssl rand -base64 32)
-      UNIFT_ENCRYPTION_KEY: ${UNIFT_ENCRYPTION_KEY}
+      UNIFT_ENCRYPTION_KEY: BIgne4XbvCWidrvV67B6RsIu/B25H51gUJqqrJYYrfI=
 
-      # ── WebSocket CORS — must include the browser-facing origin
-      # All traffic goes through the nginx frontend proxy, so the
-      # browser origin is http://localhost (or http://localhost:APP_PORT)
+      # ── HTTP CORS — frontend origin is http://localhost (port 80, served by nginx)
+      # calling the backend directly at http://localhost:8080
+      UNIFT_CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173
+
+      # ── WebSocket CORS
       UNIFT_TERMINAL_ALLOWED_ORIGINS: ${UNIFT_TERMINAL_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://localhost:3000,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173}
 
       # ── Redis
@@ -87,20 +83,17 @@ services:
       UNIFT_CHANNEL_TIMEOUT_MS: 10000
       UNIFT_SLIDING_TTL: true
 
-  # ─────────────────────────────────────────────
-  # UniFT Frontend — React/Vite served via Nginx
-  # Proxies /api/* and /api/ws/* to unift-api
-  # ─────────────────────────────────────────────
-  unift-fe: 
-    image: ghcr.io/32bit-engineer/unift/unift-fe:latest
-    args:
-        # Baked in at build time. Default /api uses the nginx proxy (same-origin).
-        # For direct backend access set VITE_API_BASE_URL=http://localhost:8080/api in .env.
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+  unift-fe:
+    build:
+      context: ./unift-fe
+      args:
+        # Baked into the JS bundle at build time — must NOT include /api suffix.
+        # Frontend calls the backend directly at http://localhost:8080.
+        VITE_API_BASE_URL: http://localhost:8080
         VITE_APP_NAME: ${VITE_APP_NAME:-UniFT}
         VITE_APP_VERSION: ${VITE_APP_VERSION:-0.0.1}
         VITE_ENABLE_DARK_MODE: ${VITE_ENABLE_DARK_MODE:-true}
-    image: unift-fe:latest
+    image: ghcr.io/32bit-engineer/unift/unift-fe:latest
     container_name: unift-fe
     restart: unless-stopped
     depends_on:
@@ -110,3 +103,4 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:

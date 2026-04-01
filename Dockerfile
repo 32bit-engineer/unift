@@ -1,22 +1,3 @@
-# ============================================================
-#  UniFT — Single-Container Multi-Stage Build
-#
-#  Stage 1: Build the React frontend (Node.js)
-#  Stage 2: Build the Spring Boot backend (Gradle), embedding
-#            the frontend dist as classpath:/static/ resources
-#  Stage 3: Minimal JRE runtime image — single JAR, single port
-#
-#  Usage:
-#    docker build -t unift:latest .
-#    docker run -p 8080:8080 --env-file .env unift:latest
-#
-#  The resulting container serves:
-#    - React SPA at  http://localhost:8080/
-#    - REST API at   http://localhost:8080/api/
-#    - Terminal WS   http://localhost:8080/api/ws/terminal/
-#    - Swagger UI    http://localhost:8080/swagger-ui.html
-# ============================================================
-
 #  Stage 1 — Frontend build
 FROM node:22-alpine AS frontend-builder
 
