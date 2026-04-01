@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -336,6 +337,9 @@ public class DockerServiceImpl implements DockerService {
                     .awaitCompletion(10, TimeUnit.SECONDS);
             return sb.toString();
         } catch (Exception e) {
+            if (e instanceof InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
             log.warn("[docker] Failed to get logs for {} session {}: {}", containerId, sessionId, e.getMessage());
             return "Failed to fetch logs: " + e.getMessage();
         }
@@ -387,6 +391,9 @@ public class DockerServiceImpl implements DockerService {
                     .exitCode(exitCode)
                     .build();
         } catch (Exception e) {
+            if (e instanceof InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
             return DockerModels.ExecStartResult.builder()
                     .output("Error: " + e.getMessage())
                     .exitCode(-1)
@@ -410,7 +417,7 @@ public class DockerServiceImpl implements DockerService {
                     .join();
             return futures.stream()
                     .map(CompletableFuture::join)
-                    .filter(s -> s != null)
+                    .filter(Objects::nonNull)
                     .toList();
         } catch (Exception e) {
             log.warn("[docker] Failed to get stats for session {}: {}", sessionId, e.getMessage());
@@ -462,7 +469,11 @@ public class DockerServiceImpl implements DockerService {
                                                 .name("progress")
                                                 .data(DockerModels.PullImageProgress.builder()
                                                         .status(item.getStatus())
-                                                        .progress(item.getProgress())
+                                                        .progress(
+                                                                Objects.nonNull(item.getProgressDetail())
+                                                                        ? item.getProgressDetail()
+                                                                                .toString()
+                                                                        : "")
                                                         .id(item.getId())
                                                         .build()));
                             }
@@ -471,10 +482,14 @@ public class DockerServiceImpl implements DockerService {
                 trySend(emitter, SseEmitter.event().name("complete").data("done"));
                 emitter.complete();
             } catch (Exception e) {
+                if (e instanceof InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                }
                 trySend(emitter, SseEmitter.event().name("error").data(Map.of("message", e.getMessage())));
                 try {
                     emitter.complete();
-                } catch (Exception ignored) {
+                } catch (Exception _) {
+                    // ignored
                 }
             }
         });
@@ -643,8 +658,6 @@ public class DockerServiceImpl implements DockerService {
         return new Yaml(opts).dump(compose);
     }
 
-    // -- Internal helpers ------------------------------------------------------
-
     private DockerClient resolveClient(String sessionId, UUID userId) {
         RemoteConnection conn = sessionRegistry.require(sessionId);
         if (!conn.getSession().getOwnerId().equals(userId)) {
@@ -712,7 +725,8 @@ public class DockerServiceImpl implements DockerService {
                     holder[0] = stats;
                     try {
                         close();
-                    } catch (IOException ignored) {
+                    } catch (IOException _) {
+                        // ignored
                     }
                 }
             };
@@ -720,6 +734,9 @@ public class DockerServiceImpl implements DockerService {
             cb.awaitCompletion(5, TimeUnit.SECONDS);
             return holder[0] != null ? DockerStatsStreamService.computeStats(containerId, holder[0]) : null;
         } catch (Exception e) {
+            if (e instanceof InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
             log.debug("[docker] Failed to get stats for container {}: {}", containerId, e.getMessage());
             return null;
         }
@@ -728,7 +745,8 @@ public class DockerServiceImpl implements DockerService {
     private void trySend(SseEmitter emitter, SseEmitter.SseEventBuilder event) {
         try {
             emitter.send(event);
-        } catch (IllegalStateException | IOException ignored) {
+        } catch (IllegalStateException | IOException _) {
+            // ignored
         }
     }
 }

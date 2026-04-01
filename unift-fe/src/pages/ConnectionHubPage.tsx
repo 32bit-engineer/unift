@@ -1023,23 +1023,6 @@ function SectionHeader({
 }
 
 
-function EmptySection({ message }: { message: string }) {
-  return (
-    <div
-      className="flex items-center justify-center h-20 rounded-xl"
-      style={{
-        border:     '1px dashed var(--color-border-subtle)',
-        background: 'rgba(255,255,255,0.01)',
-      }}
-    >
-      <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-        {message}
-      </p>
-    </div>
-  );
-}
-
-
 function FilterTab({
   label,
   active,
@@ -1071,7 +1054,6 @@ export function ConnectionHubPage({
   activeSessions      = [],
   connectingConfigId  = null,
   deletingConfigId    = null,
-  onConnect: _onConnect,
   onDelete,
   onCreateNew,
   onLaunchWorkspace,
@@ -1195,7 +1177,6 @@ export function ConnectionHubPage({
 
             {savedHostConfigs.length === 0 ? (
               <div className="flex flex-wrap gap-4">
-                <EmptySection message="No SSH servers saved yet." />
                 <CreateNewCard onClick={onCreateNew} />
               </div>
             ) : (

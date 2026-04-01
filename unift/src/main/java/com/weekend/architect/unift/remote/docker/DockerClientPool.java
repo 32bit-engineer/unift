@@ -8,10 +8,10 @@ import com.github.dockerjava.transport.DockerHttpClient;
 import com.weekend.architect.unift.remote.core.PortForwardable;
 import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.core.RemoteShell;
+import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -39,10 +39,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DockerClientPool {
 
-    private static final int PROBE_TIMEOUT_MS = 3_000;
     private static final int DEFAULT_DOCKER_TCP_PORT = 2375;
     private static final int SOCAT_BRIDGE_PORT = 2376;
-    private static final Set<String> BLOCKED_HOSTS = Set.of("169.254.169.254", "fd00::ec2");
 
     private final DockerClientCache dockerClientCache;
 
@@ -239,7 +237,7 @@ public class DockerClientPool {
                     + "echo OPEN; "
                     + "else echo CLOSED; fi");
             return result != null && result.trim().contains("OPEN");
-        } catch (Exception e) {
+        } catch (Exception _) {
             return false;
         }
     }
@@ -264,7 +262,7 @@ public class DockerClientPool {
         public void close() {
             try {
                 client.close();
-            } catch (Exception ignored) {
+            } catch (Exception _) {
                 // best-effort close
             }
             tunnel.cancelPortForward(localPort);

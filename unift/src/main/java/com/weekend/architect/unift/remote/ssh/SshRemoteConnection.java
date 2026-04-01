@@ -44,7 +44,13 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
  * SSH/SFTP implementation of {@link com.weekend.architect.unift.remote.core.RemoteConnection}.
@@ -74,11 +80,20 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
     private Session jschSession;
     private ChannelSftp sftpChannel;
 
+    private static final int COMMAND_OUTPUT_BUFFER_SIZE = 4096;
+    private static final long MIN_COMMAND_TIMEOUT_MS = 30_000L;
+
+    private final ExecutorService executorService;
+
     /** Dedicated lock — avoids synchronization on a non-final field. */
     private final Object channelLock = new Object();
 
-    public SshRemoteConnection(RemoteSession session, RemoteConnectionProperties props) {
+    public SshRemoteConnection(
+            RemoteSession session,
+            RemoteConnectionProperties props,
+            @Qualifier("virtualThreadExecutor") ExecutorService executorService) {
         super(session, props);
+        this.executorService = executorService;
     }
 
     @Override
@@ -357,39 +372,30 @@ public class SshRemoteConnection extends AbstractRemoteConnection implements Rem
             InputStream in = exec.getInputStream();
             exec.connect(props.getChannelTimeoutMs());
 
-            byte[] buf = new byte[4096];
-            StringBuilder sb = new StringBuilder();
-            long deadline = System.currentTimeMillis() + Math.max(props.getChannelTimeoutMs(), 30_000L);
+            long timeoutMs = System.currentTimeMillis() + Math.max(props.getChannelTimeoutMs(), MIN_COMMAND_TIMEOUT_MS);
 
-            while (!exec.isClosed()) {
-                if (System.currentTimeMillis() > deadline) break;
-                while (in.available() > 0) {
-                    int n = in.read(buf, 0, buf.length);
-                    if (n < 0) break;
-                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
-                }
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            if (exec.isClosed()) {
+            Future<String> future = executorService.submit(() -> {
+                byte[] buf = new byte[COMMAND_OUTPUT_BUFFER_SIZE];
+                StringBuilder sb = new StringBuilder();
                 int n;
                 while ((n = in.read(buf, 0, buf.length)) != -1) {
                     sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
                 }
-            } else {
-                while (in.available() > 0) {
-                    int n = in.read(buf, 0, buf.length);
-                    if (n <= 0) break;
-                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
-                }
-            }
+                return sb.toString().trim();
+            });
 
-            return sb.toString().trim();
+            try {
+                return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                throw new IOException("Command timed out after " + timeoutMs + "ms: " + command, e);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                throw new IOException("Command execution failed: " + command, cause);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted waiting for command: " + command, e);
+            }
         } finally {
             exec.disconnect();
         }

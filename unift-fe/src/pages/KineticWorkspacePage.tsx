@@ -1,10 +1,4 @@
 // ─── KineticWorkspacePage ───────────────────────────────────────────────────
-// Full-screen workspace for an active SSH session.
-// When capabilitiesDetected is false (first visit), it probes Docker via a hidden
-// terminal WS and offers the Docker workspace if found. When capabilitiesDetected
-// is true (user already went through WorkspaceDetectionModal), detection is skipped
-// and the SSH workspace is shown immediately — avoiding the blank "checking"
-// state that appeared when returning from Docker workspace.
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Terminal } from '@/components/ui';
@@ -411,7 +405,6 @@ function KineticSidebar({
 
   const navItems: { id: WorkspaceView; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview',     icon: 'monitoring' },
-    { id: 'terminal', label: 'Terminal',     icon: 'terminal' },
     { id: 'browser',  label: 'File Browser', icon: 'folder_open' },
   ];
 
@@ -516,7 +509,7 @@ function KineticSidebar({
       </nav>
 
       {/* Back button */}
-      <div
+      {/* <div
         className="px-3 py-3 shrink-0"
         style={{ borderTop: '1px solid var(--color-border-muted)' }}
       >
@@ -528,7 +521,7 @@ function KineticSidebar({
           <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>arrow_back</span>
           Back to Hub
         </button>
-      </div>
+      </div> */}
     </aside>
   );
 }

@@ -5,8 +5,9 @@ import com.weekend.architect.unift.remote.core.RemoteConnection;
 import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
 import com.weekend.architect.unift.remote.model.RemoteSession;
 import com.weekend.architect.unift.remote.ssh.SshRemoteConnection;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.ExecutorService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,10 +30,16 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ConnectionFactory {
 
     private final RemoteConnectionProperties props;
+    private final ExecutorService executorService;
+
+    public ConnectionFactory(
+            RemoteConnectionProperties props, @Qualifier("virtualThreadExecutor") ExecutorService executorService) {
+        this.props = props;
+        this.executorService = executorService;
+    }
 
     /**
      * Instantiates the protocol-specific connection implementation.
@@ -47,7 +54,7 @@ public class ConnectionFactory {
                 "Creating connection for protocol {} / session {}", credentials.getProtocol(), session.getSessionId());
 
         return switch (credentials.getProtocol()) {
-            case SSH_SFTP -> new SshRemoteConnection(session, props);
+            case SSH_SFTP -> new SshRemoteConnection(session, props, executorService);
             case FTP -> throw new UnsupportedOperationException("FTP support is not yet implemented");
             case S3 -> throw new UnsupportedOperationException("S3 support is not yet implemented");
             case AZURE_BLOB -> throw new UnsupportedOperationException("Azure Blob support is not yet implemented");
