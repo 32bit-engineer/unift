@@ -17,14 +17,24 @@ services:
       timeout: 3s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: unift-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: unift
+      POSTGRES_USER: unift
+      POSTGRES_PASSWORD: unift
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
   # ─────────────────────────────────────────────
   # UniFT API — Spring Boot backend
   # ─────────────────────────────────────────────
   unift-api:
-    build:
-      context: ./unift
-      dockerfile: Dockerfile
-    image: unift-api:latest
+    image: ghcr.io/32bit-engineer/unift/unift-api:latest
     container_name: unift-api
     restart: unless-stopped
     depends_on:
@@ -81,11 +91,9 @@ services:
   # UniFT Frontend — React/Vite served via Nginx
   # Proxies /api/* and /api/ws/* to unift-api
   # ─────────────────────────────────────────────
-  unift-fe:
-    build:
-      context: ./unift-fe
-      dockerfile: Dockerfile
-      args:
+  unift-fe: 
+    image: ghcr.io/32bit-engineer/unift/unift-fe:latest
+    args:
         # Baked in at build time. Default /api uses the nginx proxy (same-origin).
         # For direct backend access set VITE_API_BASE_URL=http://localhost:8080/api in .env.
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
