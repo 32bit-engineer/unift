@@ -48,6 +48,21 @@ public class DockerLogStreamRegistry {
     }
 
     /**
+     * Closes the stream only if the registered emitter is the same instance provided.
+     * This prevents an old finalizer thread from evicting a newer stream that was
+     * registered under the same key before the old one's cleanup ran.
+     */
+    public void closeIfSameEmitter(String streamId, SseEmitter emitter) {
+        LogStreamEntry entry = streams.get(streamId);
+        if (entry != null && entry.emitter() == emitter) {
+            if (streams.remove(streamId, entry)) {
+                log.info("[docker-log] Closing stream {} (identity-checked)", streamId);
+                entry.close();
+            }
+        }
+    }
+
+    /**
      * Closes all log streams belonging to the given SSH session. Called when the session expires or
      * is explicitly disconnected.
      */

@@ -104,9 +104,11 @@ public class DockerLogStreamService {
 
             streamRegistry.register(streamId, emitter, callback);
 
-            emitter.onCompletion(() -> streamRegistry.close(streamId));
-            emitter.onTimeout(() -> streamRegistry.close(streamId));
-            emitter.onError(e -> streamRegistry.close(streamId));
+            // Use identity-checked close so a stale finalizer thread cannot evict
+            // a newer stream registered under the same key.
+            emitter.onCompletion(() -> streamRegistry.closeIfSameEmitter(streamId, emitter));
+            emitter.onTimeout(() -> streamRegistry.closeIfSameEmitter(streamId, emitter));
+            emitter.onError(e -> streamRegistry.closeIfSameEmitter(streamId, emitter));
 
             // Virtual thread waits for stream to end naturally (container stop / exit)
             executor.submit(() -> awaitAndFinalize(callback, emitter, streamId, containerId));
@@ -121,7 +123,14 @@ public class DockerLogStreamService {
         return emitter;
     }
 
-    /** Blocks on a virtual thread until the docker-java callback completes, then finalizes. */
+    /**
+     * Blocks on a virtual thread until the docker-java callback completes, then finalizes.
+     *
+     * <p>Does NOT call {@code streamRegistry.close} here — the emitter's onCompletion
+     * handler (registered via {@link #streamContainerLogs}) already handles registry
+     * cleanup with an identity check, preventing a stale finalize thread from evicting
+     * a newer stream registered under the same key.
+     */
     private void awaitAndFinalize(
             ResultCallback.Adapter<Frame> callback, SseEmitter emitter, String streamId, String containerId) {
         try {
@@ -135,7 +144,6 @@ public class DockerLogStreamService {
                 emitter.complete();
             } catch (Exception ignored) {
             }
-            streamRegistry.close(streamId);
             log.debug("[docker-log] Stream {} finalized for container {}", streamId, containerId);
         }
     }

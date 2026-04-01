@@ -59,6 +59,7 @@ export interface TerminalProps {
   host: string;            // For display/logging
   onClose?: () => void;    // Callback when user closes or error occurs
   onStateChange?: (state: TerminalState) => void;
+  initialCommand?: string; // Command sent once on first successful connection (e.g., docker exec)
 }
 
 //  xterm.js options (customized for UniFT design)

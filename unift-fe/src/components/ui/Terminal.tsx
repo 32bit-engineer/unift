@@ -21,11 +21,13 @@ export function Terminal({
   host,
   onClose,
   onStateChange,
+  initialCommand,
 }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTermTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const initialCommandSentRef = useRef(false);
 
   // Setup WebSocket connection
   const { session, sendInput, sendResize, tryReconnect } = useTerminal({
@@ -129,8 +131,14 @@ export function Terminal({
     if (session.state === 'connected' && terminalRef.current) {
       // Clear any previous messages and enable input
       terminalRef.current.focus();
+
+      // Send initial command once (e.g. docker exec) on first successful connection
+      if (initialCommand && !initialCommandSentRef.current) {
+        initialCommandSentRef.current = true;
+        sendInput(initialCommand + '\n');
+      }
     }
-  }, [session.state]);
+  }, [session.state, initialCommand, sendInput]);
 
 
   const renderStatusBar = () => {

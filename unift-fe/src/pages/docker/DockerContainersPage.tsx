@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import { Terminal } from '@/components/ui/Terminal';
 import type {
   DockerContainer,
   DockerContainerStats,
@@ -61,8 +62,8 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
 
   
   const [, setShowCreate] = useState(false);
-  const [, setInspectModal] = useState<ContainerDetail | null>(null);
-  const [, setExecModal] = useState<{ containerId: string; name: string } | null>(null);
+  const [inspectModal, setInspectModal] = useState<ContainerDetail | null>(null);
+  const [execModal, setExecModal] = useState<{ containerId: string; name: string } | null>(null);
 
   const fetchContainers = useCallback(async () => {
     try {
@@ -636,22 +637,22 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
       )} */}
 
       {/* Inspect Modal */}
-      {/* {inspectModal && (
+      {inspectModal && (
         <InspectModal
           detail={inspectModal}
           onClose={() => setInspectModal(null)}
         />
-      )} */}
+      )}
 
       {/* Exec Modal */}
-      {/* {execModal && (
+      {execModal && (
         <ExecModal
           sessionId={sessionId}
           containerId={execModal.containerId}
           containerName={execModal.name}
           onClose={() => setExecModal(null)}
         />
-      )} */}
+      )}
     </div>
   );
 }
@@ -676,7 +677,7 @@ function ActionButton({
       onClick={onClick}
       disabled={loading}
       title={title}
-      className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors disabled:opacity-40"
+      className="w-8 h-8 rounded flex items-center justify-center cursor-pointer transition-colors disabled:opacity-40"
       style={{
         color: destructive ? '#f87171' : 'var(--color-text-muted)',
         background: 'transparent',
@@ -701,7 +702,7 @@ function ActionButton({
       ) : (
         <span
           className="material-symbols-rounded"
-          style={{ fontSize: '16px', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+          style={{ fontSize: '18px', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
         >
           {icon}
         </span>
@@ -863,6 +864,293 @@ function LogsButton({
             </pre>
           )}
           <div ref={logsEndRef} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+// InspectModal — shows full ContainerDetail returned from the inspect API
+
+function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: () => void }) {
+  type InspectTab = 'overview' | 'env' | 'mounts' | 'network' | 'labels';
+  const [tab, setTab] = useState<InspectTab>('overview');
+
+  const tabs: { id: InspectTab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'env', label: 'Environment' },
+    { id: 'mounts', label: 'Mounts' },
+    { id: 'network', label: 'Network' },
+    { id: 'labels', label: 'Labels' },
+  ];
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        style={{ background: 'rgba(0,0,0,0.65)' }}
+        onClick={onClose}
+      />
+      <div
+        className="fixed inset-8 z-50 flex flex-col rounded-lg overflow-hidden"
+        style={{ background: 'var(--color-bg-base)', border: '1px solid var(--color-border-muted)', maxWidth: '860px', margin: 'auto' }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+          style={{ borderBottom: '1px solid var(--color-border-muted)' }}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className="material-symbols-rounded"
+              style={{ fontSize: '18px', color: 'var(--color-primary)', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+            >
+              info
+            </span>
+            <span className="font-semibold" style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+              {detail.name.replace(/^\//, '')}
+            </span>
+            <span
+              className="px-2 py-0.5 rounded font-mono"
+              style={{ fontSize: '10px', color: 'var(--color-text-muted)', background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
+            >
+              {detail.id.slice(0, 12)}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded cursor-pointer"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>close</span>
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div
+          className="flex items-center gap-1 px-5 pt-3 pb-0 flex-shrink-0"
+          style={{ borderBottom: '1px solid var(--color-border-muted)' }}
+        >
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="px-3 pb-2 font-semibold cursor-pointer transition-colors"
+              style={{
+                fontSize: '11px',
+                color: tab === t.id ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                borderBottom: tab === t.id ? '2px solid var(--color-primary)' : '2px solid transparent',
+                background: 'none',
+                border: 'none',
+                borderBottomColor: tab === t.id ? 'var(--color-primary)' : 'transparent',
+                borderBottomWidth: '2px',
+                borderBottomStyle: 'solid',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-5">
+          {tab === 'overview' && (
+            <InspectGrid>
+              <InspectRow label="Image" value={detail.image} mono />
+              <InspectRow label="State" value={detail.state} />
+              <InspectRow label="Status" value={detail.status} />
+              <InspectRow label="Platform" value={detail.platform} />
+              <InspectRow label="Created" value={detail.created} />
+              <InspectRow label="Restart Policy" value={detail.restartPolicy} />
+              <InspectRow label="Restart Count" value={String(detail.restartCount)} />
+              <InspectRow label="Command" value={detail.cmd.join(' ')} mono />
+              {Object.keys(detail.ports).length > 0 && (
+                <InspectRow
+                  label="Ports"
+                  value={Object.entries(detail.ports).map(([k, v]) => `${k} → ${v}`).join(', ')}
+                  mono
+                />
+              )}
+            </InspectGrid>
+          )}
+
+          {tab === 'env' && (
+            <div className="flex flex-col gap-1">
+              {detail.env.length === 0 ? (
+                <EmptyState text="No environment variables" />
+              ) : detail.env.map((e, i) => (
+                <div
+                  key={i}
+                  className="px-3 py-2 rounded font-mono"
+                  style={{ fontSize: '11px', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-muted)' }}
+                >
+                  {e}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'mounts' && (
+            <div className="flex flex-col gap-2">
+              {detail.mounts.length === 0 ? (
+                <EmptyState text="No mounts" />
+              ) : detail.mounts.map((m, i) => (
+                <div
+                  key={i}
+                  className="px-4 py-3 rounded"
+                  style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
+                >
+                  <InspectGrid compact>
+                    <InspectRow label="Type" value={m.type} />
+                    <InspectRow label="Source" value={m.source} mono />
+                    <InspectRow label="Destination" value={m.destination} mono />
+                    <InspectRow label="Mode" value={m.mode || 'rw'} />
+                  </InspectGrid>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'network' && (
+            <InspectGrid>
+              <InspectRow label="Network Mode" value={detail.networkMode} />
+              {Object.entries(detail.networks).map(([name, net]) => (
+                <div key={name} className="col-span-2">
+                  <p className="uppercase tracking-[0.1em] font-semibold mb-2" style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>
+                    {name}
+                  </p>
+                  <InspectGrid compact>
+                    <InspectRow label="IP Address" value={net.ipAddress || '-'} mono />
+                    <InspectRow label="Gateway" value={net.gateway || '-'} mono />
+                  </InspectGrid>
+                </div>
+              ))}
+            </InspectGrid>
+          )}
+
+          {tab === 'labels' && (
+            <div className="flex flex-col gap-1">
+              {Object.keys(detail.labels).length === 0 ? (
+                <EmptyState text="No labels" />
+              ) : Object.entries(detail.labels).map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex items-start gap-3 px-3 py-2 rounded"
+                  style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
+                >
+                  <span className="font-mono flex-shrink-0" style={{ fontSize: '10px', color: 'var(--color-primary)' }}>{k}</span>
+                  <span className="font-mono break-all" style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function InspectGrid({ children, compact = false }: { children: React.ReactNode; compact?: boolean }) {
+  return (
+    <div className={`grid grid-cols-2 ${compact ? 'gap-2' : 'gap-3'}`}>
+      {children}
+    </div>
+  );
+}
+
+function InspectRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div
+      className="flex flex-col gap-1 px-3 py-2.5 rounded"
+      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
+    >
+      <span className="uppercase tracking-[0.1em] font-semibold" style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>
+        {label}
+      </span>
+      <span
+        className={mono ? 'font-mono break-all' : ''}
+        style={{ fontSize: '11px', color: 'var(--color-text-primary)' }}
+      >
+        {value || '-'}
+      </span>
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <p className="text-center py-8" style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+      {text}
+    </p>
+  );
+}
+
+// ExecModal — opens an interactive SSH terminal and runs docker exec inside the container
+
+function ExecModal({
+  sessionId,
+  containerId,
+  containerName,
+  onClose,
+}: {
+  sessionId: string;
+  containerId: string;
+  containerName: string;
+  onClose: () => void;
+}) {
+  const shortId = containerId.slice(0, 12);
+  // Try bash first, fall back to sh via shell substitution
+  const initialCommand = `docker exec -it ${shortId} sh -c "bash 2>/dev/null || sh"`;
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        style={{ background: 'rgba(0,0,0,0.65)' }}
+        onClick={onClose}
+      />
+      <div
+        className="fixed inset-8 z-50 flex flex-col rounded-lg overflow-hidden"
+        style={{ background: '#0C0C14', border: '1px solid var(--color-border-muted)' }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-2.5 flex-shrink-0"
+          style={{ borderBottom: '1px solid var(--color-border-muted)', background: 'var(--color-bg-base)' }}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className="material-symbols-rounded"
+              style={{ fontSize: '16px', color: 'var(--color-primary)', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
+            >
+              terminal
+            </span>
+            <span className="font-semibold" style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>
+              Terminal — {containerName}
+            </span>
+            <span
+              className="px-2 py-0.5 rounded font-mono"
+              style={{ fontSize: '10px', color: 'var(--color-text-muted)', background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
+            >
+              {shortId}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded cursor-pointer"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>close</span>
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <Terminal
+            key={containerId}
+            sshSessionId={sessionId}
+            host={containerName}
+            initialCommand={initialCommand}
+            onClose={onClose}
+          />
         </div>
       </div>
     </>

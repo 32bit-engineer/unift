@@ -1283,15 +1283,34 @@ export const remoteConnectionAPI = {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEvent = '';
+        let completedCalled = false;
         // eslint-disable-next-line no-constant-condition
         while (true) {
           const { done, value } = await reader.read();
-          if (done) { onComplete(); break; }
+          if (done) {
+            if (!completedCalled) onComplete();
+            break;
+          }
           buffer += decoder.decode(value, { stream: true });
           const parts = buffer.split('\n');
           buffer = parts.pop() ?? '';
           for (const part of parts) {
-            if (part.startsWith('data:')) onLine(part.slice(5).trimStart());
+            if (part.startsWith('event:')) {
+              currentEvent = part.slice(6).trim();
+            } else if (part.startsWith('data:')) {
+              const data = part.slice(5).trimStart();
+              if (currentEvent === 'end') {
+                completedCalled = true;
+                onComplete();
+              } else if (currentEvent === 'error') {
+                onError(data);
+              } else {
+                onLine(data);
+              }
+            } else if (part === '') {
+              currentEvent = '';
+            }
           }
         }
       } catch (err: unknown) {
