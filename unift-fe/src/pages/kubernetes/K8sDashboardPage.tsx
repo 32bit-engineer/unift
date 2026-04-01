@@ -304,7 +304,7 @@ function PodBarChart({ pods }: { pods: K8sPod[] }) {
 
   const visible = pods.slice(0, 24);
 
-  const handleMouseEnter = (pod: K8sPod, index: number, e: React.MouseEvent) => {
+  const handleMouseEnter = (pod: K8sPod, _: number, e: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setTooltip({ pod, x: e.clientX - rect.left, y: e.clientY - rect.top });

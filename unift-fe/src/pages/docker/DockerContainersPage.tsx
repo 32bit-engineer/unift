@@ -15,7 +15,7 @@ import type {
   ContainerPage,
   ContainerActionResult,
   ContainerDetail,
-  CreateContainerRequest,
+  // CreateContainerRequest,
 } from '@/utils/remoteConnectionAPI';
 
 interface DockerContainersPageProps {
@@ -58,9 +58,11 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
   const [sortMode, setSortMode] = useState<SortMode>('latest');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showCreate, setShowCreate] = useState(false);
-  const [inspectModal, setInspectModal] = useState<ContainerDetail | null>(null);
-  const [execModal, setExecModal] = useState<{ containerId: string; name: string } | null>(null);
+
+  
+  const [, setShowCreate] = useState(false);
+  const [, setInspectModal] = useState<ContainerDetail | null>(null);
+  const [, setExecModal] = useState<{ containerId: string; name: string } | null>(null);
 
   const fetchContainers = useCallback(async () => {
     try {
@@ -191,15 +193,15 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
     }
   }, [sessionId]);
 
-  const handleCreateContainer = useCallback(async (request: CreateContainerRequest) => {
-    try {
-      await remoteConnectionAPI.createDockerContainer(sessionId, request);
-      setShowCreate(false);
-      await fetchContainers();
-    } catch {
-      // Create failed
-    }
-  }, [sessionId, fetchContainers]);
+  // const handleCreateContainer = useCallback(async (request: CreateContainerRequest) => {
+  //   try {
+  //     await remoteConnectionAPI.createDockerContainer(sessionId, request);
+  //     setShowCreate(false);
+  //     await fetchContainers();
+  //   } catch {
+  //     // Create failed
+  //   }
+  // }, [sessionId, fetchContainers]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -626,30 +628,30 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
       )}
 
       {/* Create Container Modal */}
-      {showCreate && (
+      {/* {showCreate && (
         <CreateContainerModal
           onClose={() => setShowCreate(false)}
           onCreate={handleCreateContainer}
         />
-      )}
+      )} */}
 
       {/* Inspect Modal */}
-      {inspectModal && (
+      {/* {inspectModal && (
         <InspectModal
           detail={inspectModal}
           onClose={() => setInspectModal(null)}
         />
-      )}
+      )} */}
 
       {/* Exec Modal */}
-      {execModal && (
+      {/* {execModal && (
         <ExecModal
           sessionId={sessionId}
           containerId={execModal.containerId}
           containerName={execModal.name}
           onClose={() => setExecModal(null)}
         />
-      )}
+      )} */}
     </div>
   );
 }

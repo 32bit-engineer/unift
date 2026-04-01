@@ -23,7 +23,6 @@ export function FileBrowserToolbar({
   opLoading,
   hasSelection,
   selectedEntries,
-  transfers,
   currentPath,
   onUpload,
   onNewFolder,
@@ -31,13 +30,11 @@ export function FileBrowserToolbar({
   onDownload,
   onRename,
   onDelete,
-  onToggleTransfers,
   onOpenInEditor,
   onOpenTerminal,
 }: FileBrowserToolbarProps) {
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const selectedFiles = selectedEntries.filter(e => e.type === 'FILE');
-  const activeTransfers = transfers.filter(t => t.state === 'PENDING' || t.state === 'IN_PROGRESS');
 
   return (
     <div
