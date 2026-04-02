@@ -392,8 +392,7 @@ function OverviewPanel({ session }: { session: UIHost }) {
 function KineticSidebar({
   session,
   activeView,
-  onSelectView,
-  onBack,
+  onSelectView
 }: {
   session: UIHost;
   activeView: WorkspaceView;
