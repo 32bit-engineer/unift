@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 import type { DockerVolume } from '@/utils/remoteConnectionAPI';
 
 interface DockerVolumesPageProps {
@@ -280,6 +281,8 @@ function CreateVolumeModal({
   const [name, setName] = useState('');
   const [driver, setDriver] = useState('local');
   const [creating, setCreating] = useState(false);
+
+  useEscapeKey(onClose);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;

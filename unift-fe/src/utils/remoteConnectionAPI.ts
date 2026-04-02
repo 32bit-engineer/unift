@@ -1,4 +1,4 @@
-import { apiClient, tokenStorage } from '@/utils/apiClient';
+import { apiClient, authenticatedFetch, tokenStorage } from '@/utils/apiClient';
 import { API_BASE_URL } from '@/config/api.config';
 
 
@@ -343,7 +343,7 @@ export interface CreateContainerRequest {
   volumes?: string[];
   restartPolicy?: string;
   networkMode?: string;
-  cmd?: string[];
+  command?: string[];
 }
 
 export interface CreateContainerResponse {
@@ -1270,13 +1270,11 @@ export const remoteConnectionAPI = {
     onError: (err: string) => void,
   ): Promise<() => void> => {
     const { API_BASE_URL } = await import('@/config/api.config');
-    const token = tokenStorage.getAccess();
     const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/${containerId}/logs/stream?tail=${tail}&timestamps=${timestamps}`;
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        const res = await authenticatedFetch(url, {
           signal: controller.signal,
         });
         if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
@@ -1332,13 +1330,11 @@ export const remoteConnectionAPI = {
     onError: (err: string) => void,
   ): Promise<() => void> => {
     const { API_BASE_URL } = await import('@/config/api.config');
-    const token = tokenStorage.getAccess();
     const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/${containerId}/stats/stream`;
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        const res = await authenticatedFetch(url, {
           signal: controller.signal,
         });
         if (!res.ok || !res.body) { onError(`HTTP ${res.status}`); return; }
@@ -1386,16 +1382,14 @@ export const remoteConnectionAPI = {
     onError: (err: string) => void,
   ): Promise<() => void> => {
     const { API_BASE_URL } = await import('@/config/api.config');
-    const token = tokenStorage.getAccess();
     const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/images/pull?repository=${encodeURIComponent(repository)}&tag=${encodeURIComponent(tag)}`;
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch(url, {
+        const res = await authenticatedFetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ repository, tag }),
           signal: controller.signal,
@@ -1489,15 +1483,9 @@ export const remoteConnectionAPI = {
 
   /** Generates a Docker Compose YAML from current running containers or a request. */
   generateDockerComposeFile: async (sessionId: string, request: ComposeFileRequest): Promise<string> => {
-    const token = tokenStorage.getAccess();
-    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/compose/generate`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
+    const payload = await apiClient.post<{ yaml?: string }>(
+      `${BASE}/sessions/${sessionId}/docker/compose/generate`,
+      {
         projectName: request.projectName,
         services: Object.entries(request.services).map(([name, service]) => ({
           name,
@@ -1507,10 +1495,8 @@ export const remoteConnectionAPI = {
           volumes: service.volumes,
           dependsOn: service.depends_on,
         })),
-      }),
-    });
-    if (!response.ok) throw new Error(`Generate failed: ${response.status}`);
-    const payload = (await response.json()) as { yaml?: string };
+      },
+    );
     return payload.yaml ?? '';
   },
 

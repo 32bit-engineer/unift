@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { tokenStorage } from '@/utils/apiClient';
+import { refreshAuthSession, tokenStorage } from '@/utils/apiClient';
 import { API_BASE_URL } from '@/config/api.config';
 import type {
   TerminalClientMessage,
@@ -14,6 +14,19 @@ interface UseTerminalParams {
   onOutput?: (data: string) => void;
   onStateChange?: (state: TerminalState) => void;
   onClose?: () => void;
+}
+
+function isTokenExpiredOrNearExpiry(token: string, skewSeconds = 30): boolean {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return false;
+    const payload = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number };
+    if (!payload.exp) return false;
+    const now = Math.floor(Date.now() / 1000);
+    return payload.exp <= now + skewSeconds;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -129,12 +142,25 @@ export function useTerminal({
       existing.onmessage = null;
       existing.onclose = null;
       existing.onerror = null;
-      if (
-        existing.readyState === WebSocket.OPEN ||
-        existing.readyState === WebSocket.CONNECTING
-      ) {
+
+      if (existing.readyState === WebSocket.OPEN) {
         existing.close(1000, 'user-switch');
+      } else if (existing.readyState === WebSocket.CONNECTING) {
+        // Avoid browser warning: "WebSocket is closed before the connection is established".
+        // Defer close until handshake completes.
+        existing.addEventListener(
+          'open',
+          () => {
+            try {
+              existing.close(1000, 'user-switch');
+            } catch {
+              // Ignore close errors for torn-down sockets.
+            }
+          },
+          { once: true },
+        );
       }
+
       wsRef.current = null;
     }
     isConnectingRef.current = false;
@@ -148,7 +174,7 @@ export function useTerminal({
   const sshSessionIdRef = useRef(sshSessionId);
   sshSessionIdRef.current = sshSessionId;
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     // Guard: don't double-connect  
     if (isConnectingRef.current || wsRef.current?.readyState === WebSocket.OPEN) {
       console.debug('[Terminal] connect() skipped — already connecting or connected');
@@ -159,7 +185,13 @@ export function useTerminal({
     const currentState = stateRef.current;
     if (currentState === 'cap_exceeded') return;
 
-    const accessToken = tokenStorage.getAccess();
+    let accessToken = tokenStorage.getAccess();
+    if (!accessToken || isTokenExpiredOrNearExpiry(accessToken)) {
+      const refreshed = await refreshAuthSession();
+      if (refreshed) {
+        accessToken = tokenStorage.getAccess();
+      }
+    }
     if (!accessToken) {
       updateState('error', 'Authentication token not found. Please log in again.');
       return;

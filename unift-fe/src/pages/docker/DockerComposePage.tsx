@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
-import type { ComposeProject } from '@/utils/remoteConnectionAPI';
+import type { ComposeProject, ComposeServiceDef, DockerContainer } from '@/utils/remoteConnectionAPI';
 
 interface DockerComposePageProps {
   sessionId: string;
@@ -41,9 +41,16 @@ export function DockerComposePage({ sessionId }: DockerComposePageProps) {
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
     try {
+      const containersRes = await remoteConnectionAPI.listDockerContainers(sessionId, true, 1, 200);
+      const services = buildComposeServices(containersRes.containers);
+      if (Object.keys(services).length === 0) {
+        setYaml('# No containers found to infer compose services.');
+        return;
+      }
+
       const result = await remoteConnectionAPI.generateDockerComposeFile(sessionId, {
         projectName: 'generated',
-        services: {},
+        services,
       });
       setYaml(result);
     } catch {
@@ -234,6 +241,60 @@ export function DockerComposePage({ sessionId }: DockerComposePageProps) {
       </div>
     </div>
   );
+}
+
+function buildComposeServices(containers: DockerContainer[]): Record<string, ComposeServiceDef> {
+  const usedNames = new Set<string>();
+  const services: Record<string, ComposeServiceDef> = {};
+
+  for (const container of containers) {
+    const serviceName = toUniqueServiceName(container.names, usedNames);
+    const ports = parsePortMappings(container.ports);
+    services[serviceName] = {
+      image: container.image,
+      ...(ports.length > 0 ? { ports } : {}),
+    };
+  }
+
+  return services;
+}
+
+function toUniqueServiceName(rawName: string, usedNames: Set<string>): string {
+  const baseName = (rawName || 'service')
+    .replace(/^\//, '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_.-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'service';
+
+  if (!usedNames.has(baseName)) {
+    usedNames.add(baseName);
+    return baseName;
+  }
+
+  let suffix = 2;
+  while (usedNames.has(`${baseName}-${suffix}`)) {
+    suffix += 1;
+  }
+  const uniqueName = `${baseName}-${suffix}`;
+  usedNames.add(uniqueName);
+  return uniqueName;
+}
+
+function parsePortMappings(portsText: string): string[] {
+  if (!portsText.trim()) return [];
+
+  const uniqueMappings = new Set<string>();
+  const parts = portsText.split(',').map((p) => p.trim()).filter(Boolean);
+
+  for (const part of parts) {
+    const match = part.match(/(\d+)\s*->\s*(\d+)/);
+    if (!match) continue;
+    const hostPort = match[1];
+    const containerPort = match[2];
+    uniqueMappings.add(`${hostPort}:${containerPort}`);
+  }
+
+  return Array.from(uniqueMappings);
 }
 
 function ProjectCard({ project }: { project: ComposeProject }) {

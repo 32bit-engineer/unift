@@ -55,6 +55,41 @@ function attemptTokenRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * Public wrapper used by non-HTTP flows (e.g. WebSocket clients) to refresh auth.
+ */
+export function refreshAuthSession(): Promise<boolean> {
+  return attemptTokenRefresh();
+}
+
+/**
+ * Performs a fetch with Authorization header and one refresh-token retry on 401.
+ * Use this for streaming and other APIs that cannot use apiClient.request directly.
+ */
+export async function authenticatedFetch(input: string, init: RequestInit = {}, allowRetry = true): Promise<Response> {
+  const headers = new Headers(init.headers ?? {});
+  const accessToken = tokenStorage.getAccess();
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
+  }
+
+  const response = await fetch(input, {
+    ...init,
+    headers,
+  });
+
+  if (response.status === 401 && allowRetry) {
+    const refreshed = await attemptTokenRefresh();
+    if (refreshed) {
+      return authenticatedFetch(input, init, false);
+    }
+    tokenStorage.clear();
+    window.location.href = '/login';
+  }
+
+  return response;
+}
+
 // ─── Core fetch wrapper ────────────────────────────────────────────────────
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {

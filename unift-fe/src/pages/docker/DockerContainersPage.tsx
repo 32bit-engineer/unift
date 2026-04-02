@@ -10,13 +10,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import { Terminal } from '@/components/ui/Terminal';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 import type {
   DockerContainer,
   DockerContainerStats,
   ContainerPage,
   ContainerActionResult,
   ContainerDetail,
-  // CreateContainerRequest,
+  CreateContainerRequest,
 } from '@/utils/remoteConnectionAPI';
 
 interface DockerContainersPageProps {
@@ -61,7 +62,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   
-  const [, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [inspectModal, setInspectModal] = useState<ContainerDetail | null>(null);
   const [execModal, setExecModal] = useState<{ containerId: string; name: string } | null>(null);
 
@@ -194,15 +195,16 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
     }
   }, [sessionId]);
 
-  // const handleCreateContainer = useCallback(async (request: CreateContainerRequest) => {
-  //   try {
-  //     await remoteConnectionAPI.createDockerContainer(sessionId, request);
-  //     setShowCreate(false);
-  //     await fetchContainers();
-  //   } catch {
-  //     // Create failed
-  //   }
-  // }, [sessionId, fetchContainers]);
+  const handleCreateContainer = useCallback(async (request: CreateContainerRequest) => {
+    try {
+      await remoteConnectionAPI.createDockerContainer(sessionId, request);
+      setShowCreate(false);
+      await fetchContainers();
+      await fetchStats();
+    } catch {
+      // Create failed
+    }
+  }, [sessionId, fetchContainers, fetchStats]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -629,12 +631,12 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
       )}
 
       {/* Create Container Modal */}
-      {/* {showCreate && (
+      {showCreate && (
         <CreateContainerModal
           onClose={() => setShowCreate(false)}
           onCreate={handleCreateContainer}
         />
-      )} */}
+      )}
 
       {/* Inspect Modal */}
       {inspectModal && (
@@ -771,6 +773,8 @@ function LogsButton({
     setStreamState('idle');
   }, []);
 
+  useEscapeKey(handleClose, open);
+
   if (!open) {
     return (
       <ActionButton
@@ -876,6 +880,8 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
   type InspectTab = 'overview' | 'env' | 'mounts' | 'network' | 'labels';
   const [tab, setTab] = useState<InspectTab>('overview');
 
+  useEscapeKey(onClose);
+
   const tabs: { id: InspectTab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'env', label: 'Environment' },
@@ -939,7 +945,6 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
               style={{
                 fontSize: '11px',
                 color: tab === t.id ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                borderBottom: tab === t.id ? '2px solid var(--color-primary)' : '2px solid transparent',
                 background: 'none',
                 border: 'none',
                 borderBottomColor: tab === t.id ? 'var(--color-primary)' : 'transparent',
@@ -1050,6 +1055,181 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
   );
 }
 
+function CreateContainerModal({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (request: CreateContainerRequest) => Promise<void>;
+}) {
+  const [image, setImage] = useState('');
+  const [name, setName] = useState('');
+  const [envText, setEnvText] = useState('');
+  const [commandText, setCommandText] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  useEscapeKey(onClose);
+
+  const parseLines = (value: string): string[] => value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const parseCommand = (value: string): string[] => value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const handleSubmit = async () => {
+    if (!image.trim()) return;
+
+    setCreating(true);
+    try {
+      await onCreate({
+        image: image.trim(),
+        ...(name.trim() ? { name: name.trim() } : {}),
+        ...(envText.trim() ? { env: parseLines(envText) } : {}),
+        ...(commandText.trim() ? { command: parseCommand(commandText) } : {}),
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={onClose} />
+      <div
+        className="fixed z-50 rounded-lg overflow-hidden flex flex-col"
+        style={{
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '560px',
+          maxWidth: 'calc(100vw - 2rem)',
+          background: 'var(--color-bg-base)',
+          border: '1px solid var(--color-border-muted)',
+        }}
+      >
+        <div
+          className="flex items-center justify-between px-5 py-3"
+          style={{ borderBottom: '1px solid var(--color-border-muted)' }}
+        >
+          <span className="font-semibold" style={{ fontSize: '14px', color: 'var(--color-text-primary)' }}>
+            Create Container
+          </span>
+          <button onClick={onClose} className="p-1 rounded cursor-pointer" style={{ color: 'var(--color-text-muted)' }}>
+            <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>close</span>
+          </button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-4">
+          <ModalField label="Image *">
+            <input
+              type="text"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="nginx:latest"
+              className="w-full px-3 py-2 rounded-md"
+              style={{
+                fontSize: '12px',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border-muted)',
+                outline: 'none',
+              }}
+            />
+          </ModalField>
+
+          <ModalField label="Container Name (Optional)">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="web"
+              className="w-full px-3 py-2 rounded-md"
+              style={{
+                fontSize: '12px',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border-muted)',
+                outline: 'none',
+              }}
+            />
+          </ModalField>
+
+          <ModalField label="Environment Variables (One Per Line)">
+            <textarea
+              value={envText}
+              onChange={(e) => setEnvText(e.target.value)}
+              placeholder={'NODE_ENV=production\nPORT=8080'}
+              className="w-full px-3 py-2 rounded-md"
+              style={{
+                minHeight: '90px',
+                fontSize: '12px',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border-muted)',
+                outline: 'none',
+                resize: 'vertical',
+              }}
+            />
+          </ModalField>
+
+          <ModalField label="Command (Optional)">
+            <input
+              type="text"
+              value={commandText}
+              onChange={(e) => setCommandText(e.target.value)}
+              placeholder="npm run start"
+              className="w-full px-3 py-2 rounded-md"
+              style={{
+                fontSize: '12px',
+                background: 'var(--color-surface)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border-muted)',
+                outline: 'none',
+              }}
+            />
+          </ModalField>
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: '1px solid var(--color-border-muted)' }}>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-md cursor-pointer font-semibold"
+            style={{ fontSize: '12px', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-muted)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!image.trim() || creating}
+            className="px-4 py-1.5 rounded-md cursor-pointer font-semibold disabled:opacity-40"
+            style={{ fontSize: '12px', background: 'var(--color-primary)', color: '#fff' }}
+          >
+            {creating ? 'Creating...' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label
+        className="block mb-1.5 font-semibold uppercase tracking-[0.1em]"
+        style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 function InspectGrid({ children, compact = false }: { children: React.ReactNode; compact?: boolean }) {
   return (
     <div className={`grid grid-cols-2 ${compact ? 'gap-2' : 'gap-3'}`}>
@@ -1101,6 +1281,8 @@ function ExecModal({
   const shortId = containerId.slice(0, 12);
   // Try bash first, fall back to sh via shell substitution
   const initialCommand = `docker exec -it ${shortId} sh -c "bash 2>/dev/null || sh"`;
+
+  useEscapeKey(onClose);
 
   return (
     <>

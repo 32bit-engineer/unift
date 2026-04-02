@@ -274,10 +274,12 @@ export function DockerLogsPage({ sessionId }: DockerLogsPageProps) {
     setSelectedId(id);
     setLogLines([]);
     setError(null);
-    if (id) {
-      fetchStaticLogs(id);
-    }
-  }, [stopStreaming, fetchStaticLogs]);
+  }, [stopStreaming]);
+
+  useEffect(() => {
+    if (!selectedId || streaming) return;
+    fetchStaticLogs(selectedId);
+  }, [selectedId, tail, streaming, fetchStaticLogs]);
 
   const handleStreamToggle = useCallback(async () => {
     if (streaming) {

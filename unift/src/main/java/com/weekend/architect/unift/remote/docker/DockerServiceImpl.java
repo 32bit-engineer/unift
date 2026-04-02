@@ -26,7 +26,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -719,19 +721,32 @@ public class DockerServiceImpl implements DockerService {
     private DockerModels.ContainerStats fetchSingleStat(DockerClient client, String containerId) {
         try {
             Statistics[] holder = new Statistics[1];
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicInteger sampleCount = new AtomicInteger();
             var cb = new ResultCallback.Adapter<Statistics>() {
                 @Override
                 public void onNext(Statistics stats) {
                     holder[0] = stats;
-                    try {
-                        close();
-                    } catch (IOException _) {
-                        // ignored
+                    int seen = sampleCount.incrementAndGet();
+                    if (hasUsableCpuBaseline(stats) || seen >= 2) {
+                        latch.countDown();
+                        try {
+                            close();
+                        } catch (IOException _) {
+                            // ignored
+                        }
                     }
                 }
             };
             client.statsCmd(containerId).exec(cb);
-            cb.awaitCompletion(5, TimeUnit.SECONDS);
+            if (!latch.await(3, TimeUnit.SECONDS)) {
+                try {
+                    cb.close();
+                } catch (IOException _) {
+                    // ignored
+                }
+            }
+            cb.awaitCompletion(1, TimeUnit.SECONDS);
             return holder[0] != null ? DockerStatsStreamService.computeStats(containerId, holder[0]) : null;
         } catch (Exception e) {
             if (e instanceof InterruptedException _) {
@@ -740,6 +755,18 @@ public class DockerServiceImpl implements DockerService {
             log.debug("[docker] Failed to get stats for container {}: {}", containerId, e.getMessage());
             return null;
         }
+    }
+
+    static boolean hasUsableCpuBaseline(Statistics stats) {
+        return stats != null
+                && stats.getCpuStats() != null
+                && stats.getPreCpuStats() != null
+                && stats.getCpuStats().getCpuUsage() != null
+                && stats.getPreCpuStats().getCpuUsage() != null
+                && stats.getCpuStats().getSystemCpuUsage() != null
+                && stats.getPreCpuStats().getSystemCpuUsage() != null
+                && stats.getPreCpuStats().getSystemCpuUsage() > 0
+                && stats.getPreCpuStats().getCpuUsage().getTotalUsage() > 0;
     }
 
     private void trySend(SseEmitter emitter, SseEmitter.SseEventBuilder event) {

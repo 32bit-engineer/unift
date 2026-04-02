@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 import type { DockerNetwork } from '@/utils/remoteConnectionAPI';
 
 interface DockerNetworksPageProps {
@@ -302,6 +303,8 @@ function CreateNetworkModal({
   const [name, setName] = useState('');
   const [driver, setDriver] = useState('bridge');
   const [creating, setCreating] = useState(false);
+
+  useEscapeKey(onClose);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;

@@ -43,6 +43,8 @@ export function Terminal({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    let initialFitFrame: number | null = null;
+
     // Create terminal instance
     const terminal = new XTermTerminal({
       rows: 24,
@@ -76,11 +78,19 @@ export function Terminal({
     // Auto-focus terminal so user can type immediately
     terminal.focus();
 
-    // Fit to initial size and send to server
-    fitAddon.fit();
-    if (session.state === 'connected') {
-      sendResize(terminal.cols, terminal.rows);
-    }
+    // Fit after layout is painted so xterm has valid dimensions.
+    initialFitFrame = window.requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      if (containerRef.current.clientHeight <= 0 || containerRef.current.clientWidth <= 0) return;
+      try {
+        fitAddon.fit();
+        if (session.state === 'connected' && terminal.cols > 0 && terminal.rows > 0) {
+          sendResize(terminal.cols, terminal.rows);
+        }
+      } catch (err) {
+        console.error('Terminal initial fit error:', err);
+      }
+    });
 
     terminal.onData((data: string) => {
       sendInput(data);
@@ -111,7 +121,9 @@ export function Terminal({
         if (containerRef.current.clientHeight <= 0 || containerRef.current.clientWidth <= 0) return;
         try {
           fitAddon.fit();
-          sendResize(terminal.cols, terminal.rows);
+          if (terminal.cols > 0 && terminal.rows > 0) {
+            sendResize(terminal.cols, terminal.rows);
+          }
         } catch (err) {
           console.error('Terminal fit/resize error:', err);
         }
@@ -120,6 +132,9 @@ export function Terminal({
     resizeObserverRef.current.observe(containerRef.current);
 
     return () => {
+      if (initialFitFrame !== null) {
+        window.cancelAnimationFrame(initialFitFrame);
+      }
       resizeObserverRef.current?.disconnect();
       terminal.dispose();
     };
