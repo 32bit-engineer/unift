@@ -11,13 +11,12 @@ import org.junit.jupiter.api.Test;
 
 class DockerServiceImplTest {
 
-        private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     @DisplayName("hasUsableCpuBaseline rejects first-frame stats without a previous CPU sample")
-        void hasUsableCpuBaseline_rejectsMissingPreviousSample() throws IOException {
-                Statistics stats = readStats(
-                                """
+    void hasUsableCpuBaseline_rejectsMissingPreviousSample() throws IOException {
+        Statistics stats = readStats("""
                                 {
                                     "cpu_stats": {
                                         "cpu_usage": {
@@ -39,9 +38,8 @@ class DockerServiceImplTest {
 
     @Test
     @DisplayName("hasUsableCpuBaseline accepts stats once Docker provides a previous CPU sample")
-        void hasUsableCpuBaseline_acceptsPreviousSample() throws IOException {
-                Statistics stats = readStats(
-                                """
+    void hasUsableCpuBaseline_acceptsPreviousSample() throws IOException {
+        Statistics stats = readStats("""
                                 {
                                     "cpu_stats": {
                                         "cpu_usage": {
@@ -61,7 +59,7 @@ class DockerServiceImplTest {
         assertTrue(DockerServiceImpl.hasUsableCpuBaseline(stats));
     }
 
-        private Statistics readStats(String json) throws IOException {
-                return objectMapper.readValue(json, Statistics.class);
-        }
+    private Statistics readStats(String json) throws IOException {
+        return objectMapper.readValue(json, Statistics.class);
+    }
 }
