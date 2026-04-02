@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.weekend.architect.unift.auth.dto.LoginRequest;
 import com.weekend.architect.unift.auth.dto.RegisterRequest;
-import java.util.UUID;
+import com.weekend.architect.unift.utils.UuidUtils;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -33,7 +33,7 @@ public class TestAuthHelper {
 
     /** Generates a username that is unique across the test run to prevent conflicts. */
     public String uniqueUsername() {
-        return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        return "user_" + UuidUtils.uuidVersion7();
     }
 
     /**
