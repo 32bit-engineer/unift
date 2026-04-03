@@ -88,8 +88,8 @@ services:
       context: ./unift-fe
       args:
         # Baked into the JS bundle at build time — must NOT include /api suffix.
-        # Frontend calls the backend directly at http://localhost:8080.
-        VITE_API_BASE_URL: http://localhost:8080
+        # Leave blank (empty string) to use the Nginx proxy (recommended).
+        VITE_API_BASE_URL: ""
         VITE_APP_NAME: ${VITE_APP_NAME:-UniFT}
         VITE_APP_VERSION: ${VITE_APP_VERSION:-0.0.1}
         VITE_ENABLE_DARK_MODE: ${VITE_ENABLE_DARK_MODE:-true}

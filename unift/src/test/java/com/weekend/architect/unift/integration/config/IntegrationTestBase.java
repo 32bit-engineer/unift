@@ -49,9 +49,7 @@ public abstract class IntegrationTestBase {
         POSTGRES.start();
         REDIS.start();
     }
-
-    // --- Dynamic property injection for Testcontainers -------------------------
-
+    
     @DynamicPropertySource
     static void configureContainerProperties(DynamicPropertyRegistry registry) {
         registry.add("DB_URL", POSTGRES::getJdbcUrl);
