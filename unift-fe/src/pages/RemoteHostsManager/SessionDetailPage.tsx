@@ -403,11 +403,37 @@ export function SessionDetailPage({
     }
   }, [host.sessionId]);
 
-  // Fetch on mount, then poll every 30 seconds
+  // Fetch once, then keep live updates via SSE.
   useEffect(() => {
     void fetchAnalytics();
-    const interval = setInterval(() => void fetchAnalytics(), 30_000);
-    return () => clearInterval(interval);
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamSessionAnalytics(
+        host.sessionId,
+        5000,
+        (data) => {
+          setAnalytics(data);
+          setAnalyticsError(false);
+          if (!hasFetchedOnce.current) {
+            hasFetchedOnce.current = true;
+            setAnalyticsLoading(false);
+          }
+        },
+        () => {
+          setAnalyticsError(true);
+          if (!hasFetchedOnce.current) {
+            hasFetchedOnce.current = true;
+            setAnalyticsLoading(false);
+          }
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
+
+    return () => {
+      stop?.();
+    };
   }, [fetchAnalytics]);
 
   const fetchHistory = useCallback(async (loadMore = false) => {

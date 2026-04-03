@@ -1,19 +1,17 @@
 /**
  * SSH Session Logs — Shows session activity log, connection events,
  * session metadata, and transfer history for an SSH session.
- * Auto-refreshes every 30 seconds.
+ * Streams analytics updates via SSE while page is open.
  *
  * Data source: remoteConnectionAPI.getSessionAnalytics + getTransfers
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { SessionAnalyticsResponse, TransferStatusResponse } from '@/utils/remoteConnectionAPI';
 
 interface SshLogsPageProps {
   sessionId: string;
 }
-
-const POLL_INTERVAL_MS = 30_000;
 
 interface ActivityEvent {
   time: string;
@@ -189,17 +187,12 @@ export function SshLogsPage({ sessionId }: SshLogsPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const fetchData = useCallback(async () => {
     try {
-      const [analyticsRes, transfersRes] = await Promise.allSettled([
-        remoteConnectionAPI.getSessionAnalytics(sessionId),
-        remoteConnectionAPI.getTransfers(sessionId),
-      ]);
+      const transfersRes = await remoteConnectionAPI.getTransfers(sessionId);
 
-      if (analyticsRes.status === 'fulfilled') setAnalytics(analyticsRes.value);
-      if (transfersRes.status === 'fulfilled') setTransfers(transfersRes.value);
+      setTransfers(transfersRes);
 
       setLastUpdated(new Date());
       setError(null);
@@ -211,10 +204,59 @@ export function SshLogsPage({ sessionId }: SshLogsPageProps) {
   }, [sessionId]);
 
   useEffect(() => {
-    fetchData();
-    intervalRef.current = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [fetchData]);
+    void fetchData();
+  }, [sessionId]);
+
+  useEffect(() => {
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamTransfers(
+        sessionId,
+        2000,
+        (list) => {
+          setTransfers(list);
+          setLastUpdated(new Date());
+          setError(null);
+          setLoading(false);
+        },
+        () => {
+          // Non-fatal; analytics stream can still keep the page live.
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
+
+    return () => {
+      stop?.();
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamSessionAnalytics(
+        sessionId,
+        5000,
+        (res) => {
+          setAnalytics(res);
+          setLastUpdated(new Date());
+          setError(null);
+          setLoading(false);
+        },
+        () => {
+          setError('Live analytics stream disconnected.');
+          setLoading(false);
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
+
+    return () => {
+      stop?.();
+    };
+  }, [sessionId]);
 
   if (loading) {
     return (

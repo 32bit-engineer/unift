@@ -1,19 +1,17 @@
 /**
  * Docker Monitoring — Aggregated resource usage for all Docker containers.
  * Shows Docker system info, per-container stats table with color-coded
- * resource bars, and summary row. Auto-refreshes every 5 seconds.
+ * resource bars, and summary row. Receives live updates via SSE.
  *
  * Data source: remoteConnectionAPI.getDockerInfo + getDockerContainerStats
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { DockerInfo, DockerContainerStats } from '@/utils/remoteConnectionAPI';
 
 interface DockerMonitoringPageProps {
   sessionId: string;
 }
-
-const POLL_INTERVAL_MS = 5_000;
 
 function parsePercent(val: string | undefined): number {
   if (!val) return 0;
@@ -102,7 +100,7 @@ function ContainerStatsTable({ stats }: { stats: DockerContainerStats[] }) {
                 <td className="py-2 px-2 font-medium truncate max-w-[160px]" style={{ color: 'var(--color-text-primary)' }}>{s.name}</td>
                 <td className="py-2 px-2"><MiniBar percent={cpuPct} color={percentColor(cpuPct)} /></td>
                 <td className="py-2 px-2" style={{ color: 'var(--color-text-secondary)' }}>
-                  {s.memoryUsage ?? 'N/A'} / {s.memoryLimit ?? 'N/A'}
+                  {s.memoryUsage ?? 'N/A'}
                 </td>
                 <td className="py-2 px-2"><MiniBar percent={memPct} color={percentColor(memPct)} /></td>
                 <td className="py-2 px-2" style={{ color: 'var(--color-text-secondary)' }}>{s.networkIo ?? 'N/A'}</td>
@@ -141,17 +139,12 @@ export function DockerMonitoringPage({ sessionId }: DockerMonitoringPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const fetchData = useCallback(async () => {
     try {
-      const [infoRes, statsRes] = await Promise.allSettled([
-        remoteConnectionAPI.getDockerInfo(sessionId),
-        remoteConnectionAPI.getDockerContainerStats(sessionId),
-      ]);
-
-      if (infoRes.status === 'fulfilled') setInfo(infoRes.value);
-      if (statsRes.status === 'fulfilled') setStats(statsRes.value);
+      const res = await remoteConnectionAPI.getDockerOverview(sessionId);
+      setInfo(res.info);
+      setStats(res.stats);
 
       setLastUpdated(new Date());
       setError(null);
@@ -163,9 +156,37 @@ export function DockerMonitoringPage({ sessionId }: DockerMonitoringPageProps) {
   }, [sessionId]);
 
   useEffect(() => {
-    fetchData();
-    intervalRef.current = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    void fetchData();
+
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamDockerOverview(
+        sessionId,
+        5000,
+        (overview) => {
+          setInfo(overview.info);
+          setStats(overview.stats);
+          setLastUpdated(new Date());
+          setError(null);
+          setLoading(false);
+        },
+        () => {
+          setError('Live Docker stream disconnected.');
+        },
+      )
+      .then((s) => {
+        if (cancelled) {
+          s();
+        } else {
+          stop = s;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
   }, [fetchData]);
 
   if (loading) {

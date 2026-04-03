@@ -7,7 +7,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -37,7 +41,13 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Tag(name = "Docker", description = "Docker management via SSH tunnel")
 public class DockerController {
 
+        private static final long STREAM_TIMEOUT_MS = 30L * 60 * 1000;
+        private static final int MIN_STREAM_INTERVAL_MS = 1000;
+        private static final int MAX_STREAM_INTERVAL_MS = 60000;
+
     private final DockerService dockerService;
+        @Qualifier("virtualThreadExecutor")
+        private final ExecutorService virtualThreadExecutor;
 
     // -- System ----------------------------------------------------------------
 
@@ -65,6 +75,54 @@ public class DockerController {
         return ResponseEntity.ok(
                 dockerService.getOverview(sessionId, principal.user().getId()));
     }
+
+        @GetMapping(value = "/overview/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+        @Operation(summary = "Stream Docker overview snapshots via SSE")
+        public SseEmitter streamOverview(
+                        @PathVariable String sessionId,
+                        @RequestParam(defaultValue = "5000") int intervalMs,
+                        @AuthenticationPrincipal UniFtUserDetails principal) {
+                UUID ownerId = principal.user().getId();
+                int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+
+                SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
+                AtomicBoolean open = new AtomicBoolean(true);
+                emitter.onCompletion(() -> open.set(false));
+                emitter.onError(ex -> open.set(false));
+                emitter.onTimeout(() -> {
+                        open.set(false);
+                        emitter.complete();
+                });
+
+                virtualThreadExecutor.submit(() -> {
+                        while (open.get()) {
+                                try {
+                                        DockerModels.DockerOverview payload = dockerService.getOverview(sessionId, ownerId);
+                                        emitter.send(SseEmitter.event().name("overview").data(payload));
+                                        Thread.sleep(clampedIntervalMs);
+                                } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        open.set(false);
+                                        emitter.complete();
+                                        return;
+                                } catch (Exception ex) {
+                                        try {
+                                                emitter.send(
+                                                                SseEmitter.event()
+                                                                                .name("error")
+                                                                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Docker overview stream failed")));
+                                        } catch (Exception ignored) {
+                                                // Ignore nested emitter failures while unwinding stream.
+                                        }
+                                        open.set(false);
+                                        emitter.completeWithError(ex);
+                                        return;
+                                }
+                        }
+                });
+
+                return emitter;
+        }
 
     // -- Containers ------------------------------------------------------------
 
@@ -220,6 +278,54 @@ public class DockerController {
         return ResponseEntity.ok(
                 dockerService.getContainerStats(sessionId, principal.user().getId()));
     }
+
+        @GetMapping(value = "/containers/stats/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+        @Operation(summary = "Stream point-in-time stats for all running containers via SSE")
+        public SseEmitter streamContainerStatsAll(
+                        @PathVariable String sessionId,
+                        @RequestParam(defaultValue = "5000") int intervalMs,
+                        @AuthenticationPrincipal UniFtUserDetails principal) {
+                UUID ownerId = principal.user().getId();
+                int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+
+                SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
+                AtomicBoolean open = new AtomicBoolean(true);
+                emitter.onCompletion(() -> open.set(false));
+                emitter.onError(ex -> open.set(false));
+                emitter.onTimeout(() -> {
+                        open.set(false);
+                        emitter.complete();
+                });
+
+                virtualThreadExecutor.submit(() -> {
+                        while (open.get()) {
+                                try {
+                                        List<DockerModels.ContainerStats> payload = dockerService.getContainerStats(sessionId, ownerId);
+                                        emitter.send(SseEmitter.event().name("stats").data(payload));
+                                        Thread.sleep(clampedIntervalMs);
+                                } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        open.set(false);
+                                        emitter.complete();
+                                        return;
+                                } catch (Exception ex) {
+                                        try {
+                                                emitter.send(
+                                                                SseEmitter.event()
+                                                                                .name("error")
+                                                                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Docker stats stream failed")));
+                                        } catch (Exception ignored) {
+                                                // Ignore nested emitter failures while unwinding stream.
+                                        }
+                                        open.set(false);
+                                        emitter.completeWithError(ex);
+                                        return;
+                                }
+                        }
+                });
+
+                return emitter;
+        }
 
     @GetMapping(value = "/containers/{id}/stats/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "Stream live stats for a container via SSE")

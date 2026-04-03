@@ -137,14 +137,18 @@ public class DockerServiceImpl implements DockerService {
                     .join();
 
             var sysInfo = DockerMappers.toSystemInfo(infoFuture.join());
-            var running = containersFuture.join().stream()
+            var rawContainers = containersFuture.join();
+            var running = rawContainers.stream()
                     .map(DockerMappers::toContainer)
                     .toList();
+
+            // Stats are best-effort: a timeout here degrades to empty stats, not a failed overview.
+            var stats = fetchStatsForContainers(client, rawContainers);
 
             return DockerModels.DockerOverview.builder()
                     .info(sysInfo)
                     .runningContainers(running)
-                    .stats(List.of())
+                    .stats(stats)
                     .build();
         } catch (Exception e) {
             log.warn("[docker] Failed to get overview for session {}: {}", sessionId, e.getMessage());
@@ -155,6 +159,31 @@ public class DockerServiceImpl implements DockerService {
                     .runningContainers(List.of())
                     .stats(List.of())
                     .build();
+        }
+    }
+
+    /**
+     * Fetches live stats for each container in parallel using virtual threads.
+     * Returns an empty list on partial failure or timeout rather than propagating the exception,
+     * so a slow Docker stats API never degrades the full overview response.
+     */
+    private List<DockerModels.ContainerStats> fetchStatsForContainers(
+            DockerClient client, List<Container> containers) {
+        if (containers.isEmpty()) return List.of();
+        try {
+            List<CompletableFuture<DockerModels.ContainerStats>> futures = containers.stream()
+                    .map(c -> CompletableFuture.supplyAsync(() -> fetchSingleStat(client, c.getId())))
+                    .toList();
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                    .orTimeout(10, TimeUnit.SECONDS)
+                    .join();
+            return futures.stream()
+                    .map(CompletableFuture::join)
+                    .filter(Objects::nonNull)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("[docker] Stats fetch incomplete for overview (partial or timeout): {}", e.getMessage());
+            return List.of();
         }
     }
 

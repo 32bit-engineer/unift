@@ -7,7 +7,7 @@
  * Data source: DockerController.getOverview
  * via remoteConnectionAPI.getDockerOverview
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type {
@@ -37,7 +37,6 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
   const [sortBy, setSortBy] = useState<'name' | 'cpu' | 'memory'>('name');
   const [refreshInterval, setRefreshInterval] = useState(0);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const fetchOverview = useCallback(async () => {
     try {
@@ -57,12 +56,36 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
   }, [fetchOverview]);
 
   useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (refreshInterval > 0) {
-      intervalRef.current = setInterval(fetchOverview, refreshInterval);
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [refreshInterval, fetchOverview]);
+    if (refreshInterval <= 0) return;
+
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamDockerOverview(
+        sessionId,
+        refreshInterval,
+        (res) => {
+          setOverview(res);
+          setError(null);
+          setLoading(false);
+        },
+        () => {
+          setError('Live Docker overview stream disconnected.');
+        },
+      )
+      .then((s) => {
+        if (cancelled) {
+          s();
+        } else {
+          stop = s;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [refreshInterval, sessionId]);
 
   const handleContainerAction = useCallback(async (
     containerId: string,

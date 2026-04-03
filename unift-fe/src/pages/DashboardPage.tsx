@@ -515,6 +515,7 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
   const [transferStats, setTransferStats]   = useState<TransferHistoryStatsResponse | null>(null);
   const [liveUpdates, setLiveUpdates]       = useState(true);
   const hasFetched = useRef(false);
+  const analyticsStopFns = useRef<Map<string, () => void>>(new Map());
 
   const fetchTransferStats = useEffectEvent(async () => {
     try {
@@ -554,19 +555,73 @@ export function DashboardPage({ sessions, onNavigateToSessions, onNavigateToTran
 
   useEffect(() => {
     void fetchAllAnalytics();
-  }, [sessions, fetchAllAnalytics]);
+  }, [sessions]);
 
-  // Live poll every 30s when live updates are on
+  // Live stream analytics while updates are enabled.
+  useEffect(() => {
+    const stopFns = analyticsStopFns.current;
+    for (const stop of stopFns.values()) stop();
+    stopFns.clear();
+
+    if (!liveUpdates) return;
+
+    const online = sessions.filter((s) => s.status === 'online');
+    if (online.length === 0) return;
+
+    for (const s of online) {
+      void remoteConnectionAPI
+        .streamSessionAnalytics(
+          s.sessionId,
+          5000,
+          (analytics) => {
+            setAnalyticsMap((prev) => {
+              const next = new Map(prev);
+              next.set(s.sessionId, analytics);
+              return next;
+            });
+            if (!hasFetched.current) {
+              hasFetched.current = true;
+              setAnalyticsLoading(false);
+            }
+          },
+          () => {
+            if (!hasFetched.current) {
+              hasFetched.current = true;
+              setAnalyticsLoading(false);
+            }
+          },
+        )
+        .then((stop) => {
+          stopFns.set(s.sessionId, stop);
+        });
+    }
+
+    return () => {
+      for (const stop of stopFns.values()) stop();
+      stopFns.clear();
+    };
+  }, [liveUpdates, sessions]);
+
+  // Stream transfer history aggregate stats while live updates are enabled.
   useEffect(() => {
     if (!liveUpdates) return;
-    const id = setInterval(() => void fetchAllAnalytics(), 30_000);
-    return () => clearInterval(id);
-  }, [liveUpdates, fetchAllAnalytics]);
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamTransferHistoryStats(
+        15000,
+        (stats) => setTransferStats(stats),
+        () => {
+          void fetchTransferStats();
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
 
-  // Fetch transfer history stats once
-  useEffect(() => {
-    void fetchTransferStats();
-  }, [fetchTransferStats]);
+    return () => {
+      stop?.();
+    };
+  }, [liveUpdates]);
 
   // Derived aggregate metrics
   const onlineSessions  = sessions.filter(s => s.status === 'online');
