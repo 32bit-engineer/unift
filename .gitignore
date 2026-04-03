@@ -87,3 +87,9 @@ tests/copilot/tests
 tests/codex/tests
 
 .github/agentsss
+
+# .dockerignore
+.env
+.env.*
+node_modules
+dist

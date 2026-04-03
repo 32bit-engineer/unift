@@ -23,7 +23,7 @@ ENV VITE_ENABLE_DARK_MODE=$VITE_ENABLE_DARK_MODE
 
 RUN npm run build
 
-
+ 
 #  Stage 2 — Backend build (with frontend embedded)
 FROM openjdk:24-ea-jdk-slim AS backend-builder
 

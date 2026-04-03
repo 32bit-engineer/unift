@@ -105,7 +105,7 @@ jobs:
           # runtime (e.g. via env var in your deployment) to avoid busting the
           # Docker layer cache on every commit.
           build-args: |
-            VITE_API_BASE_URL=/api
+            VITE_API_BASE_URL=
             VITE_APP_NAME=UniFT
             VITE_ENABLE_DARK_MODE=true
           tags: ${{ steps.meta-fe.outputs.tags }}
