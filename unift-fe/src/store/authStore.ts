@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { apiClient, tokenStorage } from '@/utils/apiClient';
-import { API_ENDPOINTS } from '@/config/api.config';
+import { API_BASE_URL, API_ENDPOINTS } from '@/config/api.config';
 import type {
   AuthUser,
   AuthResponse,
@@ -49,11 +49,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (payload) => {
     set({ isLoading: true, error: null });
     try {
+
+      console.log('route:', API_BASE_URL);
       const res = await apiClient.post<AuthResponse>(
         API_ENDPOINTS.auth.login,
         payload,
         { skipAuth: true },
       );
+
       tokenStorage.setAccess(res.access_token);
       tokenStorage.setRefresh(res.refresh_token);
       const username = decodeUsername(res.access_token) ?? payload.username;

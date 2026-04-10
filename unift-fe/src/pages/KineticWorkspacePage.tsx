@@ -1,5 +1,5 @@
 // ─── KineticWorkspacePage ───────────────────────────────────────────────────
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Terminal } from '@/components/ui';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
@@ -146,7 +146,6 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 function OverviewPanel({ session }: { session: UIHost }) {
   const [analytics, setAnalytics] = useState<SessionAnalyticsResponse | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  const intervalRef = useRef<number | null>(null);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -161,9 +160,25 @@ function OverviewPanel({ session }: { session: UIHost }) {
 
   useEffect(() => {
     void fetchAnalytics();
-    intervalRef.current = window.setInterval(fetchAnalytics, 5000);
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamSessionAnalytics(
+        session.sessionId,
+        5000,
+        (data) => {
+          setAnalytics(data);
+          setAnalyticsLoading(false);
+        },
+        () => {
+          // Non-fatal; keep last visible state.
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      stop?.();
     };
   }, [fetchAnalytics]);
 

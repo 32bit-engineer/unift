@@ -898,6 +898,69 @@ const STREAM_BASE = '/api/stream';
 const TRANSFER_HISTORY_BASE = '/api/transfers/history';
 const UPLOADS_BASE = '/api/uploads/sessions';
 
+async function streamSse<T>(
+  url: string,
+  onData: (payload: T) => void,
+  onError: (err: string) => void,
+  transform?: (value: unknown) => T,
+): Promise<() => void> {
+  const controller = new AbortController();
+  (async () => {
+    try {
+      const res = await authenticatedFetch(url, { signal: controller.signal });
+      if (!res.ok || !res.body) {
+        onError(`HTTP ${res.status}`);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = '';
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            currentEvent = line.slice(6).trim();
+            continue;
+          }
+
+          if (line.startsWith('data:')) {
+            const raw = line.slice(5).trimStart();
+            if (currentEvent === 'error') {
+              onError(raw || 'Stream error');
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(raw) as unknown;
+              onData(transform ? transform(parsed) : (parsed as T));
+            } catch {
+              // Ignore keepalive/non-JSON lines.
+            }
+            continue;
+          }
+
+          if (line === '') {
+            currentEvent = '';
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      onError(err instanceof Error ? err.message : 'Stream failed');
+    }
+  })();
+
+  return () => controller.abort();
+}
+
 export const remoteConnectionAPI = {
   connect: (request: ConnectRequest) =>
     apiClient.post<SessionState>(`${BASE}/sessions`, request),
@@ -990,6 +1053,20 @@ export const remoteConnectionAPI = {
   getTransfers: (sessionId: string) =>
     apiClient.get<TransferStatusResponse[]>(`${BASE}/sessions/${sessionId}/transfers`),
 
+  /**
+   * Streams transfer statuses for a session via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamTransfers: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (transfers: TransferStatusResponse[]) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/transfers/stream?intervalMs=${Math.max(500, intervalMs)}`;
+    return streamSse<TransferStatusResponse[]>(url, onData, onError);
+  },
+
   getTransfer: (sessionId: string, transferId: string) =>
     apiClient.get<TransferStatusResponse>(`${BASE}/sessions/${sessionId}/transfers/${transferId}`),
 
@@ -1079,6 +1156,20 @@ export const remoteConnectionAPI = {
     apiClient.get<SessionAnalyticsResponse>(`${BASE}/sessions/${sessionId}/analytics`),
 
   /**
+   * Streams live session analytics snapshots via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamSessionAnalytics: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (analytics: SessionAnalyticsResponse) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/analytics/stream?intervalMs=${Math.max(1000, intervalMs)}`;
+    return streamSse<SessionAnalyticsResponse>(url, onData, onError);
+  },
+
+  /**
    * Returns historical analytics snapshots for a session (newest-first).
    * Endpoint: GET /sessions/{sessionId}/analytics/history
    */
@@ -1107,6 +1198,19 @@ export const remoteConnectionAPI = {
   /** Aggregate transfer statistics for the authenticated user. */
   getTransferHistoryStats: () =>
     apiClient.get<TransferHistoryStatsResponse>(`${TRANSFER_HISTORY_BASE}/stats`),
+
+  /**
+   * Streams aggregate transfer-history stats via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamTransferHistoryStats: async (
+    intervalMs: number,
+    onData: (stats: TransferHistoryStatsResponse) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${TRANSFER_HISTORY_BASE}/stats/stream?intervalMs=${Math.max(1000, intervalMs)}`;
+    return streamSse<TransferHistoryStatsResponse>(url, onData, onError);
+  },
 
   /** Returns a single transfer log entry by ID. */
   getTransferHistoryEntry: (id: string) =>
@@ -1165,6 +1269,73 @@ export const remoteConnectionAPI = {
         stats: overview.stats.map(normalizeDockerStats),
       })),
 
+  /**
+   * Streams Docker overview snapshots via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamDockerOverview: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (overview: DockerOverview) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/overview/stream?intervalMs=${Math.max(1000, intervalMs)}`;
+    return streamSse<DockerOverview>(
+      url,
+      onData,
+      onError,
+      (value) => {
+        const overview = value as RawDockerOverview;
+        return {
+          info: normalizeDockerInfo(overview.info),
+          runningContainers: overview.runningContainers.map(normalizeDockerContainer),
+          stats: overview.stats.map(normalizeDockerStats),
+        };
+      },
+    );
+  },
+
+  /**
+   * Streams Docker system info (engine version, OS, container/image counts) via SSE.
+   * Default interval 30 s — engine metadata and counts change infrequently.
+   * Stream remains active until the returned stop function is called.
+   */
+  streamDockerSystemInfo: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (info: DockerInfo) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/system-info/stream?intervalMs=${Math.max(5000, intervalMs)}`;
+    return streamSse<DockerInfo>(
+      url,
+      onData,
+      onError,
+      (value) => normalizeDockerInfo(value as RawDockerInfo),
+    );
+  },
+
+  /**
+   * Streams the flat list of currently running containers via SSE (no stats).
+   * Default interval 5 s — updates when containers start or stop.
+   * Combine with streamDockerContainerStatsAll for live per-container metrics.
+   * Stream remains active until the returned stop function is called.
+   */
+  streamDockerRunningContainers: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (containers: DockerContainer[]) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/running/stream?intervalMs=${Math.max(1000, intervalMs)}`;
+    return streamSse<DockerContainer[]>(
+      url,
+      onData,
+      onError,
+      (value) => (value as RawDockerContainer[]).map(normalizeDockerContainer),
+    );
+  },
+
   /** Lists Docker containers with optional pagination. */
   listDockerContainers: (sessionId: string, all = true, page = 0, pageSize = 20) =>
     apiClient
@@ -1183,6 +1354,25 @@ export const remoteConnectionAPI = {
     apiClient
       .get<RawDockerStats[]>(`${BASE}/sessions/${sessionId}/docker/containers/stats`)
       .then((stats) => stats.map(normalizeDockerStats)),
+
+  /**
+   * Streams point-in-time stats for all running containers via SSE.
+   * Returns a stop function to abort the stream.
+   */
+  streamDockerContainerStatsAll: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (stats: DockerContainerStats[]) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/stats/stream?intervalMs=${Math.max(1000, intervalMs)}`;
+    return streamSse<DockerContainerStats[]>(
+      url,
+      onData,
+      onError,
+      (value) => (value as RawDockerStats[]).map(normalizeDockerStats),
+    );
+  },
 
   /** Starts a stopped container. */
   startDockerContainer: (sessionId: string, containerId: string) =>
@@ -1341,6 +1531,7 @@ export const remoteConnectionAPI = {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEvent = '';
         // eslint-disable-next-line no-constant-condition
         while (true) {
           const { done, value } = await reader.read();
@@ -1349,7 +1540,18 @@ export const remoteConnectionAPI = {
           const parts = buffer.split('\n');
           buffer = parts.pop() ?? '';
           for (const part of parts) {
-            if (part.startsWith('data:')) {
+            if (part.startsWith('event:')) {
+              currentEvent = part.slice(6).trim();
+            } else if (part.startsWith('data:')) {
+              if (currentEvent === 'error') {
+                let msg = part.slice(5).trimStart();
+                try { msg = (JSON.parse(msg) as { message?: string }).message ?? msg; } catch { /* keep raw */ }
+                onError(msg);
+                return;
+              }
+              if (currentEvent === 'end') {
+                return;
+              }
               try {
                 const parsed = JSON.parse(part.slice(5).trimStart()) as RawDockerStats;
                 const normalized = normalizeDockerStats(parsed);
@@ -1358,6 +1560,8 @@ export const remoteConnectionAPI = {
                   pids: parsed.pids,
                 });
               } catch { /* skip non-JSON lines */ }
+            } else if (part === '') {
+              currentEvent = '';
             }
           }
         }

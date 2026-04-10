@@ -66,6 +66,33 @@ public class DockerController {
                 dockerService.getOverview(sessionId, principal.user().getId()));
     }
 
+    @GetMapping(value = "/overview/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream Docker overview snapshots via SSE")
+    public SseEmitter streamOverview(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "5000") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        return dockerService.streamOverview(sessionId, principal.user().getId(), intervalMs);
+    }
+
+    @GetMapping(value = "/system-info/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream Docker system info (engine metadata + counts) via SSE")
+    public SseEmitter streamSystemInfo(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "30000") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        return dockerService.streamSystemInfo(sessionId, principal.user().getId(), intervalMs);
+    }
+
+    @GetMapping(value = "/containers/running/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream the list of running containers via SSE (no stats)")
+    public SseEmitter streamRunningContainers(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "5000") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        return dockerService.streamRunningContainers(sessionId, principal.user().getId(), intervalMs);
+    }
+
     // -- Containers ------------------------------------------------------------
 
     @GetMapping("/containers")
@@ -219,6 +246,15 @@ public class DockerController {
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
         return ResponseEntity.ok(
                 dockerService.getContainerStats(sessionId, principal.user().getId()));
+    }
+
+    @GetMapping(value = "/containers/stats/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream point-in-time stats for all running containers via SSE")
+    public SseEmitter streamContainerStatsAll(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "5000") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        return dockerService.streamContainerStatsAll(sessionId, principal.user().getId(), intervalMs);
     }
 
     @GetMapping(value = "/containers/{id}/stats/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

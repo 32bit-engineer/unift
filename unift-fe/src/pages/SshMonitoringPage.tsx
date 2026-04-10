@@ -1,19 +1,17 @@
 /**
  * SSH Session Monitoring — Displays live analytics for an active SSH session
  * including latency, packet loss, throughput, system metrics, traffic history,
- * and connection metadata. Polls every 10 seconds.
+ * and connection metadata via SSE push updates.
  *
  * Data source: remoteConnectionAPI.getSessionAnalytics(sessionId)
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { SessionAnalyticsResponse, TrafficDataPoint } from '@/utils/remoteConnectionAPI';
 
 interface SshMonitoringPageProps {
   sessionId: string;
 }
-
-const POLL_INTERVAL_MS = 10_000;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -133,7 +131,6 @@ export function SshMonitoringPage({ sessionId }: SshMonitoringPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -149,9 +146,29 @@ export function SshMonitoringPage({ sessionId }: SshMonitoringPageProps) {
   }, [sessionId]);
 
   useEffect(() => {
+    let stop: (() => void) | null = null;
     fetchAnalytics();
-    intervalRef.current = setInterval(fetchAnalytics, POLL_INTERVAL_MS);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    void remoteConnectionAPI
+      .streamSessionAnalytics(
+        sessionId,
+        5000,
+        (res) => {
+          setAnalytics(res);
+          setLastUpdated(new Date());
+          setError(null);
+          setLoading(false);
+        },
+        () => {
+          setError('Live analytics stream disconnected.');
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
+
+    return () => {
+      stop?.();
+    };
   }, [fetchAnalytics]);
 
   if (loading) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTransferStore } from '@/store/transferStore';
 import { remoteConnectionAPI, type TransferStatusResponse, type TransferState } from '@/utils/remoteConnectionAPI';
 
@@ -12,8 +12,8 @@ interface TransferProgressPopupProps {
 // Maximum number of completed/failed entries shown in the popup
 const MAX_RECENT = 5;
 
-// How many milliseconds between global polls of active transfers
-const POLL_INTERVAL_MS = 2000;
+// How many milliseconds between server-side transfer snapshots in SSE streams
+const STREAM_INTERVAL_MS = 1500;
 
 // Returns a short filename from a remote path
 function fileName(remotePath: string): string {
@@ -47,6 +47,7 @@ const STATE_COLOR: Record<TransferState, string> = {
 export function TransferProgressPopup({ sessionIds, onViewAll }: TransferProgressPopupProps) {
   const { transfersBySession, setTransfers } = useTransferStore();
   const [expanded, setExpanded] = useState(false);
+  const streamStopsRef = useRef<Map<string, () => void>>(new Map());
 
   // Flatten all transfers sorted newest first (by startedAt desc)
   const allTransfers: (TransferStatusResponse & { sessionId: string })[] =
@@ -67,28 +68,33 @@ export function TransferProgressPopup({ sessionIds, onViewAll }: TransferProgres
 
   const displayedTransfers = [...activeTransfers, ...recentCompleted];
 
-  // Poll only sessions that have in-flight transfers — sessions with no active
-  // transfers don't need continuous updates and should not generate network traffic.
-  const pollAll = useCallback(async () => {
-    const sessionsWithActive = Object.entries(transfersBySession)
-      .filter(([, list]) => list.some(t => t.state === 'PENDING' || t.state === 'IN_PROGRESS'))
-      .map(([id]) => id);
-
-    for (const sessionId of sessionsWithActive) {
-      try {
-        const list = await remoteConnectionAPI.getTransfers(sessionId);
-        setTransfers(sessionId, list);
-      } catch {
-        // Non-critical — session may have expired
-      }
-    }
-  }, [transfersBySession, setTransfers]);
-
   useEffect(() => {
+    const stopFns = streamStopsRef.current;
+    for (const stop of stopFns.values()) stop();
+    stopFns.clear();
+
     if (!expanded && activeTransfers.length === 0) return;
-    const id = setInterval(() => void pollAll(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [expanded, activeTransfers.length, pollAll]);
+
+    for (const sessionId of sessionIds) {
+      void remoteConnectionAPI
+        .streamTransfers(
+          sessionId,
+          STREAM_INTERVAL_MS,
+          (list) => setTransfers(sessionId, list),
+          () => {
+            // Non-critical — session may have expired.
+          },
+        )
+        .then((stop) => {
+          stopFns.set(sessionId, stop);
+        });
+    }
+
+    return () => {
+      for (const stop of stopFns.values()) stop();
+      stopFns.clear();
+    };
+  }, [expanded, activeTransfers.length, sessionIds, setTransfers]);
 
   // Initial fetch when a new session appears
   useEffect(() => {

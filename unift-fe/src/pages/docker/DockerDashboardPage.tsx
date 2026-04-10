@@ -1,29 +1,23 @@
 /**
- * Docker Dashboard — Overview panel showing container counts, resource usage,
- * active containers with live stats, and a recent activity feed.
+ * Docker Dashboard — Per-component live data view.
  *
  * Design reference: designs/unift/docker_dashboard/screen.png
  *
- * Data source: DockerController.getOverview
- * via remoteConnectionAPI.getDockerOverview
+ * Each dashboard section owns its own SSE stream that starts on mount and
+ * stops on unmount — no manual refresh toggle required:
+ *   • System info (engine metadata, container counts) → /docker/system-info/stream  (30 s)
+ *   • Running containers list                         → /docker/containers/running/stream  (5 s)
+ *   • Per-container live stats (CPU, memory)          → /docker/containers/stats/stream  (3 s)
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type {
-  DockerOverview,
+  DockerInfo,
   DockerContainer,
   DockerContainerStats,
   ContainerActionResult,
 } from '@/utils/remoteConnectionAPI';
-
-const REFRESH_INTERVALS = [
-  { label: 'Off', value: 0 },
-  { label: '5s', value: 5000 },
-  { label: '10s', value: 10000 },
-  { label: '30s', value: 30000 },
-  { label: '60s', value: 60000 },
-] as const;
 
 interface DockerDashboardPageProps {
   sessionId: string;
@@ -31,38 +25,76 @@ interface DockerDashboardPageProps {
 
 export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
   const navigate = useNavigate();
-  const [overview, setOverview] = useState<DockerOverview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'name' | 'cpu' | 'memory'>('name');
-  const [refreshInterval, setRefreshInterval] = useState(0);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-  const fetchOverview = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await remoteConnectionAPI.getDockerOverview(sessionId);
-      setOverview(res);
-    } catch {
-      setError('Failed to load Docker overview. Docker may not be available on this host.');
-    } finally {
-      setLoading(false);
-    }
+  // Three independent data streams — each component owns its slice.
+  const [sysInfo, setSysInfo] = useState<DockerInfo | null>(null);
+  const [containers, setContainers] = useState<DockerContainer[]>([]);
+  const [stats, setStats] = useState<DockerContainerStats[]>([]);
+
+  // Loading clears once we receive the first system-info push.
+  const [loading, setLoading] = useState(true);
+  const [sysInfoError, setSysInfoError] = useState<string | null>(null);
+
+  const [sortBy, setSortBy] = useState<'name' | 'cpu' | 'memory'>('name');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // -- Stream 1: system info (engine metadata + container/image counts, slow 30 s cadence) ----
+  useEffect(() => {
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamDockerSystemInfo(
+        sessionId,
+        30000,
+        (info) => {
+          setSysInfo(info);
+          setLoading(false);
+          setSysInfoError(null);
+        },
+        () => setSysInfoError('Docker info stream disconnected.'),
+      )
+      .then((s) => {
+        if (cancelled) s();
+        else stop = s;
+      });
+    return () => { cancelled = true; stop?.(); };
   }, [sessionId]);
 
+  // -- Stream 2: running containers list (topology changes, moderate 5 s cadence) --------------
   useEffect(() => {
-    fetchOverview();
-  }, [fetchOverview]);
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamDockerRunningContainers(
+        sessionId,
+        5000,
+        (list) => setContainers(list),
+        () => { /* container list errors are non-critical — keep last known list */ },
+      )
+      .then((s) => {
+        if (cancelled) s();
+        else stop = s;
+      });
+    return () => { cancelled = true; stop?.(); };
+  }, [sessionId]);
 
+  // -- Stream 3: per-container live stats (fast 3 s cadence) ------------------------------------
   useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (refreshInterval > 0) {
-      intervalRef.current = setInterval(fetchOverview, refreshInterval);
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [refreshInterval, fetchOverview]);
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamDockerContainerStatsAll(
+        sessionId,
+        3000,
+        (s) => setStats(s),
+        () => { /* stats errors are non-critical — keep last known values */ },
+      )
+      .then((s) => {
+        if (cancelled) s();
+        else stop = s;
+      });
+    return () => { cancelled = true; stop?.(); };
+  }, [sessionId]);
 
   const handleContainerAction = useCallback(async (
     containerId: string,
@@ -76,27 +108,27 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
       } else {
         result = await remoteConnectionAPI.restartDockerContainer(sessionId, containerId);
       }
-      if (result.success) await fetchOverview();
+      if (result.success) {
+        // The running-containers stream will pick up the change automatically.
+        // A manual refetch is not needed.
+      }
     } catch {
       // Action failed
     } finally {
       setActionLoading(null);
     }
-  }, [sessionId, fetchOverview]);
+  }, [sessionId]);
 
   const statsMap = useMemo(() => {
     const map = new Map<string, DockerContainerStats>();
-    if (overview?.stats) {
-      for (const s of overview.stats) {
-        map.set(s.containerId, s);
-      }
+    for (const s of stats) {
+      map.set(s.containerId, s);
     }
     return map;
-  }, [overview?.stats]);
+  }, [stats]);
 
   const sortedContainers = useMemo(() => {
-    if (!overview?.runningContainers) return [];
-    const arr = [...overview.runningContainers];
+    const arr = [...containers];
 
     if (sortBy === 'name') {
       arr.sort((a, b) => a.names.localeCompare(b.names));
@@ -115,7 +147,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
     }
 
     return arr;
-  }, [overview?.runningContainers, statsMap, sortBy]);
+  }, [containers, statsMap, sortBy]);
 
   if (loading) {
     return (
@@ -126,14 +158,14 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
             style={{ borderColor: 'var(--color-border-muted)', borderTopColor: 'var(--color-primary)' }}
           />
           <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-            Loading Docker overview...
+            Connecting to Docker...
           </span>
         </div>
       </div>
     );
   }
 
-  if (error || !overview) {
+  if (sysInfoError && !sysInfo) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
@@ -144,31 +176,18 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
             error_outline
           </span>
           <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-            {error ?? 'Docker overview unavailable'}
+            {sysInfoError}
           </span>
-          <button
-            onClick={fetchOverview}
-            className="mt-2 px-4 py-1.5 rounded-md font-semibold cursor-pointer"
-            style={{
-              fontSize: '11px',
-              background: 'var(--color-primary)',
-              color: '#fff',
-            }}
-          >
-            Retry
-          </button>
         </div>
       </div>
     );
   }
 
-  const { info, stats: containerStats } = overview;
-
-  const aggregatedCpu = containerStats.reduce((sum, s) => {
+  const aggregatedCpu = stats.reduce((sum, s) => {
     return sum + parseFloat(s.cpuPercent?.replace('%', '') ?? '0');
   }, 0);
 
-  const aggregatedMem = containerStats.reduce(
+  const aggregatedMem = stats.reduce(
     (acc, s) => {
       const parts = s.memoryUsage?.split('/');
       if (parts && parts.length === 2) {
@@ -187,13 +206,13 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
         <StatCard
           icon="view_in_ar"
           label="Total"
-          value={String(info.totalContainers)}
+          value={String(sysInfo?.totalContainers ?? '-')}
           subLabel="Containers"
         />
         <StatCard
           icon="play_arrow"
           label="Running"
-          value={String(info.runningContainers).padStart(2, '0')}
+          value={String(sysInfo?.runningContainers ?? '-').padStart(2, '0')}
           subLabel="Active"
           valueColor="#4ade80"
           iconColor="#4ade80"
@@ -202,13 +221,13 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
         <StatCard
           icon="stop"
           label="Stopped"
-          value={String(info.stoppedContainers + info.pausedContainers).padStart(2, '0')}
+          value={String((sysInfo?.stoppedContainers ?? 0) + (sysInfo?.pausedContainers ?? 0)).padStart(2, '0')}
           subLabel="Paused"
           valueColor="#f87171"
           iconColor="#f87171"
           iconBg="rgba(248,113,113,0.12)"
         />
-        <CpuCard percent={aggregatedCpu} containerCount={containerStats.length} />
+        <CpuCard percent={aggregatedCpu} containerCount={stats.length} />
         <MemoryCard used={aggregatedMem.used} limit={aggregatedMem.limit} />
       </div>
 
@@ -306,11 +325,11 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
               </span>
             </div>
             <div className="flex flex-col gap-2">
-              <InfoRow label="Version" value={info.version ?? '-'} />
-              <InfoRow label="API" value={info.version ? `v${info.version.split('.').slice(0, 2).join('.')}` : '-'} />
-              <InfoRow label="OS / Arch" value={info.serverOs ?? '-'} />
-              <InfoRow label="Storage" value={info.storageDriver ?? '-'} />
-              <InfoRow label="Images" value={String(info.totalImages)} />
+              <InfoRow label="Version" value={sysInfo?.version ?? '-'} />
+              <InfoRow label="API" value={sysInfo?.version ? `v${sysInfo.version.split('.').slice(0, 2).join('.')}` : '-'} />
+              <InfoRow label="OS / Arch" value={sysInfo?.serverOs ?? '-'} />
+              <InfoRow label="Storage" value={sysInfo?.storageDriver ?? '-'} />
+              <InfoRow label="Images" value={String(sysInfo?.totalImages ?? '-')} />
             </div>
           </div>
 
@@ -373,41 +392,24 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
                 label="Volumes"
                 onClick={() => navigate(`/workspace/${sessionId}/docker/volumes`)}
               />
-              <QuickAction
-                icon="refresh"
-                label="Refresh Overview"
-                onClick={fetchOverview}
-              />
             </div>
           </div>
 
-          {/* Auto Refresh */}
+          {/* Live Stream Indicator */}
           <div
             className="rounded-lg p-4"
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <span
-              className="font-semibold uppercase tracking-[0.1em] block mb-3"
+              className="font-semibold uppercase tracking-[0.1em] block mb-2"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
-              Auto Refresh
+              Live Updates
             </span>
-            <div className="flex items-center gap-1">
-              {REFRESH_INTERVALS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setRefreshInterval(opt.value)}
-                  className="px-2.5 py-1 rounded-md font-semibold cursor-pointer transition-colors"
-                  style={{
-                    fontSize: '10px',
-                    background: refreshInterval === opt.value ? 'var(--color-primary)' : 'transparent',
-                    color: refreshInterval === opt.value ? '#fff' : 'var(--color-text-muted)',
-                    border: refreshInterval === opt.value ? 'none' : '1px solid var(--color-border-muted)',
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="flex flex-col gap-1.5">
+              <StreamStatusRow label="System Info" interval="30 s" />
+              <StreamStatusRow label="Containers" interval="5 s" />
+              <StreamStatusRow label="Stats" interval="3 s" />
             </div>
           </div>
         </div>
@@ -761,6 +763,23 @@ function QuickAction({
       </span>
       <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{label}</span>
     </button>
+  );
+}
+
+function StreamStatusRow({ label, interval }: { label: string; interval: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5">
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 animate-pulse"
+          style={{ background: '#4ade80' }}
+        />
+        <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{label}</span>
+      </div>
+      <span className="font-mono" style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
+        every {interval}
+      </span>
+    </div>
   );
 }
 

@@ -14,9 +14,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,6 +30,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * REST API for querying the persistent file-transfer history.
@@ -45,7 +51,15 @@ import org.springframework.web.bind.annotation.RestController;
 @SecurityRequirement(name = "BearerAuth")
 public class TransferHistoryController {
 
+    private static final long STATS_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
+    private static final int DEFAULT_STREAM_INTERVAL_MS = 10000;
+    private static final int MIN_STREAM_INTERVAL_MS = 1000;
+    private static final int MAX_STREAM_INTERVAL_MS = 60000;
+
     private final TransferHistoryService service;
+
+    @Qualifier("virtualThreadExecutor")
+    private final ExecutorService virtualThreadExecutor;
 
     @GetMapping
     @Operation(
@@ -80,6 +94,55 @@ public class TransferHistoryController {
         UUID userId = principal.user().getId();
         log.debug("[transfer-history] Stats requested for user {}", userId);
         return ResponseEntity.ok(service.getStats(userId));
+    }
+
+    @GetMapping(value = "/stats/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream aggregate transfer statistics via SSE")
+    public SseEmitter streamStats(
+            @RequestParam(defaultValue = "10000") int intervalMs, @AuthenticationPrincipal UniFtUserDetails principal) {
+        UUID userId = principal.user().getId();
+        int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+
+        SseEmitter emitter = new SseEmitter(STATS_STREAM_TIMEOUT_MS);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualThreadExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    TransferHistoryStatsResponse payload = service.getStats(userId);
+                    emitter.send(SseEmitter.event().name("stats").data(payload));
+                    Thread.sleep(clampedIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (java.io.IOException | IllegalStateException disconnectEx) {
+                    open.set(false);
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Transfer stats stream failed")));
+                    } catch (java.io.IOException | IllegalStateException ignored) {
+                    }
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                }
+            }
+        });
+
+        return emitter;
     }
 
     @GetMapping("/{id}")

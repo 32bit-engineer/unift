@@ -388,20 +388,30 @@ export function FileBrowser({ host, onClose, onSessionExpired, onOpenTerminal }:
     }
   };
 
-  // Auto-poll transfers while the panel is open and any transfer is active
+  // Keep transfer list live via SSE while the panel is open and any transfer is active.
   const hasActiveTransfers = transfers.some(
     t => t.state === 'PENDING' || t.state === 'IN_PROGRESS',
   );
   useEffect(() => {
     if (!showTransfers) return;
     if (!hasActiveTransfers && !opLoading) return;
-    const id = setInterval(async () => {
-      try {
-        const list = await remoteConnectionAPI.getTransfers(host.sessionId);
-        setTransfers(list);
-      } catch { /* non-critical */ }
-    }, 1500);
-    return () => clearInterval(id);
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .streamTransfers(
+        host.sessionId,
+        1500,
+        (list) => setTransfers(list),
+        () => {
+          // Non-critical; keep stale state visible.
+        },
+      )
+      .then((s) => {
+        stop = s;
+      });
+
+    return () => {
+      stop?.();
+    };
   }, [showTransfers, hasActiveTransfers, opLoading, host.sessionId]);
 
   // Mirror local transfer state to the global store so the popup stays in sync

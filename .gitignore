@@ -71,6 +71,7 @@ unift_process_doc.docx
 
 .github/agents/
 .github/copilot-instructions.md
+.github/superagent.agent.md
 
 unift/unift/docs
 unift/unift/product-info

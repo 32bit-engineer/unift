@@ -32,10 +32,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -52,6 +56,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 @RestController
@@ -64,12 +69,19 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @SecurityRequirement(name = "BearerAuth")
 public class RemoteConnectionController {
 
+    private static final long TRANSFER_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
+    private static final int MIN_STREAM_INTERVAL_MS = 500;
+    private static final int MAX_STREAM_INTERVAL_MS = 60000;
+
     private final RemoteConnectionService service;
     private final SessionRegistry sessionRegistry;
     private final DockerClientPool dockerClientPool;
     private final DockerLogStreamRegistry dockerLogStreamRegistry;
     private final K8sClientPool k8sClientPool;
     private final K8sLogStreamRegistry k8sLogStreamRegistry;
+
+    @Qualifier("virtualThreadExecutor")
+    private final ExecutorService virtualThreadExecutor;
 
     private static final Set<String> VALID_WORKSPACE_TYPES = Set.of("ssh", "docker", "kubernetes");
 
@@ -418,6 +430,55 @@ public class RemoteConnectionController {
                 service.getTransfers(sessionId, principal.user().getId());
         log.debug("Found {} transfers", transfers.size());
         return ResponseEntity.ok(transfers);
+    }
+
+    @GetMapping(value = "/sessions/{sessionId}/transfers/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream transfer statuses for a session")
+    public SseEmitter streamTransfers(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "1500") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        UUID ownerId = principal.user().getId();
+        int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+
+        SseEmitter emitter = new SseEmitter(TRANSFER_STREAM_TIMEOUT_MS);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualThreadExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    List<TransferStatusResponse> payload = service.getTransfers(sessionId, ownerId);
+                    emitter.send(SseEmitter.event().name("transfers").data(payload));
+                    Thread.sleep(clampedIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Transfer stream failed")));
+                    } catch (Exception ignored) {
+                        // Ignore nested emitter failures while unwinding stream.
+                    }
+                    open.set(false);
+                    emitter.completeWithError(ex);
+                    return;
+                }
+            }
+        });
+
+        return emitter;
     }
 
     @GetMapping("/sessions/{sessionId}/transfers/{transferId}")
