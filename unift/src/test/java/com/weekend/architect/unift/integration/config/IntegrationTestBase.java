@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -19,8 +18,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * <ul>
  *   <li>PostgreSQL (Testcontainers) — single container, started once per JVM run via static block.
  *   <li>Redis (Testcontainers) — same singleton strategy.
- *   <li>Kafka — Apache Kafka in-process via {@code @EmbeddedKafka}; broker address injected into
- *       {@code KAFKA_BOOTSTRAP_SERVERS} which the application YAML resolves.
+ *   <li>Kafka — intentionally excluded. Kafka is not yet active in production (all usages are
+ *       commented out). Re-add {@code @EmbeddedKafka} and {@code spring-kafka-test} when the
+ *       production Kafka dependency is re-enabled.
  * </ul>
  *
  * <p>Spring context is shared and cached across all subclasses (same context key), so the
@@ -31,7 +31,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@EmbeddedKafka(partitions = 1, bootstrapServersProperty = "KAFKA_BOOTSTRAP_SERVERS")
 public abstract class IntegrationTestBase {
 
     // --- Infrastructure containers (singleton for the full test suite) --------

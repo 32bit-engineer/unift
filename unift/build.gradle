@@ -39,7 +39,7 @@ dependencies {
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 	implementation 'com.fasterxml.jackson.module:jackson-module-afterburner'
 
-	implementation 'org.springframework.kafka:spring-kafka'
+//	implementation 'org.springframework.kafka:spring-kafka'
 
 	// uuid v7 implementation
 	implementation 'com.github.f4b6a3:uuid-creator:5.3.7'
@@ -95,7 +95,9 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 
 	// Embedded Kafka for integration tests
-	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	// Commented out — Kafka is not yet active in production; re-enable when spring-kafka is
+	// uncommented in the implementation block above.
+	// testImplementation 'org.springframework.kafka:spring-kafka-test'
 
 	// Apache MINA SSHD — in-process SSH/SFTP server for remote-connection tests
 	testImplementation 'org.apache.sshd:sshd-core:2.14.0'
