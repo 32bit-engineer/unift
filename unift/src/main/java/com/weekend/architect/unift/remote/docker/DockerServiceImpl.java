@@ -91,13 +91,13 @@ public class DockerServiceImpl implements DockerService {
     // -- System ----------------------------------------------------------------
 
     @Override
-    public boolean isDockerAvailable(String sessionId, UUID userId) {
+    public Map<String, Object> isDockerAvailable(String sessionId, UUID userId) {
         try {
             resolveClient(sessionId, userId).pingCmd().exec();
-            return true;
+            return Map.of("available", true);
         } catch (Exception e) {
             log.debug("[docker] Daemon not reachable for session {}: {}", sessionId, e.getMessage());
-            return false;
+            return Map.of("available", false, "cause", e.getMessage());
         }
     }
 

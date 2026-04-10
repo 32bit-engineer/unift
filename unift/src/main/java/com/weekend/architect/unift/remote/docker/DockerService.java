@@ -1,6 +1,7 @@
 package com.weekend.architect.unift.remote.docker;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -14,7 +15,7 @@ public interface DockerService {
     // -- System --
 
     /** Checks if the Docker daemon is reachable through the session's tunnel. */
-    boolean isDockerAvailable(String sessionId, UUID userId);
+    Map<String, Object> isDockerAvailable(String sessionId, UUID userId);
 
     /** Returns Docker daemon version, resource counts, and host info. */
     DockerModels.DockerSystemInfo getDockerInfo(String sessionId, UUID userId);

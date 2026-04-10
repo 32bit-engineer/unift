@@ -21,7 +21,7 @@ import com.weekend.architect.unift.remote.core.RemoteConnection;
  */
 public final class SshConnectionCache extends DelegatingRegistryCache<String, RemoteConnection> {
 
-    /** Called by {@link RegistryCacheConfig}; never instantiated directly. */
+    /** Called by {@link RegistryCacheConfig}; */
     public SshConnectionCache(RegistryCache<String, RemoteConnection> delegate) {
         super(delegate);
     }

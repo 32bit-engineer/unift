@@ -43,11 +43,11 @@ public class DockerController {
 
     @GetMapping("/status")
     @Operation(summary = "Check Docker daemon connectivity")
-    public ResponseEntity<Map<String, Boolean>> checkDocker(
+    public ResponseEntity<Map<String, Object>> checkDocker(
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
-        boolean available =
+        var response =
                 dockerService.isDockerAvailable(sessionId, principal.user().getId());
-        return ResponseEntity.ok(Map.of("available", available));
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/info")

@@ -3,6 +3,8 @@
 // dashboards to activate. Results are persisted to the saved host config so
 // reconnections restore the same workspace types automatically.
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
+
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { WorkspaceType } from '@/utils/remoteConnectionAPI';
 
@@ -79,6 +81,21 @@ export function WorkspaceDetectionModal({
           dockerResult.status === 'fulfilled' && dockerResult.value.available;
         const k8sAvailable =
           k8sResult.status === 'fulfilled' && k8sResult.value.available;
+
+        if (
+          dockerResult.status === 'fulfilled' &&
+          !dockerResult.value.available &&
+          dockerResult.value.cause?.toLowerCase().includes('socat')
+        ) {
+          toast.warning('Docker found but socat is missing', {
+            description:
+              "Docker daemon listens on /var/run/docker.sock (Unix socket) \n" +
+              "but 'socat' is not installed on the remote host. \n " +
+              "Install socat (e.g., 'apt install socat' or 'yum install socat') " +
+              "or configure Docker to listen on TCP (dockerd -H tcp://127.0.0.1:2375)",
+            duration: 10000,
+          });
+        }
 
         const caps = { docker: dockerAvailable, kubernetes: k8sAvailable };
         setCapabilities(caps);

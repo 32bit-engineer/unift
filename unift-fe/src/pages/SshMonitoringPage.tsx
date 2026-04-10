@@ -131,6 +131,10 @@ export function SshMonitoringPage({ sessionId }: SshMonitoringPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [analyticsHistory, setAnalyticsHistory] = useState<SessionAnalyticsResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -142,6 +146,19 @@ export function SshMonitoringPage({ sessionId }: SshMonitoringPageProps) {
       setError('Failed to load session analytics.');
     } finally {
       setLoading(false);
+    }
+  }, [sessionId]);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const res = await remoteConnectionAPI.getSessionAnalyticsHistory(sessionId, { limit: 10 });
+      setAnalyticsHistory(res.snapshots);
+    } catch {
+      setHistoryError('Failed to load analytics history.');
+    } finally {
+      setHistoryLoading(false);
     }
   }, [sessionId]);
 
@@ -315,10 +332,93 @@ export function SshMonitoringPage({ sessionId }: SshMonitoringPageProps) {
       </div>
 
       {/* Metadata */}
-      <div className="px-6 pb-6">
+      <div className="px-6 pb-4">
         <MetricCard title="Connection Metadata" icon="info">
           <MetadataSection data={analytics} />
         </MetricCard>
+      </div>
+
+      {/* Analytics History */}
+      <div className="px-6 pb-6">
+        <button
+          onClick={() => {
+            const next = !historyOpen;
+            setHistoryOpen(next);
+            if (next && analyticsHistory.length === 0 && !historyLoading) fetchHistory();
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            width: '100%', background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)',
+            borderRadius: historyOpen ? '10px 10px 0 0' : 10, padding: '12px 16px', cursor: 'pointer', color: 'var(--color-text-primary)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="material-symbols-rounded" style={{ fontSize: 18, color: 'var(--color-primary)' }}>history</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Analytics History</span>
+            {analyticsHistory.length > 0 && (
+              <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 10, background: 'var(--color-primary-alpha, rgba(124,109,250,0.15))', color: 'var(--color-primary)' }}>
+                {analyticsHistory.length}
+              </span>
+            )}
+          </div>
+          <span className="material-symbols-rounded" style={{ fontSize: 18, transition: 'transform 0.2s', transform: historyOpen ? 'rotate(180deg)' : 'none' }}>expand_more</span>
+        </button>
+
+        {historyOpen && (
+          <div style={{
+            border: '1px solid var(--color-border-muted)', borderTop: 'none',
+            borderRadius: '0 0 10px 10px', overflow: 'hidden',
+          }}>
+            {historyLoading && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+                <span className="material-symbols-rounded" style={{ fontSize: 24, color: 'var(--color-primary)', animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              </div>
+            )}
+            {historyError && (
+              <p style={{ textAlign: 'center', color: '#f87171', fontSize: 13, padding: '16px 0' }}>{historyError}</p>
+            )}
+            {!historyLoading && !historyError && analyticsHistory.length === 0 && (
+              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13, padding: '24px 0' }}>No history snapshots available.</p>
+            )}
+            {!historyLoading && analyticsHistory.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--color-surface-secondary, rgba(255,255,255,0.03))' }}>
+                      {['Time', 'Latency Avg', 'Packet Loss', 'CPU', 'Memory', 'Disk'].map((h) => (
+                        <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border-muted)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analyticsHistory.map((snap, i) => (
+                      <tr key={snap.generatedAt + i} style={{ borderBottom: '1px solid var(--color-border-muted)' }}>
+                        <td style={{ padding: '10px 14px', color: 'var(--color-text-secondary)', fontFamily: "'DM Mono', monospace" }}>
+                          {new Date(snap.generatedAt).toLocaleTimeString()}
+                        </td>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, color: snap.latency.unavailable ? 'var(--color-text-muted)' : latencyColor(snap.latency.avgMs) }}>
+                          {snap.latency.unavailable ? '—' : `${snap.latency.avgMs.toFixed(1)} ms`}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: snap.packetLoss.unavailable ? 'var(--color-text-muted)' : percentColor(snap.packetLoss.lossPercent) }}>
+                          {snap.packetLoss.unavailable ? '—' : `${snap.packetLoss.lossPercent.toFixed(1)}%`}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: snap.systemMetrics.unavailable ? 'var(--color-text-muted)' : snap.systemMetrics.cpuPercent != null ? percentColor(snap.systemMetrics.cpuPercent) : 'var(--color-text-muted)' }}>
+                          {snap.systemMetrics.unavailable || snap.systemMetrics.cpuPercent == null ? '—' : `${snap.systemMetrics.cpuPercent.toFixed(1)}%`}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: snap.systemMetrics.unavailable ? 'var(--color-text-muted)' : snap.systemMetrics.memoryUsedPercent != null ? percentColor(snap.systemMetrics.memoryUsedPercent) : 'var(--color-text-muted)' }}>
+                          {snap.systemMetrics.unavailable || snap.systemMetrics.memoryUsedPercent == null ? '—' : `${snap.systemMetrics.memoryUsedPercent.toFixed(1)}%`}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: snap.systemMetrics.unavailable ? 'var(--color-text-muted)' : snap.systemMetrics.diskUsedPercent != null ? percentColor(snap.systemMetrics.diskUsedPercent) : 'var(--color-text-muted)' }}>
+                          {snap.systemMetrics.unavailable || snap.systemMetrics.diskUsedPercent == null ? '—' : `${snap.systemMetrics.diskUsedPercent.toFixed(1)}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

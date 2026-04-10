@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTransferStore } from '@/store/transferStore';
-import { remoteConnectionAPI, type TransferStatusResponse, type TransferState } from '@/utils/remoteConnectionAPI';
+import { remoteConnectionAPI, type TransferStatusResponse, type TransferState, type TransferHistoryStatsResponse } from '@/utils/remoteConnectionAPI';
 
 interface TransferHistoryPageProps {
   sessionIds: string[];
@@ -49,14 +49,14 @@ function StateBadge({ state }: { state: TransferState }) {
 
 export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
   const { transfersBySession, setTransfers } = useTransferStore();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(sessionIds.length > 0);
   const [filterState, setFilterState] = useState<FilterState>('ALL');
   const [filterDirection, setFilterDirection] = useState<FilterDirection>('ALL');
+  const [transferStats, setTransferStats] = useState<TransferHistoryStatsResponse | null>(null);
 
   // Fetch all transfers for all known sessions
   const refreshAll = useCallback(async () => {
     if (sessionIds.length === 0) return;
-    setLoading(true);
     await Promise.all(
       sessionIds.map(id =>
         remoteConnectionAPI
@@ -71,6 +71,22 @@ export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
+
+  useEffect(() => {
+    let stop: (() => void) | null = null;
+    void remoteConnectionAPI
+      .getTransferHistoryStats()
+      .then((s) => setTransferStats(s))
+      .catch(() => {});
+    void remoteConnectionAPI
+      .streamTransferHistoryStats(
+        30_000,
+        (s) => setTransferStats(s),
+        () => {},
+      )
+      .then((s) => { stop = s; });
+    return () => { stop?.(); };
+  }, []);
 
   // Flatten + sort newest first
   const allTransfers: (TransferStatusResponse & { sessionId: string })[] =
@@ -108,7 +124,7 @@ export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
             </span>
           )}
           <button
-            onClick={() => void refreshAll()}
+            onClick={() => { setLoading(true); void refreshAll(); }}
             disabled={loading}
             title="Refresh all transfers"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#13131E] border border-[#1E1E2E] rounded text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#171724] transition-colors cursor-pointer disabled:opacity-50"
@@ -122,6 +138,26 @@ export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
           </button>
         </div>
       </div>
+
+      {/* Stats cards */}
+      {transferStats && (
+        <div className="grid grid-cols-2 gap-3 mb-5 shrink-0 sm:grid-cols-3 lg:grid-cols-5">
+          <StatsCard label="Total" value={String(transferStats.totalTransfers)} icon="swap_vert" />
+          <StatsCard label="Completed" value={String(transferStats.completedTransfers)} icon="check_circle" accent="#4ade80" />
+          <StatsCard label="Failed" value={String(transferStats.failedTransfers)} icon="cancel" accent="#f87171" />
+          <StatsCard
+            label="Transferred"
+            value={transferStats.totalBytesTransferred != null ? formatBytes(transferStats.totalBytesTransferred) : '—'}
+            icon="storage"
+            accent="#7C6DFA"
+          />
+          <StatsCard
+            label="Avg Speed"
+            value={transferStats.avgSpeedBps != null ? formatBytes(transferStats.avgSpeedBps) + '/s' : '—'}
+            icon="speed"
+          />
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
@@ -280,6 +316,18 @@ function TransferHistoryRow({ transfer: t }: TransferHistoryRowProps) {
         <span className="text-[10px] font-mono text-slate-500">
           {formatRelativeTime(t.startedAt)}
         </span>
+      </div>
+    </div>
+  );
+}
+
+function StatsCard({ label, value, icon, accent }: { label: string; value: string; icon: string; accent?: string }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 bg-[#13131E] border border-[#1E1E2E] rounded-lg">
+      <span className="material-symbols-rounded text-lg" style={{ color: accent ?? '#94a3b8' }}>{icon}</span>
+      <div className="min-w-0">
+        <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider truncate">{label}</div>
+        <div className="text-sm font-bold mt-0.5 truncate" style={{ color: accent ?? '#e2e8f0' }}>{value}</div>
       </div>
     </div>
   );

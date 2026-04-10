@@ -726,6 +726,20 @@ export interface StatefulSetPage {
   total: number;
 }
 
+/** One revision entry from a deployment's rollout history. */
+export interface K8sRolloutRevision {
+  revision: number;
+  changeReason: string;
+  image: string;
+  createdAt: string;
+}
+
+export interface K8sRolloutHistory {
+  deploymentName: string;
+  namespace: string;
+  revisions: K8sRolloutRevision[];
+}
+
 function formatDockerBytes(bytes: number | null | undefined): string {
   const safeBytes = Math.max(0, bytes ?? 0);
   if (safeBytes === 0) return '0 B';
@@ -1251,7 +1265,7 @@ export const remoteConnectionAPI = {
 
   /** Checks if Docker is available on the remote host. */
   checkDockerAvailable: (sessionId: string) =>
-    apiClient.get<{ available: boolean }>(`${BASE}/sessions/${sessionId}/docker/status`),
+    apiClient.get<{ available: boolean; cause?: string }>(`${BASE}/sessions/${sessionId}/docker/status`),
 
   /** Returns Docker daemon info (version, container/image counts, OS). */
   getDockerInfo: (sessionId: string) =>
@@ -1741,6 +1755,14 @@ export const remoteConnectionAPI = {
   /** Scales a deployment to the specified number of replicas. */
   scaleK8sDeployment: (sessionId: string, deploymentName: string, replicas: number, namespace = 'default') =>
     apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/deployments/${encodeURIComponent(deploymentName)}/scale?namespace=${encodeURIComponent(namespace)}&replicas=${replicas}`, {}),
+
+  /** Returns the rollout history (ReplicaSet revisions) for a deployment. */
+  getK8sDeploymentRolloutHistory: (sessionId: string, deploymentName: string, namespace = 'default') =>
+    apiClient.get<K8sRolloutHistory>(`${BASE}/sessions/${sessionId}/k8s/deployments/${encodeURIComponent(deploymentName)}/rollout/history?namespace=${encodeURIComponent(namespace)}`),
+
+  /** Rolls back a deployment to a specific revision (0 = previous). */
+  undoK8sDeploymentRollout: (sessionId: string, deploymentName: string, revision: number, namespace = 'default') =>
+    apiClient.post<PodActionResult>(`${BASE}/sessions/${sessionId}/k8s/deployments/${encodeURIComponent(deploymentName)}/rollout/undo?namespace=${encodeURIComponent(namespace)}&revision=${revision}`, {}),
 
   /** Restarts a deployment via rollout restart. */
   restartK8sDeployment: (sessionId: string, deploymentName: string, namespace = 'default') =>

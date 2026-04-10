@@ -200,6 +200,8 @@ export function Sidebar({
   const navigate = useNavigate();
   const [activeSessionsOpen, setActiveSessionsOpen] = useState(true);
   const [savedConnectionsOpen, setSavedConnectionsOpen] = useState(true);
+  const [dockerOpen, setDockerOpen] = useState(true);
+  const [k8sOpen, setK8sOpen] = useState(true);
 
   const isInWorkspace = workspaceSessionName !== null;
 
@@ -228,7 +230,7 @@ export function Sidebar({
 
   return (
     <aside
-      className="w-52 flex flex-col shrink-0"
+      className="w-60 flex flex-col shrink-0"
       style={{
         background:  'var(--color-surface)',
         borderRight: '1px solid var(--color-border-muted)',
@@ -300,9 +302,13 @@ export function Sidebar({
             </div>
 
             {workspaceDockerNav.length > 0 && (
-              <>
-                <SectionLabel>Docker</SectionLabel>
-                <div className="flex flex-col gap-0.5 px-1">
+              <AccordionSection
+                title="Docker"
+                count={0}
+                isOpen={dockerOpen}
+                onToggle={() => setDockerOpen(p => !p)}
+              >
+                <div className="flex flex-col gap-0.5 px-1 pb-1">
                   {workspaceDockerNav.map(item => (
                     <NavButton
                       key={item.id}
@@ -312,13 +318,17 @@ export function Sidebar({
                     />
                   ))}
                 </div>
-              </>
+              </AccordionSection>
             )}
 
             {workspaceK8sNav.length > 0 && (
-              <>
-                <SectionLabel>Kubernetes</SectionLabel>
-                <div className="flex flex-col gap-0.5 px-1">
+              <AccordionSection
+                title="Kubernetes"
+                count={0}
+                isOpen={k8sOpen}
+                onToggle={() => setK8sOpen(p => !p)}
+              >
+                <div className="flex flex-col gap-0.5 px-1 pb-1">
                   {workspaceK8sNav.map(item => (
                     <NavButton
                       key={item.id}
@@ -328,7 +338,7 @@ export function Sidebar({
                     />
                   ))}
                 </div>
-              </>
+              </AccordionSection>
             )}
 
             <SectionLabel>Observability</SectionLabel>

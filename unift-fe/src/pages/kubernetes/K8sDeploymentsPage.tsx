@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
-import type { K8sDeployment, K8sNamespace } from '@/utils/remoteConnectionAPI';
+import type { K8sDeployment, K8sNamespace, K8sRolloutHistory } from '@/utils/remoteConnectionAPI';
 import { K8sYamlModal } from './K8sYamlModal';
 import type { YamlModalTarget } from './K8sYamlModal';
 
@@ -31,6 +31,10 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   const [scaleDialog, setScaleDialog] = useState<{ name: string; namespace: string; current: number } | null>(null);
   const [scaleValue, setScaleValue] = useState(1);
   const [yamlModal, setYamlModal] = useState<YamlModalTarget | null>(null);
+  const [rolloutModal, setRolloutModal] = useState<{ name: string; namespace: string } | null>(null);
+  const [rolloutHistory, setRolloutHistory] = useState<K8sRolloutHistory | null>(null);
+  const [rolloutLoading, setRolloutLoading] = useState(false);
+  const [rolloutError, setRolloutError] = useState<string | null>(null);
 
   const fetchNamespaces = useCallback(async () => {
     try {
@@ -83,6 +87,34 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
     setActionLoading(key);
     try {
       await remoteConnectionAPI.restartK8sDeployment(sessionId, name, namespace);
+      await fetchDeployments();
+    } catch { /* silent */ } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openRolloutHistory = async (name: string, namespace: string) => {
+    setRolloutModal({ name, namespace });
+    setRolloutHistory(null);
+    setRolloutError(null);
+    setRolloutLoading(true);
+    try {
+      const res = await remoteConnectionAPI.getK8sDeploymentRolloutHistory(sessionId, name, namespace);
+      setRolloutHistory(res);
+    } catch {
+      setRolloutError('Failed to load rollout history.');
+    } finally {
+      setRolloutLoading(false);
+    }
+  };
+
+  const handleRollback = async (revision: number) => {
+    if (!rolloutModal) return;
+    const key = `rollback-${rolloutModal.namespace}/${rolloutModal.name}`;
+    setActionLoading(key);
+    try {
+      await remoteConnectionAPI.undoK8sDeploymentRollout(sessionId, rolloutModal.name, revision, rolloutModal.namespace);
+      setRolloutModal(null);
       await fetchDeployments();
     } catch { /* silent */ } finally {
       setActionLoading(null);
@@ -248,7 +280,11 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
                         title="Edit YAML"
                         onClick={() => setYamlModal({ kind: 'Deployment', namespace: dep.namespace, name: dep.name })}
                       />
-                      <ActionBtn icon="arrow_forward" title="View Details" onClick={() => {}} />
+                      <ActionBtn
+                        icon="history"
+                        title="Rollout History"
+                        onClick={() => openRolloutHistory(dep.name, dep.namespace)}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -334,6 +370,100 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
           target={yamlModal}
           onClose={() => setYamlModal(null)}
         />
+      )}
+
+      {/* Rollout History Modal */}
+      {rolloutModal && (
+        <>
+          <div
+            onClick={() => setRolloutModal(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000 }}
+          />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: '#13131b', borderRadius: 14, padding: 28, zIndex: 1001, width: 520,
+            maxHeight: '80vh', overflow: 'auto', border: '1px solid rgba(255,255,255,0.08)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Rollout History</h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {rolloutModal.name} · {rolloutModal.namespace}
+                </p>
+              </div>
+              <button
+                onClick={() => setRolloutModal(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4 }}
+              >
+                <span className="material-symbols-rounded" style={{ fontSize: 20 }}>close</span>
+              </button>
+            </div>
+
+            {rolloutLoading && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
+                <span className="material-symbols-rounded" style={{ fontSize: 28, color: 'var(--primary)', animation: 'spin 1s linear infinite' }}>progress_activity</span>
+              </div>
+            )}
+
+            {rolloutError && (
+              <p style={{ color: '#f87171', fontSize: 13, textAlign: 'center' }}>{rolloutError}</p>
+            )}
+
+            {rolloutHistory && rolloutHistory.revisions.length === 0 && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No revision history available.</p>
+            )}
+
+            {rolloutHistory && rolloutHistory.revisions.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {rolloutHistory.revisions.map((rev) => (
+                  <div
+                    key={rev.revision}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)',
+                      background: 'rgba(255,255,255,0.02)',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                          background: 'rgba(124,109,250,0.15)', color: '#c6bfff', fontFamily: "'DM Mono', monospace",
+                        }}>
+                          #{rev.revision}
+                        </span>
+                        {rev.changeReason && (
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {rev.changeReason}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: "'DM Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {rev.image}
+                      </div>
+                      {rev.createdAt && (
+                        <div style={{ fontSize: 11, color: '#5a6380', marginTop: 2 }}>
+                          {new Date(rev.createdAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleRollback(rev.revision)}
+                      disabled={actionLoading !== null}
+                      style={{
+                        marginLeft: 16, flexShrink: 0, padding: '6px 14px', borderRadius: 7,
+                        border: '1px solid rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.08)',
+                        color: '#f87171', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      Rollback
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

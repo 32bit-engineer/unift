@@ -11,6 +11,7 @@ import type { SavedHost } from '@/components/layout';
 import { TransferProgressPopup } from '@/components/ui';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { WorkspaceType } from '@/utils/remoteConnectionAPI';
+import { toast } from 'sonner';
 
 const WORKSPACE_LABELS: Record<WorkspaceType, string> = {
   ssh: 'SSH Workspace',
@@ -103,53 +104,50 @@ export function AppLayout() {
     // restore store state, and dismiss any stale detection modal — prevents the modal
     // from re-appearing on top of the Docker/K8s dashboard.
     const restoreWorkspaceState = async () => {
-      if (activeWorkspaceType === 'docker') {
+      if (activeWorkspaceType === 'docker' || activeWorkspaceType === 'kubernetes') {
         try {
-          const { available } = await remoteConnectionAPI.checkDockerAvailable(workspaceSessionId);
+          const [dockerResult, k8sResult] = await Promise.allSettled([
+            remoteConnectionAPI.checkDockerAvailable(workspaceSessionId),
+            remoteConnectionAPI.checkKubectlAvailable(workspaceSessionId),
+          ]);
           if (cancelled) return;
-          if (!available) {
-            updateSessionCapabilities(workspaceSessionId, { docker: false });
+
+          const dockerAvailable = dockerResult.status === 'fulfilled' && dockerResult.value.available;
+          const k8sAvailable = k8sResult.status === 'fulfilled' && k8sResult.value.available;
+
+          if (
+            dockerResult.status === 'fulfilled' &&
+            !dockerResult.value.available &&
+            dockerResult.value.cause?.toLowerCase().includes('socat')
+          ) {
+            toast.warning('Docker found but socat is missing', {
+              description:
+                 "Docker daemon listens on /var/run/docker.sock (Unix socket) \n" +
+                 "but 'socat' is not installed on the remote host. \n " +
+                 "Install socat (e.g., 'apt install socat' or 'yum install socat') " +
+                 "or configure Docker to listen on TCP (dockerd -H tcp://127.0.0.1:2375)",
+              duration: 10000,
+            });
+          }
+
+          const currentTypeAvailable = activeWorkspaceType === 'docker' ? dockerAvailable : k8sAvailable;
+
+          if (!currentTypeAvailable) {
+            updateSessionCapabilities(workspaceSessionId, { docker: dockerAvailable, kubernetes: k8sAvailable });
             setWorkspaceType(workspaceSessionId, 'ssh');
             if (showDetectionModal) setShowDetectionModal(null);
             navigate(`/workspace/${workspaceSessionId}`, { replace: true });
             return;
           }
 
-          updateSessionCapabilities(workspaceSessionId, { docker: true });
+          updateSessionCapabilities(workspaceSessionId, { docker: dockerAvailable, kubernetes: k8sAvailable });
           markCapabilitiesDetected(workspaceSessionId);
-          setWorkspaceType(workspaceSessionId, 'docker');
+          setWorkspaceType(workspaceSessionId, activeWorkspaceType);
           if (showDetectionModal) setShowDetectionModal(null);
           return;
         } catch {
           if (cancelled) return;
-          updateSessionCapabilities(workspaceSessionId, { docker: false });
-          setWorkspaceType(workspaceSessionId, 'ssh');
-          if (showDetectionModal) setShowDetectionModal(null);
-          navigate(`/workspace/${workspaceSessionId}`, { replace: true });
-          return;
-        }
-      }
-
-      if (activeWorkspaceType === 'kubernetes') {
-        try {
-          const { available } = await remoteConnectionAPI.checkKubectlAvailable(workspaceSessionId);
-          if (cancelled) return;
-          if (!available) {
-            updateSessionCapabilities(workspaceSessionId, { kubernetes: false });
-            setWorkspaceType(workspaceSessionId, 'ssh');
-            if (showDetectionModal) setShowDetectionModal(null);
-            navigate(`/workspace/${workspaceSessionId}`, { replace: true });
-            return;
-          }
-
-          updateSessionCapabilities(workspaceSessionId, { kubernetes: true });
-          markCapabilitiesDetected(workspaceSessionId);
-          setWorkspaceType(workspaceSessionId, 'kubernetes');
-          if (showDetectionModal) setShowDetectionModal(null);
-          return;
-        } catch {
-          if (cancelled) return;
-          updateSessionCapabilities(workspaceSessionId, { kubernetes: false });
+          updateSessionCapabilities(workspaceSessionId, { docker: false, kubernetes: false });
           setWorkspaceType(workspaceSessionId, 'ssh');
           if (showDetectionModal) setShowDetectionModal(null);
           navigate(`/workspace/${workspaceSessionId}`, { replace: true });

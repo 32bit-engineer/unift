@@ -22,7 +22,7 @@ export function SidebarShell({ children }: SidebarShellProps) {
   const navigate = useNavigate();
   return (
     <aside
-      className="w-52 flex flex-col shrink-0"
+      className="w-60 flex flex-col shrink-0"
       style={{
         background:  'var(--color-surface)',
         borderRight: '1px solid var(--color-border-muted)',
@@ -192,7 +192,7 @@ interface WorkspaceTypeSwitcherProps {
 const TYPE_META: Record<string, { label: string; icon: string }> = {
   ssh:        { label: 'SSH',        icon: 'terminal' },
   docker:     { label: 'Docker',     icon: 'view_in_ar' },
-  kubernetes: { label: 'Kubernetes', icon: 'deployed_code' },
+  kubernetes: { label: 'K8s',        icon: 'deployed_code' },
 };
 
 /**

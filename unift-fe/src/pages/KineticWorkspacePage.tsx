@@ -402,144 +402,6 @@ function OverviewPanel({ session }: { session: UIHost }) {
   );
 }
 
-// ─── Kinetic Sidebar ─────────────────────────────────────────────────────────
-
-function KineticSidebar({
-  session,
-  activeView,
-  onSelectView
-}: {
-  session: UIHost;
-  activeView: WorkspaceView;
-  onSelectView: (v: WorkspaceView) => void;
-  onBack: () => void;
-}) {
-  const hostname = session.userAtIp.split('@')[1] ?? session.userAtIp;
-  const isOnline = session.status === 'online';
-
-  const navItems: { id: WorkspaceView; label: string; icon: string }[] = [
-    { id: 'overview', label: 'Overview',     icon: 'monitoring' },
-    { id: 'browser',  label: 'File Browser', icon: 'folder_open' },
-  ];
-
-  return (
-    <aside
-      className="flex flex-col shrink-0"
-      style={{
-        width: '200px',
-        background: 'var(--color-surface)',
-        borderRight: '1px solid var(--color-border-muted)',
-      }}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center gap-2 px-4 h-14 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border-muted)' }}
-      >
-        <div
-          className="w-6 h-6 rounded flex items-center justify-center shrink-0"
-          style={{ background: 'var(--color-primary)' }}
-        >
-          <span
-            className="material-symbols-rounded text-white"
-            style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}
-          >
-            bolt
-          </span>
-        </div>
-        <span
-          className="font-mono font-semibold text-[12px] truncate"
-          style={{ color: 'var(--color-text-warm)' }}
-        >
-          Kinetic
-        </span>
-      </div>
-
-      {/* Session info card */}
-      <div
-        className="mx-3 mt-3 p-2.5 rounded-lg"
-        style={{
-          background: 'var(--color-bg-base)',
-          border: '1px solid var(--color-border-subtle)',
-        }}
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: isOnline ? '#4ade80' : '#f87171' }}
-          />
-          <span
-            className="text-[11px] font-semibold truncate"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
-            {session.name !== `${hostname}:${session.port}` ? session.name : hostname}
-          </span>
-        </div>
-        <p className="text-[10px] font-mono truncate" style={{ color: 'var(--color-text-muted)' }}>
-          {hostname}:{session.port}
-        </p>
-        <p className="text-[10px] font-mono truncate mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-          {session.protocol}
-        </p>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 py-3 px-2">
-        {navItems.map(item => {
-          const isActive = activeView === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSelectView(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 mb-0.5 text-[12px] font-sans transition-all duration-150 text-left cursor-pointer rounded`}
-              style={
-                isActive
-                  ? {
-                      background:   'rgba(79,142,247,0.1)',
-                      color:        'var(--color-text-warm)',
-                      borderLeft:   '3px solid var(--color-primary)',
-                      paddingLeft:  '9px',
-                      borderRadius: '0 4px 4px 0',
-                    }
-                  : { color: '#9090B0' }
-              }
-            >
-              <span
-                className="material-symbols-rounded shrink-0"
-                style={{
-                  fontSize: '17px',
-                  lineHeight: 1,
-                  fontVariationSettings: isActive
-                    ? "'FILL' 1, 'wght' 400"
-                    : "'FILL' 0, 'wght' 300",
-                }}
-              >
-                {item.icon}
-              </span>
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Back button */}
-      {/* <div
-        className="px-3 py-3 shrink-0"
-        style={{ borderTop: '1px solid var(--color-border-muted)' }}
-      >
-        <button
-          onClick={onBack}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded text-[11px] font-mono transition-colors cursor-pointer hover:bg-white/5"
-          style={{ color: '#5a6380' }}
-        >
-          <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>arrow_back</span>
-          Back to Hub
-        </button>
-      </div> */}
-    </aside>
-  );
-}
-
 // ─── Docker Detection Modal ───────────────────────────────────────────────────
 
 function DockerModal({
@@ -681,8 +543,7 @@ function SshTerminalWorkspace({
 // ─── SSH Workspace ────────────────────────────────────────────────────────────
 
 function SshWorkspace({
-  session,
-  onBack,
+  session
 }: {
   session: UIHost;
   onBack: () => void;
@@ -737,15 +598,7 @@ function SshWorkspace({
   };
 
   return (
-    <div className="flex h-full overflow-hidden">
-      <KineticSidebar
-        session={session}
-        activeView={activeView}
-        onSelectView={setActiveView}
-        onBack={onBack}
-      />
-
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--color-bg-base)' }}>
+    <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--color-bg-base)' }}>
         {activeView === 'overview' && <OverviewPanel session={session} />}
 
         {activeView === 'browser' && (
@@ -777,7 +630,6 @@ function SshWorkspace({
             onBackToOverview={() => setActiveView('overview')}
           />
         )}
-      </div>
     </div>
   );
 }

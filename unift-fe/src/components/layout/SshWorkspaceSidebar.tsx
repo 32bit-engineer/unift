@@ -14,6 +14,7 @@ import type { WorkspaceType } from '@/utils/remoteConnectionAPI';
 
 const SSH_NAV: NavItem[] = [
   { id: 'ws-overview',  label: 'Overview',      icon: 'dashboard' },
+  { id: 'ws-files',     label: 'File Browser',  icon: 'folder_open' },
 ];
 
 const OBSERVABILITY_NAV: NavItem[] = [

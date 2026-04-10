@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout, ProtectedRoute, PublicOnlyRoute } from '@/components/layout';
 import { AuthPage } from '@/pages';
 import { lazy, Suspense } from 'react';
+import { Toaster } from 'sonner';
 
 // Lazy-load route wrappers for code splitting
 const DashboardRoute = lazy(() => import('@/pages/RouteWrappers').then(m => ({ default: m.DashboardRoute })));
@@ -51,6 +52,12 @@ function PageLoader() {
 export function App() {
   return (
     <div className="dark">
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: { background: '#1b1b23', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0', fontSize: 13 },
+        }}
+      />
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>

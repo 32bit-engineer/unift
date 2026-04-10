@@ -76,11 +76,18 @@ export function DashboardRoute() {
 
 function K8sRouteGuard({ sessionId, children }: { sessionId: string; children: ReactNode }) {
   const navigate = useNavigate();
+  const sessions = useConnectionStore(s => s.sessions);
   const updateSessionCapabilities = useConnectionStore(s => s.updateSessionCapabilities);
   const setWorkspaceType = useConnectionStore(s => s.setWorkspaceType);
-  const [isReady, setIsReady] = useState(false);
+
+  const session = useMemo(() => sessions.find(s => s.sessionId === sessionId), [sessions, sessionId]);
+  const alreadyVerified = session?.capabilitiesDetected === true && session.capabilities.kubernetes === true;
+
+  const [isReady, setIsReady] = useState(alreadyVerified);
 
   useEffect(() => {
+    if (alreadyVerified) return;
+
     let cancelled = false;
 
     const verifyAvailability = async () => {
@@ -110,7 +117,7 @@ function K8sRouteGuard({ sessionId, children }: { sessionId: string; children: R
     return () => {
       cancelled = true;
     };
-  }, [sessionId, navigate, setWorkspaceType, updateSessionCapabilities]);
+  }, [sessionId, alreadyVerified, navigate, setWorkspaceType, updateSessionCapabilities]);
 
   if (!isReady) {
     return (
