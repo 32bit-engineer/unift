@@ -1295,6 +1295,47 @@ export const remoteConnectionAPI = {
     );
   },
 
+  /**
+   * Streams Docker system info (engine version, OS, container/image counts) via SSE.
+   * Default interval 30 s — engine metadata and counts change infrequently.
+   * Stream remains active until the returned stop function is called.
+   */
+  streamDockerSystemInfo: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (info: DockerInfo) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/system-info/stream?intervalMs=${Math.max(5000, intervalMs)}`;
+    return streamSse<DockerInfo>(
+      url,
+      onData,
+      onError,
+      (value) => normalizeDockerInfo(value as RawDockerInfo),
+    );
+  },
+
+  /**
+   * Streams the flat list of currently running containers via SSE (no stats).
+   * Default interval 5 s — updates when containers start or stop.
+   * Combine with streamDockerContainerStatsAll for live per-container metrics.
+   * Stream remains active until the returned stop function is called.
+   */
+  streamDockerRunningContainers: async (
+    sessionId: string,
+    intervalMs: number,
+    onData: (containers: DockerContainer[]) => void,
+    onError: (err: string) => void,
+  ): Promise<() => void> => {
+    const url = `${API_BASE_URL}${BASE}/sessions/${sessionId}/docker/containers/running/stream?intervalMs=${Math.max(1000, intervalMs)}`;
+    return streamSse<DockerContainer[]>(
+      url,
+      onData,
+      onError,
+      (value) => (value as RawDockerContainer[]).map(normalizeDockerContainer),
+    );
+  },
+
   /** Lists Docker containers with optional pagination. */
   listDockerContainers: (sessionId: string, all = true, page = 0, pageSize = 20) =>
     apiClient

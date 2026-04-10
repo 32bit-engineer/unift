@@ -123,17 +123,18 @@ public class TransferHistoryController {
                                         open.set(false);
                                         emitter.complete();
                                         return;
+                                } catch (java.io.IOException | IllegalStateException disconnectEx) {
+                                        open.set(false);
+                                        return;
                                 } catch (Exception ex) {
                                         try {
                                                 emitter.send(
                                                                 SseEmitter.event()
                                                                                 .name("error")
                                                                                 .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Transfer stats stream failed")));
-                                        } catch (Exception ignored) {
-                                                // Ignore nested emitter failures while unwinding stream.
-                                        }
+                                        } catch (java.io.IOException | IllegalStateException ignored) {}
                                         open.set(false);
-                                        emitter.completeWithError(ex);
+                                        emitter.complete();
                                         return;
                                 }
                         }

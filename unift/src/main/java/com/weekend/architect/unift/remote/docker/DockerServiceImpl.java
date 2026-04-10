@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -55,48 +56,36 @@ public class DockerServiceImpl implements DockerService {
     private final ExecutorService virtualExecutor;
     private final DockerLogStreamService logStreamService;
     private final DockerStatsStreamService statsStreamService;
+    private final DockerRequestValidator requestValidator;
 
     public DockerServiceImpl(
             DockerClientPool dockerClientPool,
             SessionRegistry sessionRegistry,
             @Qualifier("virtualThreadExecutor") ExecutorService virtualExecutor,
             DockerLogStreamService logStreamService,
-            DockerStatsStreamService statsStreamService) {
+            DockerStatsStreamService statsStreamService,
+            DockerRequestValidator requestValidator) {
         this.dockerClientPool = dockerClientPool;
         this.sessionRegistry = sessionRegistry;
         this.virtualExecutor = virtualExecutor;
         this.logStreamService = logStreamService;
         this.statsStreamService = statsStreamService;
+        this.requestValidator = requestValidator;
     }
 
     // Validates container ID format (hex string, 12 or 64 chars, or valid name)
-    private static void validateContainerId(String containerId) {
-        if (containerId == null || containerId.isBlank()) {
-            throw new IllegalArgumentException("Container ID must not be blank");
-        }
-        if (!containerId.matches("^[a-fA-F0-9]{12,64}$") && !containerId.matches("^[a-zA-Z][a-zA-Z0-9_.-]+$")) {
-            throw new IllegalArgumentException("Invalid container ID or name format");
-        }
+    private void validateContainerId(String containerId) {
+        requestValidator.validateContainerId(containerId);
     }
 
     // Validates image name format (repo:tag or repo@digest)
-    private static void validateImageReference(String image) {
-        if (image == null || image.isBlank()) {
-            throw new IllegalArgumentException("Image reference must not be blank");
-        }
-        if (!image.matches("^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?(@sha256:[a-fA-F0-9]{64})?$")) {
-            throw new IllegalArgumentException("Invalid image reference format");
-        }
+    private void validateImageReference(String image) {
+        requestValidator.validateImageReference(image);
     }
 
     // Validates container name format
-    private static void validateContainerName(String name) {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("Container name must not be blank");
-        }
-        if (!name.matches("^/?[a-zA-Z0-9][a-zA-Z0-9_.-]+$")) {
-            throw new IllegalArgumentException("Invalid container name format");
-        }
+    private void validateContainerName(String name) {
+        requestValidator.validateContainerName(name);
     }
 
     // -- System ----------------------------------------------------------------
@@ -121,6 +110,201 @@ public class DockerServiceImpl implements DockerService {
             log.warn("[docker] Failed to get info for session {}: {}", sessionId, e.getMessage());
             return DockerModels.DockerSystemInfo.builder().available(false).build();
         }
+    }
+
+    @Override
+    public List<DockerModels.DockerContainer> getRunningContainers(String sessionId, UUID userId) {
+        try {
+            return resolveClient(sessionId, userId)
+                    .listContainersCmd()
+                    .withShowAll(false)
+                    .exec()
+                    .stream()
+                    .map(DockerMappers::toContainer)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("[docker] Failed to list running containers for session {}: {}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Override
+    public SseEmitter streamOverview(String sessionId, UUID userId, int intervalMs) {
+        requestValidator.validateSessionId(sessionId);
+        requestValidator.validateUserId(userId);
+        int clampedIntervalMs = requestValidator.validateAndClampInterval(intervalMs);
+
+        SseEmitter emitter = new SseEmitter(30L * 60 * 1000);
+        java.util.concurrent.atomic.AtomicBoolean open = new java.util.concurrent.atomic.AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    DockerModels.DockerOverview payload = getOverview(sessionId, userId);
+                    emitter.send(SseEmitter.event().name("overview").data(payload));
+                    Thread.sleep(clampedIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(
+                                SseEmitter.event()
+                                        .name("error")
+                                        .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Docker overview stream failed")));
+                    } catch (Exception ignored) {
+                        // Ignore nested emitter failures while unwinding stream.
+                    }
+                    open.set(false);
+                    emitter.completeWithError(ex);
+                    return;
+                }
+            }
+        });
+
+        return emitter;
+    }
+
+    @Override
+    public SseEmitter streamSystemInfo(String sessionId, UUID userId, int intervalMs) {
+        requestValidator.validateSessionId(sessionId);
+        requestValidator.validateUserId(userId);
+        int clamped = Math.max(5000, Math.min(120000, requestValidator.validateAndClampInterval(intervalMs)));
+
+        SseEmitter emitter = new SseEmitter(30L * 60 * 1000);
+        AtomicBoolean open = new java.util.concurrent.atomic.AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    DockerModels.DockerSystemInfo info = getDockerInfo(sessionId, userId);
+                    emitter.send(SseEmitter.event().name("info").data(info));
+                    Thread.sleep(clamped);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (java.io.IOException | IllegalStateException disconnectEx) {
+                    open.set(false);
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event().name("error")
+                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "System info stream failed")));
+                    } catch (java.io.IOException | IllegalStateException _) {}
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                }
+            }
+        });
+
+        return emitter;
+    }
+
+    @Override
+    public SseEmitter streamRunningContainers(String sessionId, UUID userId, int intervalMs) {
+        requestValidator.validateSessionId(sessionId);
+        requestValidator.validateUserId(userId);
+        int clamped = requestValidator.validateAndClampInterval(intervalMs);
+
+        SseEmitter emitter = new SseEmitter(30L * 60 * 1000);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    List<DockerModels.DockerContainer> containers = getRunningContainers(sessionId, userId);
+                    emitter.send(SseEmitter.event().name("containers").data(containers));
+                    Thread.sleep(clamped);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (java.io.IOException | IllegalStateException disconnectEx) {
+                    open.set(false);
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event().name("error")
+                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Running containers stream failed")));
+                    } catch (java.io.IOException | IllegalStateException ignored) {}
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                }
+            }
+        });
+
+        return emitter;
+    }
+
+    @Override
+    public SseEmitter streamContainerStatsAll(String sessionId, UUID userId, int intervalMs) {
+        requestValidator.validateSessionId(sessionId);
+        requestValidator.validateUserId(userId);
+        int clampedIntervalMs = requestValidator.validateAndClampInterval(intervalMs);
+
+        SseEmitter emitter = new SseEmitter(30L * 60 * 1000);
+        java.util.concurrent.atomic.AtomicBoolean open = new java.util.concurrent.atomic.AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    List<DockerModels.ContainerStats> payload = getContainerStats(sessionId, userId);
+                    emitter.send(SseEmitter.event().name("stats").data(payload));
+                    Thread.sleep(clampedIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (java.io.IOException | IllegalStateException disconnectEx) {
+                    open.set(false);
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(
+                                SseEmitter.event()
+                                        .name("error")
+                                        .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Docker stats stream failed")));
+                    } catch (java.io.IOException | IllegalStateException ignored) {}
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                }
+            }
+        });
+
+        return emitter;
     }
 
     @Override

@@ -22,6 +22,21 @@ public interface DockerService {
     /** Returns a high-level overview: system info, running containers, live stats. */
     DockerModels.DockerOverview getOverview(String sessionId, UUID userId);
 
+    /** Returns only the currently running containers as a flat list, without stats. */
+    List<DockerModels.DockerContainer> getRunningContainers(String sessionId, UUID userId);
+
+    /** Opens a streaming SSE overview (system info + containers + stats) with the given interval. */
+    SseEmitter streamOverview(String sessionId, UUID userId, int intervalMs);
+
+    /** Opens a streaming SSE system-info snapshot with the given interval. */
+    SseEmitter streamSystemInfo(String sessionId, UUID userId, int intervalMs);
+
+    /** Opens a streaming SSE list of running containers (no stats) with the given interval. */
+    SseEmitter streamRunningContainers(String sessionId, UUID userId, int intervalMs);
+
+    /** Opens a streaming SSE point-in-time stats for all running containers with the given interval. */
+    SseEmitter streamContainerStatsAll(String sessionId, UUID userId, int intervalMs);
+
     // -- Containers --
 
     /** Lists containers with pagination. Set {@code all=true} to include stopped. */
