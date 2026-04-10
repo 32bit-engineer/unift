@@ -43,14 +43,15 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @SecurityRequirement(name = "BearerAuth")
 public class SessionAnalyticsController {
 
-        private static final long ANALYTICS_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
-        private static final int DEFAULT_STREAM_INTERVAL_MS = 5000;
-        private static final int MIN_STREAM_INTERVAL_MS = 1000;
-        private static final int MAX_STREAM_INTERVAL_MS = 60000;
+    private static final long ANALYTICS_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
+    private static final int DEFAULT_STREAM_INTERVAL_MS = 5000;
+    private static final int MIN_STREAM_INTERVAL_MS = 1000;
+    private static final int MAX_STREAM_INTERVAL_MS = 60000;
 
     private final SessionAnalyticsService analyticsService;
-        @Qualifier("virtualThreadExecutor")
-        private final ExecutorService virtualThreadExecutor;
+
+    @Qualifier("virtualThreadExecutor")
+    private final ExecutorService virtualThreadExecutor;
 
     @GetMapping("/sessions/{sessionId}/analytics")
     @Operation(
@@ -91,56 +92,57 @@ public class SessionAnalyticsController {
         return ResponseEntity.ok(response);
     }
 
-        @GetMapping(value = "/sessions/{sessionId}/analytics/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-        @Operation(
-                        summary = "Stream live session analytics via SSE",
-                        description = "Pushes analytics snapshots continuously while the client is connected."
-                                        + " First snapshot is sent immediately, then repeated at the requested interval.")
-        public SseEmitter streamAnalytics(
-                        @PathVariable String sessionId,
-                        @RequestParam(defaultValue = "5000") int intervalMs,
-                        @AuthenticationPrincipal UniFtUserDetails principal) {
-                UUID ownerId = principal.user().getId();
-                int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+    @GetMapping(value = "/sessions/{sessionId}/analytics/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+            summary = "Stream live session analytics via SSE",
+            description = "Pushes analytics snapshots continuously while the client is connected."
+                    + " First snapshot is sent immediately, then repeated at the requested interval.")
+    public SseEmitter streamAnalytics(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "5000") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        UUID ownerId = principal.user().getId();
+        int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
 
-                SseEmitter emitter = new SseEmitter(ANALYTICS_STREAM_TIMEOUT_MS);
-                AtomicBoolean open = new AtomicBoolean(true);
-                emitter.onCompletion(() -> open.set(false));
-                emitter.onError(ex -> open.set(false));
-                emitter.onTimeout(() -> {
-                        open.set(false);
-                        emitter.complete();
-                });
+        SseEmitter emitter = new SseEmitter(ANALYTICS_STREAM_TIMEOUT_MS);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
 
-                virtualThreadExecutor.submit(() -> {
-                        while (open.get()) {
-                                try {
-                                        SessionAnalyticsResponse payload = analyticsService.getAnalytics(sessionId, ownerId);
-                                        emitter.send(SseEmitter.event().name("analytics").data(payload));
-                                        Thread.sleep(clampedIntervalMs);
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        open.set(false);
-                                        emitter.complete();
-                                        return;
-                                } catch (Exception ex) {
-                                        try {
-                                                emitter.send(
-                                                                SseEmitter.event()
-                                                                                .name("error")
-                                                                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Analytics stream failed")));
-                                        } catch (Exception ignored) {
-                                                // Ignore nested emitter failures while unwinding stream.
-                                        }
-                                        open.set(false);
-                                        emitter.completeWithError(ex);
-                                        return;
-                                }
-                        }
-                });
+        virtualThreadExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    SessionAnalyticsResponse payload = analyticsService.getAnalytics(sessionId, ownerId);
+                    emitter.send(SseEmitter.event().name("analytics").data(payload));
+                    Thread.sleep(clampedIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Analytics stream failed")));
+                    } catch (Exception ignored) {
+                        // Ignore nested emitter failures while unwinding stream.
+                    }
+                    open.set(false);
+                    emitter.completeWithError(ex);
+                    return;
+                }
+            }
+        });
 
-                return emitter;
-        }
+        return emitter;
+    }
 
     @GetMapping("/sessions/{sessionId}/analytics/history")
     @Operation(

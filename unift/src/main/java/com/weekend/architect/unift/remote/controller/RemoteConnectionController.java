@@ -69,9 +69,9 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @SecurityRequirement(name = "BearerAuth")
 public class RemoteConnectionController {
 
-        private static final long TRANSFER_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
-        private static final int MIN_STREAM_INTERVAL_MS = 500;
-        private static final int MAX_STREAM_INTERVAL_MS = 60000;
+    private static final long TRANSFER_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
+    private static final int MIN_STREAM_INTERVAL_MS = 500;
+    private static final int MAX_STREAM_INTERVAL_MS = 60000;
 
     private final RemoteConnectionService service;
     private final SessionRegistry sessionRegistry;
@@ -79,8 +79,9 @@ public class RemoteConnectionController {
     private final DockerLogStreamRegistry dockerLogStreamRegistry;
     private final K8sClientPool k8sClientPool;
     private final K8sLogStreamRegistry k8sLogStreamRegistry;
-        @Qualifier("virtualThreadExecutor")
-        private final ExecutorService virtualThreadExecutor;
+
+    @Qualifier("virtualThreadExecutor")
+    private final ExecutorService virtualThreadExecutor;
 
     private static final Set<String> VALID_WORKSPACE_TYPES = Set.of("ssh", "docker", "kubernetes");
 
@@ -431,53 +432,54 @@ public class RemoteConnectionController {
         return ResponseEntity.ok(transfers);
     }
 
-        @GetMapping(value = "/sessions/{sessionId}/transfers/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-        @Operation(summary = "Stream transfer statuses for a session")
-        public SseEmitter streamTransfers(
-                        @PathVariable String sessionId,
-                        @RequestParam(defaultValue = "1500") int intervalMs,
-                        @AuthenticationPrincipal UniFtUserDetails principal) {
-                UUID ownerId = principal.user().getId();
-                int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+    @GetMapping(value = "/sessions/{sessionId}/transfers/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Stream transfer statuses for a session")
+    public SseEmitter streamTransfers(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "1500") int intervalMs,
+            @AuthenticationPrincipal UniFtUserDetails principal) {
+        UUID ownerId = principal.user().getId();
+        int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
 
-                SseEmitter emitter = new SseEmitter(TRANSFER_STREAM_TIMEOUT_MS);
-                AtomicBoolean open = new AtomicBoolean(true);
-                emitter.onCompletion(() -> open.set(false));
-                emitter.onError(ex -> open.set(false));
-                emitter.onTimeout(() -> {
-                        open.set(false);
-                        emitter.complete();
-                });
+        SseEmitter emitter = new SseEmitter(TRANSFER_STREAM_TIMEOUT_MS);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
 
-                virtualThreadExecutor.submit(() -> {
-                        while (open.get()) {
-                                try {
-                                        List<TransferStatusResponse> payload = service.getTransfers(sessionId, ownerId);
-                                        emitter.send(SseEmitter.event().name("transfers").data(payload));
-                                        Thread.sleep(clampedIntervalMs);
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        open.set(false);
-                                        emitter.complete();
-                                        return;
-                                } catch (Exception ex) {
-                                        try {
-                                                emitter.send(
-                                                                SseEmitter.event()
-                                                                                .name("error")
-                                                                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Transfer stream failed")));
-                                        } catch (Exception ignored) {
-                                                // Ignore nested emitter failures while unwinding stream.
-                                        }
-                                        open.set(false);
-                                        emitter.completeWithError(ex);
-                                        return;
-                                }
-                        }
-                });
+        virtualThreadExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    List<TransferStatusResponse> payload = service.getTransfers(sessionId, ownerId);
+                    emitter.send(SseEmitter.event().name("transfers").data(payload));
+                    Thread.sleep(clampedIntervalMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Transfer stream failed")));
+                    } catch (Exception ignored) {
+                        // Ignore nested emitter failures while unwinding stream.
+                    }
+                    open.set(false);
+                    emitter.completeWithError(ex);
+                    return;
+                }
+            }
+        });
 
-                return emitter;
-        }
+        return emitter;
+    }
 
     @GetMapping("/sessions/{sessionId}/transfers/{transferId}")
     @Operation(summary = "Get progress of a single transfer")

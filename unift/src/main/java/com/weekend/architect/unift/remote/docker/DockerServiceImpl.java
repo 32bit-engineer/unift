@@ -115,11 +115,7 @@ public class DockerServiceImpl implements DockerService {
     @Override
     public List<DockerModels.DockerContainer> getRunningContainers(String sessionId, UUID userId) {
         try {
-            return resolveClient(sessionId, userId)
-                    .listContainersCmd()
-                    .withShowAll(false)
-                    .exec()
-                    .stream()
+            return resolveClient(sessionId, userId).listContainersCmd().withShowAll(false).exec().stream()
                     .map(DockerMappers::toContainer)
                     .toList();
         } catch (Exception e) {
@@ -156,10 +152,11 @@ public class DockerServiceImpl implements DockerService {
                     return;
                 } catch (Exception ex) {
                     try {
-                        emitter.send(
-                                SseEmitter.event()
-                                        .name("error")
-                                        .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Docker overview stream failed")));
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Docker overview stream failed")));
                     } catch (Exception ignored) {
                         // Ignore nested emitter failures while unwinding stream.
                     }
@@ -204,9 +201,13 @@ public class DockerServiceImpl implements DockerService {
                     return;
                 } catch (Exception ex) {
                     try {
-                        emitter.send(SseEmitter.event().name("error")
-                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "System info stream failed")));
-                    } catch (java.io.IOException | IllegalStateException _) {}
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "System info stream failed")));
+                    } catch (java.io.IOException | IllegalStateException _) {
+                    }
                     open.set(false);
                     emitter.complete();
                     return;
@@ -248,9 +249,15 @@ public class DockerServiceImpl implements DockerService {
                     return;
                 } catch (Exception ex) {
                     try {
-                        emitter.send(SseEmitter.event().name("error")
-                                .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Running containers stream failed")));
-                    } catch (java.io.IOException | IllegalStateException ignored) {}
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null
+                                                ? ex.getMessage()
+                                                : "Running containers stream failed")));
+                    } catch (java.io.IOException | IllegalStateException ignored) {
+                    }
                     open.set(false);
                     emitter.complete();
                     return;
@@ -292,11 +299,13 @@ public class DockerServiceImpl implements DockerService {
                     return;
                 } catch (Exception ex) {
                     try {
-                        emitter.send(
-                                SseEmitter.event()
-                                        .name("error")
-                                        .data(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "Docker stats stream failed")));
-                    } catch (java.io.IOException | IllegalStateException ignored) {}
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Docker stats stream failed")));
+                    } catch (java.io.IOException | IllegalStateException ignored) {
+                    }
                     open.set(false);
                     emitter.complete();
                     return;
@@ -322,9 +331,7 @@ public class DockerServiceImpl implements DockerService {
 
             var sysInfo = DockerMappers.toSystemInfo(infoFuture.join());
             var rawContainers = containersFuture.join();
-            var running = rawContainers.stream()
-                    .map(DockerMappers::toContainer)
-                    .toList();
+            var running = rawContainers.stream().map(DockerMappers::toContainer).toList();
 
             // Stats are best-effort: a timeout here degrades to empty stats, not a failed overview.
             var stats = fetchStatsForContainers(client, rawContainers);
@@ -351,8 +358,7 @@ public class DockerServiceImpl implements DockerService {
      * Returns an empty list on partial failure or timeout rather than propagating the exception,
      * so a slow Docker stats API never degrades the full overview response.
      */
-    private List<DockerModels.ContainerStats> fetchStatsForContainers(
-            DockerClient client, List<Container> containers) {
+    private List<DockerModels.ContainerStats> fetchStatsForContainers(DockerClient client, List<Container> containers) {
         if (containers.isEmpty()) return List.of();
         try {
             List<CompletableFuture<DockerModels.ContainerStats>> futures = containers.stream()

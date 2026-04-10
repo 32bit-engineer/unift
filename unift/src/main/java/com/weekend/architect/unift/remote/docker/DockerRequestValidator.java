@@ -35,8 +35,7 @@ public class DockerRequestValidator {
         if (containerId == null || containerId.isBlank()) {
             throw new IllegalArgumentException("Container ID must not be blank");
         }
-        if (!containerId.matches("^[a-fA-F0-9]{12,64}$")
-                && !containerId.matches("^[a-zA-Z][a-zA-Z0-9_.-]+$")) {
+        if (!containerId.matches("^[a-fA-F0-9]{12,64}$") && !containerId.matches("^[a-zA-Z][a-zA-Z0-9_.-]+$")) {
             throw new IllegalArgumentException("Invalid container ID or name format");
         }
     }
@@ -46,8 +45,7 @@ public class DockerRequestValidator {
         if (image == null || image.isBlank()) {
             throw new IllegalArgumentException("Image reference must not be blank");
         }
-        if (!image.matches(
-                "^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?(@sha256:[a-fA-F0-9]{64})?$")) {
+        if (!image.matches("^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?(@sha256:[a-fA-F0-9]{64})?$")) {
             throw new IllegalArgumentException("Invalid image reference format");
         }
     }
