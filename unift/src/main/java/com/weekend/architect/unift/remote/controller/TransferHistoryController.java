@@ -14,11 +14,11 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
@@ -36,11 +36,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * REST API for querying the persistent file-transfer history.
  *
  * <p>Transfer log entries are automatically appended by the remote-connection service whenever an
- * upload or download completes, fails, or is cancelled. This controller exposes read-only (plus
+ * upload or download completes, fails, or is canceled. This controller exposes read-only (plus
  * delete) access to that log.
  */
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/transfers/history")
 @Slf4j
 @Tag(
@@ -52,20 +51,22 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class TransferHistoryController {
 
     private static final long STATS_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
-    private static final int DEFAULT_STREAM_INTERVAL_MS = 10000;
     private static final int MIN_STREAM_INTERVAL_MS = 1000;
     private static final int MAX_STREAM_INTERVAL_MS = 60000;
 
     private final TransferHistoryService service;
-
-    @Qualifier("virtualThreadExecutor")
     private final ExecutorService virtualThreadExecutor;
+
+    TransferHistoryController(
+            TransferHistoryService service, @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
+        this.service = service;
+        this.virtualThreadExecutor = virtualThreadExecutor;
+    }
 
     @GetMapping
     @Operation(
             summary = "List transfer history",
-            description =
-                    "Returns a paginated list of transfer log entries for the authenticated user, newest first. "
+            description = "Returns a paginated list of transfer log entries for the authenticated user, newest first. "
                     + "Optional filters: sessionId (exact match), username (case-insensitive substring), "
                     + "status (exact: COMPLETED, FAILED, CANCELLED).",
             responses = {@ApiResponse(responseCode = "200", description = "Transfer history page")})
@@ -76,16 +77,24 @@ public class TransferHistoryController {
                     @Min(1)
                     @Max(100)
                     int size,
-            @Parameter(description = "Filter by session ID (optional)")
-                    @RequestParam(required = false) String sessionId,
+            @Parameter(description = "Filter by session ID (optional)") @RequestParam(required = false)
+                    String sessionId,
             @Parameter(description = "Filter by SSH username, case-insensitive substring (optional)")
-                    @RequestParam(required = false) String username,
+                    @RequestParam(required = false)
+                    String username,
             @Parameter(description = "Filter by status: COMPLETED, FAILED, CANCELLED (optional)")
-                    @RequestParam(required = false) String status,
+                    @RequestParam(required = false)
+                    String status,
             @AuthenticationPrincipal UniFtUserDetails principal) {
         UUID userId = principal.user().getId();
-        log.debug("[transfer-history] Listing history for user {} (page={}, size={}, sessionId={}, username={}, status={})",
-                userId, page, size, sessionId, username, status);
+        log.debug(
+                "[transfer-history] Listing history for user {} (page={}, size={}, sessionId={}, username={}, status={})",
+                userId,
+                page,
+                size,
+                sessionId,
+                username,
+                status);
         return ResponseEntity.ok(service.listHistory(userId, page, size, sessionId, username, status));
     }
 
@@ -115,24 +124,25 @@ public class TransferHistoryController {
         SseEmitter emitter = new SseEmitter(STATS_STREAM_TIMEOUT_MS);
         AtomicBoolean open = new AtomicBoolean(true);
         emitter.onCompletion(() -> open.set(false));
-        emitter.onError(ex -> open.set(false));
+        emitter.onError(_ -> open.set(false));
         emitter.onTimeout(() -> {
             open.set(false);
             emitter.complete();
         });
 
+        // Todo: move this logic to service class
         virtualThreadExecutor.submit(() -> {
             while (open.get()) {
                 try {
                     TransferHistoryStatsResponse payload = service.getStats(userId);
                     emitter.send(SseEmitter.event().name("stats").data(payload));
                     Thread.sleep(clampedIntervalMs);
-                } catch (InterruptedException ie) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                     open.set(false);
                     emitter.complete();
                     return;
-                } catch (java.io.IOException | IllegalStateException disconnectEx) {
+                } catch (IOException | IllegalStateException _) {
                     open.set(false);
                     return;
                 } catch (Exception ex) {
@@ -142,7 +152,8 @@ public class TransferHistoryController {
                                 .data(Map.of(
                                         "message",
                                         ex.getMessage() != null ? ex.getMessage() : "Transfer stats stream failed")));
-                    } catch (java.io.IOException | IllegalStateException ignored) {
+                    } catch (IOException | IllegalStateException _) {
+                        // ignored
                     }
                     open.set(false);
                     emitter.complete();

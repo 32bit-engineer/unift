@@ -1,6 +1,6 @@
 import type { DirectoryListingResponse, TransferStatusResponse } from '@/utils/remoteConnectionAPI';
 
-export type ProtocolType = 'SSH_SFTP' | 'FTP' | 'SMB';
+export type ProtocolType = 'SSH_SFTP';
 export type StatusFilter = 'all' | 'online' | 'offline' | 'warning';
 export type FileEntry = DirectoryListingResponse['entries'][number];
 export type { TransferStatusResponse };

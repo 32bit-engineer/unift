@@ -70,23 +70,6 @@ export function NewConnectionModal({
             </div>
           )}
 
-          {/* Protocol Tabs */}
-          <div className="flex gap-2 border-b border-[#1E1E2E]">
-            {(['SSH_SFTP', 'FTP', 'SMB'] as const).map(proto => (
-              <button
-                key={proto}
-                onClick={() => onProtocolChange(proto)}
-                className={`px-3 py-2 text-xs font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px cursor-pointer ${
-                  selectedProtocol === proto
-                    ? 'text-[#7C6DFA] border-[#7C6DFA]'
-                    : 'text-slate-500 border-transparent hover:text-slate-300'
-                }`}
-              >
-                {proto === 'SSH_SFTP' ? 'SFTP' : proto}
-              </button>
-            ))}
-          </div>
-
           {/* Form Fields */}
           <div className="space-y-3">
 

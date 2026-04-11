@@ -10,22 +10,9 @@ import type { SavedHost } from '@/components/layout';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type FilterType = 'all' | 'ssh' | 'k8s';
+type FilterType = 'all' | 'ssh';
 
 type HostStatus = 'online' | 'idle' | 'offline' | 'fault';
-
-// Placeholder shape for future Kubernetes cluster support
-interface K8sCluster {
-  id: string;
-  name: string;
-  region: string;
-  version: string;
-  status: 'active' | 'offline';
-  nodes?: number;
-  uptime?: string;
-  ipRange?: string;
-  provider?: string;
-}
 
 interface ConnectionHubPageProps {
   savedHostConfigs:    SavedHostResponse[];
@@ -95,24 +82,6 @@ function StatusBadge({ status }: { status: HostStatus | 'active' }) {
       />
       {STATUS_LABELS[status]}
     </span>
-  );
-}
-
-// ─── K8s Server Icon ─────────────────────────────────────────────────────────
-
-function K8sIcon() {
-  return (
-    <div
-      className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-      style={{ background: 'rgba(124,109,250,0.1)', border: '1px solid rgba(124,109,250,0.18)' }}
-    >
-      {/* Stacked-rectangles representation of a cluster */}
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <rect x="3"  y="3"  width="14" height="4" rx="1" fill="rgba(124,109,250,0.9)" />
-        <rect x="3"  y="8"  width="14" height="4" rx="1" fill="rgba(124,109,250,0.6)" />
-        <rect x="3"  y="13" width="14" height="4" rx="1" fill="rgba(124,109,250,0.35)" />
-      </svg>
-    </div>
   );
 }
 
@@ -644,117 +613,6 @@ function EditHostModal({
   );
 }
 
-// ─── K8s Cluster Card ─────────────────────────────────────────────────────────
-
-function K8sClusterCard({
-  cluster,
-}: {
-  cluster: K8sCluster;
-}) {
-  const isActive = cluster.status === 'active';
-
-  return (
-    <div
-      className="flex flex-col gap-3 p-4 rounded-xl"
-      style={{
-        background:  'var(--color-surface)',
-        border:      '1px solid var(--color-border-muted)',
-        minWidth:    '260px',
-        flex:        '1 1 260px',
-        maxWidth:    '320px',
-      }}
-    >
-      {/* Top row: icon + status */}
-      <div className="flex items-start justify-between">
-        <K8sIcon />
-        <StatusBadge status={isActive ? 'active' : 'offline'} />
-      </div>
-
-      {/* Name + region/version */}
-      <div>
-        <p className="text-[13px] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          {cluster.name}
-        </p>
-        <p className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-          {cluster.region} &bull; {cluster.version}
-        </p>
-      </div>
-
-      {/* Stats grid */}
-      <div
-        className="grid grid-cols-2 gap-2 rounded-lg p-3"
-        style={{ background: 'var(--color-bg-base)', border: '1px solid var(--color-border-subtle)' }}
-      >
-        {isActive ? (
-          <>
-            <div>
-              <p className="label text-muted" style={{ fontSize: '10px' }}>Nodes</p>
-              <p className="text-[13px] font-semibold mt-0.5" style={{ color: 'var(--color-text-primary)' }}>
-                {cluster.nodes ?? 0} Active
-              </p>
-            </div>
-            <div>
-              <p className="label text-muted" style={{ fontSize: '10px' }}>Uptime</p>
-              <p className="text-[13px] font-semibold mt-0.5" style={{ color: 'var(--color-text-primary)' }}>
-                {cluster.uptime ?? 'N/A'}
-              </p>
-            </div>
-          </>
-        ) : (
-          <>
-            <div>
-              <p className="label text-muted" style={{ fontSize: '10px' }}>IP Range</p>
-              <p className="text-[13px] font-semibold mt-0.5 font-mono" style={{ color: 'var(--color-text-primary)' }}>
-                {cluster.ipRange ?? 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="label text-muted" style={{ fontSize: '10px' }}>Provider</p>
-              <p className="text-[13px] font-semibold mt-0.5 font-mono" style={{ color: 'var(--color-text-primary)' }}>
-                {cluster.provider ?? 'N/A'}
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-2 mt-auto">
-        <button
-          className="flex-1 py-1.5 rounded-lg text-[12px] font-semibold transition-all duration-150 cursor-pointer"
-          style={
-            isActive
-              ? { background: 'var(--gradient-primary)', color: '#fff' }
-              : { background: 'var(--color-surface-alt)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-muted)' }
-          }
-        >
-          {isActive ? 'Connect' : 'Retry'}
-        </button>
-
-        <button
-          className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-white/5"
-          style={{ border: '1px solid var(--color-border-muted)' }}
-          title="Edit"
-        >
-          <span className="material-symbols-rounded" style={{ fontSize: '15px', color: 'var(--color-text-muted)' }}>
-            edit
-          </span>
-        </button>
-
-        <button
-          className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-red-900/20"
-          style={{ border: '1px solid var(--color-border-muted)' }}
-          title="Delete"
-        >
-          <span className="material-symbols-rounded" style={{ fontSize: '15px', color: 'var(--color-text-muted)' }}>
-            delete
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── SSH Server Card ──────────────────────────────────────────────────────────
 
 function SshServerCard({
@@ -1056,10 +914,6 @@ export function ConnectionHubPage({
 }: ConnectionHubPageProps) {
   const [filter, setFilter] = useState<FilterType>('all');
 
-  // No real K8s data yet — placeholder list
-  const k8sClusters: K8sCluster[] = [];
-
-  const showK8s = filter === 'all' || filter === 'k8s';
   const showSsh = filter === 'all' || filter === 'ssh';
 
   // Map saved host configs to their active session IDs (if connected)
@@ -1083,7 +937,7 @@ export function ConnectionHubPage({
           <div>
             <h1 className="text-display mb-1">Connection Hub</h1>
             <p className="text-ui-sm" style={{ color: 'var(--color-text-secondary)', maxWidth: '480px' }}>
-              Manage and orchestrate your remote infrastructure across SSH nodes and managed Kubernetes clusters.
+              Manage and connect to your remote SSH servers.
             </p>
           </div>
 
@@ -1094,7 +948,6 @@ export function ConnectionHubPage({
           >
             <FilterTab label="All"  active={filter === 'all'}  onClick={() => setFilter('all')}  />
             <FilterTab label="SSH"  active={filter === 'ssh'}  onClick={() => setFilter('ssh')}  />
-            <FilterTab label="K8s"  active={filter === 'k8s'}  onClick={() => setFilter('k8s')}  />
           </div>
         </div>
 
@@ -1145,25 +998,6 @@ export function ConnectionHubPage({
             </div>
           </section>
         )}
-        {showK8s && (
-          <section className="mb-10">
-            <SectionHeader icon="" iconIsSvg label="Kubernetes Clusters" />
-
-            {k8sClusters.length === 0 ? (
-              <div className="flex flex-wrap gap-4">
-                <CreateNewCard onClick={onCreateNew} />
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-4">
-                {k8sClusters.map(cluster => (
-                  <K8sClusterCard key={cluster.id} cluster={cluster} />
-                ))}
-                <CreateNewCard onClick={onCreateNew} />
-              </div>
-            )}
-          </section>
-        )}
-
         {/* SSH Servers */}
         {showSsh && (
           <section className="mb-10">
