@@ -171,8 +171,7 @@ public class TransferLogRepository {
     /** Returns the total count for user + filters (for pagination metadata). */
     public long countByUserIdWithFilters(UUID userId, String sessionId, String username, String status) {
         MapSqlParameterSource params = new MapSqlParameterSource(PARAM_USER_ID, userId);
-        StringBuilder sql = new StringBuilder(
-                "SELECT COUNT(*) FROM transfer_log WHERE user_id = :userId");
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM transfer_log WHERE user_id = :userId");
         if (sessionId != null && !sessionId.isBlank()) {
             sql.append(" AND session_id = :sessionId");
             params.addValue("sessionId", sessionId.trim());

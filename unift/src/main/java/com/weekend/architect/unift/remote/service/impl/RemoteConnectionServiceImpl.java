@@ -306,8 +306,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
             // put() returns normally — it does NOT throw. We must check the token here
             // to distinguish a completed upload from a canceled one.
             if (cancellationToken.isCancelled()) {
-                handleUploadCancellation(transfer, conn, sessionId, remotePath, ownerId,
-                        remoteHost, remotePort, remoteUsername);
+                handleUploadCancellation(
+                        transfer, conn, sessionId, remotePath, ownerId, remoteHost, remotePort, remoteUsername);
             } else {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.COMPLETED);
                 transfer.setCompletedAt(OffsetDateTime.now());
@@ -317,8 +317,8 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
         } catch (TransferException e) {
             // Secondary path: CancellableInputStream threw InterruptedIOException mid-read
             if (cancellationToken.isCancelled()) {
-                handleUploadCancellation(transfer, conn, sessionId, remotePath, ownerId,
-                        remoteHost, remotePort, remoteUsername);
+                handleUploadCancellation(
+                        transfer, conn, sessionId, remotePath, ownerId, remoteHost, remotePort, remoteUsername);
             } else {
                 transferRegistry.updateState(transfer.getTransferId(), TransferState.FAILED);
                 transfer.setErrorMessage(e.getMessage());
@@ -592,8 +592,13 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
      * @param transfer the completed/failed/cancelled transfer
      */
     private void logTransfer(
-            UUID ownerId, String sessionId, String username,
-            String remotePath, String remoteHost, int remotePort, RemoteTransfer transfer) {
+            UUID ownerId,
+            String sessionId,
+            String username,
+            String remotePath,
+            String remoteHost,
+            int remotePort,
+            RemoteTransfer transfer) {
         try {
             // Extract just the filename from the remote path
             java.nio.file.Path p = Paths.get(remotePath);

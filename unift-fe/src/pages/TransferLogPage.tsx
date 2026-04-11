@@ -115,8 +115,8 @@ export function TransferLogPage() {
     setError(null);
     try {
       const data = await remoteConnectionAPI.listTransferHistory(pageIndex, PAGE_SIZE);
-      setEntries(data);
-      setHasMore(data.length === PAGE_SIZE);
+      setEntries(data.items);
+      setHasMore(data.items.length === PAGE_SIZE);
       setPage(pageIndex);
     } catch {
       setError('Failed to load transfer history.');

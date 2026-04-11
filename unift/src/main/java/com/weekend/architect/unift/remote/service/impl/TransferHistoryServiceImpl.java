@@ -22,11 +22,10 @@ public class TransferHistoryServiceImpl implements TransferHistoryService {
     @Override
     public TransferLogPageResponse listHistory(
             UUID userId, int page, int size, String sessionId, String username, String status) {
-        List<TransferLogResponse> items = repository
-                .findByUserIdWithFilters(userId, page, size, sessionId, username, status)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        List<TransferLogResponse> items =
+                repository.findByUserIdWithFilters(userId, page, size, sessionId, username, status).stream()
+                        .map(this::toResponse)
+                        .toList();
         long total = repository.countByUserIdWithFilters(userId, sessionId, username, status);
         int safeSize = Math.min(size, 100);
         return TransferLogPageResponse.builder()
