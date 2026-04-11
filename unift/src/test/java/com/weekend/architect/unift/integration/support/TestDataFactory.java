@@ -20,11 +20,12 @@ public class TestDataFactory {
     }
 
     /**
-     * Inserts a {@code transfer_log} row with minimal fields.
+     * Inserts a {@code transfer_log} row with minimal fields. {@code session_id} and {@code
+     * username} are left {@code NULL}.
      *
-     * @param userId owning user ID
+     * @param userId   owning user ID
      * @param filename file name to record
-     * @param status terminal state: COMPLETED, FAILED, or CANCELLED
+     * @param status   terminal state: COMPLETED, FAILED, or CANCELLED
      * @return the generated log entry ID
      */
     public UUID insertTransferLog(UUID userId, String filename, String status) {
@@ -32,15 +33,16 @@ public class TestDataFactory {
     }
 
     /**
-     * Inserts a {@code transfer_log} row with all transfer metrics.
+     * Inserts a {@code transfer_log} row with all transfer metrics. {@code session_id} and {@code
+     * username} are left {@code NULL}.
      *
-     * @param userId owning user ID
-     * @param filename file name
-     * @param status COMPLETED | FAILED | CANCELLED
-     * @param sizeBytes bytes transferred
+     * @param userId      owning user ID
+     * @param filename    file name
+     * @param status      COMPLETED | FAILED | CANCELLED
+     * @param sizeBytes   bytes transferred
      * @param avgSpeedBps average speed (nullable)
-     * @param durationMs wall-clock duration in ms (nullable)
-     * @param errorMsg error detail for FAILED entries (nullable)
+     * @param durationMs  wall-clock duration in ms (nullable)
+     * @param errorMsg    error detail for FAILED entries (nullable)
      * @return the generated log entry ID
      */
     public UUID insertTransferLogFull(
@@ -51,16 +53,49 @@ public class TestDataFactory {
             Long avgSpeedBps,
             Long durationMs,
             String errorMsg) {
+        return insertTransferLogWithSession(
+                userId, filename, status, sizeBytes, avgSpeedBps, durationMs, errorMsg, null, null);
+    }
+
+    /**
+     * Inserts a {@code transfer_log} row with all fields, including session context.
+     *
+     * <p>Use this overload when testing the {@code ?sessionId} or {@code ?username} filter
+     * parameters on {@code GET /api/transfers/history}.
+     *
+     * @param userId      owning user ID
+     * @param filename    file name
+     * @param status      COMPLETED | FAILED | CANCELLED
+     * @param sizeBytes   bytes transferred (nullable)
+     * @param avgSpeedBps average speed in bytes/s (nullable)
+     * @param durationMs  wall-clock duration in ms (nullable)
+     * @param errorMsg    error detail for FAILED entries (nullable)
+     * @param sessionId   session that initiated the transfer (nullable)
+     * @param username    SSH username used for the session (nullable)
+     * @return the generated log entry ID
+     */
+    public UUID insertTransferLogWithSession(
+            UUID userId,
+            String filename,
+            String status,
+            Long sizeBytes,
+            Long avgSpeedBps,
+            Long durationMs,
+            String errorMsg,
+            String sessionId,
+            String username) {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 """
                 INSERT INTO transfer_log
-                    (id, user_id, filename, source, destination,
+                    (id, user_id, session_id, username, filename, source, destination,
                      size_bytes, avg_speed_bps, duration_ms, status, error_message, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 """,
                 id,
                 userId,
+                sessionId,
+                username,
                 filename,
                 "sftp://host/" + filename,
                 "client/" + filename,

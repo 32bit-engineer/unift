@@ -50,7 +50,8 @@ class TransferHistoryApiIT extends IntegrationTestBase {
 
         mockMvc.perform(get(HISTORY).header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(0)));
+                .andExpect(jsonPath("$.items", hasSize(0)))
+                .andExpect(jsonPath("$.total").value(0));
     }
 
     @Test
@@ -68,11 +69,11 @@ class TransferHistoryApiIT extends IntegrationTestBase {
 
         mockMvc.perform(get(HISTORY).header(HttpHeaders.AUTHORIZATION, userA.bearer()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(2)));
+                .andExpect(jsonPath("$.items", hasSize(2)));
 
         mockMvc.perform(get(HISTORY).header(HttpHeaders.AUTHORIZATION, userB.bearer()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)));
+                .andExpect(jsonPath("$.items", hasSize(1)));
     }
 
     @Test
@@ -89,7 +90,7 @@ class TransferHistoryApiIT extends IntegrationTestBase {
                         .param("size", "1")
                         .header(HttpHeaders.AUTHORIZATION, tokens.bearer()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)));
+                .andExpect(jsonPath("$.items", hasSize(1)));
     }
 
     @Test
