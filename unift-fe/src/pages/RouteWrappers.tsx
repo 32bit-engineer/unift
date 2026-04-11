@@ -295,10 +295,7 @@ export function SavedHostsRoute() {
 }
 
 export function TransferHistoryRoute() {
-  const sessions = useConnectionStore(s => s.sessions);
-  const sessionIds = useMemo(() => sessions.map(s => s.sessionId), [sessions]);
-
-  return <TransferHistoryPage sessionIds={sessionIds} />;
+  return <TransferHistoryPage />;
 }
 
 export function DockerDashboardRoute() {

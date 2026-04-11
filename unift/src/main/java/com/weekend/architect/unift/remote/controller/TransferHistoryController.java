@@ -1,6 +1,7 @@
 package com.weekend.architect.unift.remote.controller;
 
 import com.weekend.architect.unift.remote.dto.TransferHistoryStatsResponse;
+import com.weekend.architect.unift.remote.dto.TransferLogPageResponse;
 import com.weekend.architect.unift.remote.dto.TransferLogResponse;
 import com.weekend.architect.unift.remote.service.TransferHistoryService;
 import com.weekend.architect.unift.security.UniFtUserDetails;
@@ -13,7 +14,6 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -65,19 +65,28 @@ public class TransferHistoryController {
     @Operation(
             summary = "List transfer history",
             description =
-                    "Returns a paginated list of transfer log entries for the authenticated user, " + "newest first.",
+                    "Returns a paginated list of transfer log entries for the authenticated user, newest first. "
+                    + "Optional filters: sessionId (exact match), username (case-insensitive substring), "
+                    + "status (exact: COMPLETED, FAILED, CANCELLED).",
             responses = {@ApiResponse(responseCode = "200", description = "Transfer history page")})
-    public ResponseEntity<List<TransferLogResponse>> listHistory(
+    public ResponseEntity<TransferLogPageResponse> listHistory(
             @Parameter(description = "0-based page index (default 0)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Page size, max 100 (default 20)")
                     @RequestParam(defaultValue = "20")
                     @Min(1)
                     @Max(100)
                     int size,
+            @Parameter(description = "Filter by session ID (optional)")
+                    @RequestParam(required = false) String sessionId,
+            @Parameter(description = "Filter by SSH username, case-insensitive substring (optional)")
+                    @RequestParam(required = false) String username,
+            @Parameter(description = "Filter by status: COMPLETED, FAILED, CANCELLED (optional)")
+                    @RequestParam(required = false) String status,
             @AuthenticationPrincipal UniFtUserDetails principal) {
         UUID userId = principal.user().getId();
-        log.debug("[transfer-history] Listing history for user {} (page={}, size={})", userId, page, size);
-        return ResponseEntity.ok(service.listHistory(userId, page, size));
+        log.debug("[transfer-history] Listing history for user {} (page={}, size={}, sessionId={}, username={}, status={})",
+                userId, page, size, sessionId, username, status);
+        return ResponseEntity.ok(service.listHistory(userId, page, size, sessionId, username, status));
     }
 
     @GetMapping("/stats")

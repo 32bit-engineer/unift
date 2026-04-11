@@ -12,6 +12,7 @@ import { TransferProgressPopup } from '@/components/ui';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import type { WorkspaceType } from '@/utils/remoteConnectionAPI';
 import { toast } from 'sonner';
+import { Input } from '@/components/ui/input';
 
 const WORKSPACE_LABELS: Record<WorkspaceType, string> = {
   ssh: 'SSH Workspace',
@@ -528,10 +529,10 @@ export function AppLayout() {
               >
                 search
               </span>
-              <input
+              <Input
                 type="text"
                 placeholder="Search hosts..."
-                className="bg-[#0C0C14] border border-[#1E1E2E] rounded pl-8 pr-3 py-1.5 text-code text-primary placeholder:text-muted focus:ring-1 focus:ring-[#7C6DFA]/40 outline-none transition-all w-52"
+                className="pl-8 w-52 focus:ring-1 focus:ring-[#7C6DFA]/40"
               />
             </div>
             <button className="p-1.5 hover:bg-white/5 rounded transition-colors relative cursor-pointer">

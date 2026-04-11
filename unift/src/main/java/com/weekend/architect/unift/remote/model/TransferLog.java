@@ -29,6 +29,12 @@ public class TransferLog {
      */
     private UUID userId;
 
+    /** The session ID this transfer belonged to (may be null for legacy rows). */
+    private String sessionId;
+
+    /** The SSH username used for the session (may be null for legacy rows). */
+    private String username;
+
     /** Basename of the file (extracted from source or destination path). */
     private String filename;
 

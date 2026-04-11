@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import { Input } from '@/components/ui/input';
 import type {
   DockerImage,
   ImagePage,
@@ -118,20 +119,12 @@ export function DockerImagesPage({ sessionId }: DockerImagesPageProps) {
           >
             search
           </span>
-          <input
+          <Input
             type="text"
             placeholder="Search images..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 rounded-md"
-            style={{
-              fontSize: '12px',
-              background: 'var(--color-bg-base)',
-              color: 'var(--color-text-primary)',
-              border: '1px solid var(--color-border-muted)',
-              outline: 'none',
-              fontFamily: 'var(--font-sans)',
-            }}
+            className="w-full pl-8"
           />
         </div>
         <button

@@ -43,6 +43,8 @@ public class TransferLogRepository {
         return TransferLog.builder()
                 .id(rs.getObject(PARAM_ID, UUID.class))
                 .userId(rawUserId != null ? UUID.fromString(rawUserId) : null)
+                .sessionId(rs.getString("session_id"))
+                .username(rs.getString("username"))
                 .filename(rs.getString("filename"))
                 .source(rs.getString("source"))
                 .destination(rs.getString("destination"))
@@ -77,10 +79,10 @@ public class TransferLogRepository {
     public void save(TransferLog entry) {
         String sql = """
                 INSERT INTO transfer_log (
-                    id, user_id, filename, source, destination,
+                    id, user_id, session_id, username, filename, source, destination,
                     size_bytes, avg_speed_bps, duration_ms, status, error_message, created_at
                 ) VALUES (
-                    :id, :userId, :filename, :source, :destination,
+                    :id, :userId, :sessionId, :username, :filename, :source, :destination,
                     :sizeBytes, :avgSpeedBps, :durationMs, :status, :errorMessage, NOW()
                 )
                 """;
@@ -89,6 +91,8 @@ public class TransferLogRepository {
                 new MapSqlParameterSource()
                         .addValue(PARAM_ID, entry.getId())
                         .addValue(PARAM_USER_ID, entry.getUserId())
+                        .addValue("sessionId", entry.getSessionId())
+                        .addValue("username", entry.getUsername())
                         .addValue("filename", entry.getFilename())
                         .addValue("source", entry.getSource())
                         .addValue("destination", entry.getDestination())
@@ -128,33 +132,60 @@ public class TransferLogRepository {
     }
 
     /**
-     * Returns a page of transfer log entries for a user, newest first.
+     * Returns a page of transfer log entries for a user with optional filters, newest first.
      *
-     * @param page 0-based page index
-     * @param size number of entries per page (max 100)
+     * @param page      0-based page index
+     * @param size      number of entries per page (max 100)
+     * @param sessionId optional filter — only return rows for this session
+     * @param username  optional filter — only return rows for this SSH username
      */
-    public List<TransferLog> findByUserId(UUID userId, int page, int size) {
+    public List<TransferLog> findByUserIdWithFilters(
+            UUID userId, int page, int size, String sessionId, String username, String status) {
         int safeSize = Math.min(size, 100);
         int offset = page * safeSize;
-        String sql = """
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue(PARAM_USER_ID, userId)
+                .addValue("size", safeSize)
+                .addValue("offset", offset);
+
+        StringBuilder sql = new StringBuilder("""
                 SELECT * FROM transfer_log
                 WHERE user_id = :userId
-                ORDER BY created_at DESC
-                LIMIT :size OFFSET :offset
-                """;
-        return jdbc.query(
-                sql,
-                new MapSqlParameterSource()
-                        .addValue(PARAM_USER_ID, userId)
-                        .addValue("size", safeSize)
-                        .addValue("offset", offset),
-                this::mapRow);
+                """);
+        if (sessionId != null && !sessionId.isBlank()) {
+            sql.append(" AND session_id = :sessionId");
+            params.addValue("sessionId", sessionId.trim());
+        }
+        if (username != null && !username.isBlank()) {
+            sql.append(" AND LOWER(username) LIKE :username");
+            params.addValue("username", "%" + username.trim().toLowerCase() + "%");
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND status = :status");
+            params.addValue("status", status.trim().toUpperCase());
+        }
+        sql.append(" ORDER BY created_at DESC LIMIT :size OFFSET :offset");
+        return jdbc.query(sql.toString(), params, this::mapRow);
     }
 
-    /** Returns the total number of transfer log entries for a user (for pagination metadata). */
-    public long countByUserId(UUID userId) {
-        String sql = "SELECT COUNT(*) FROM transfer_log WHERE user_id = :userId";
-        Long count = jdbc.queryForObject(sql, new MapSqlParameterSource(PARAM_USER_ID, userId), Long.class);
+    /** Returns the total count for user + filters (for pagination metadata). */
+    public long countByUserIdWithFilters(UUID userId, String sessionId, String username, String status) {
+        MapSqlParameterSource params = new MapSqlParameterSource(PARAM_USER_ID, userId);
+        StringBuilder sql = new StringBuilder(
+                "SELECT COUNT(*) FROM transfer_log WHERE user_id = :userId");
+        if (sessionId != null && !sessionId.isBlank()) {
+            sql.append(" AND session_id = :sessionId");
+            params.addValue("sessionId", sessionId.trim());
+        }
+        if (username != null && !username.isBlank()) {
+            sql.append(" AND LOWER(username) LIKE :username");
+            params.addValue("username", "%" + username.trim().toLowerCase() + "%");
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND status = :status");
+            params.addValue("status", status.trim().toUpperCase());
+        }
+        Long count = jdbc.queryForObject(sql.toString(), params, Long.class);
         return count != null ? count : 0L;
     }
 

@@ -1,6 +1,7 @@
 package com.weekend.architect.unift.remote.service.impl;
 
 import com.weekend.architect.unift.remote.dto.TransferHistoryStatsResponse;
+import com.weekend.architect.unift.remote.dto.TransferLogPageResponse;
 import com.weekend.architect.unift.remote.dto.TransferLogResponse;
 import com.weekend.architect.unift.remote.model.TransferLog;
 import com.weekend.architect.unift.remote.repository.TransferLogRepository;
@@ -19,10 +20,22 @@ public class TransferHistoryServiceImpl implements TransferHistoryService {
     private final TransferLogRepository repository;
 
     @Override
-    public List<TransferLogResponse> listHistory(UUID userId, int page, int size) {
-        return repository.findByUserId(userId, page, size).stream()
+    public TransferLogPageResponse listHistory(
+            UUID userId, int page, int size, String sessionId, String username, String status) {
+        List<TransferLogResponse> items = repository
+                .findByUserIdWithFilters(userId, page, size, sessionId, username, status)
+                .stream()
                 .map(this::toResponse)
                 .toList();
+        long total = repository.countByUserIdWithFilters(userId, sessionId, username, status);
+        int safeSize = Math.min(size, 100);
+        return TransferLogPageResponse.builder()
+                .page(page)
+                .size(safeSize)
+                .total(total)
+                .hasMore((long) (page + 1) * safeSize < total)
+                .items(items)
+                .build();
     }
 
     @Override
@@ -50,6 +63,8 @@ public class TransferHistoryServiceImpl implements TransferHistoryService {
     private TransferLogResponse toResponse(TransferLog t) {
         return TransferLogResponse.builder()
                 .id(t.getId())
+                .sessionId(t.getSessionId())
+                .username(t.getUsername())
                 .filename(t.getFilename())
                 .source(t.getSource())
                 .destination(t.getDestination())

@@ -1,20 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useTransferStore } from '@/store/transferStore';
-import { remoteConnectionAPI, type TransferStatusResponse, type TransferState, type TransferHistoryStatsResponse } from '@/utils/remoteConnectionAPI';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { remoteConnectionAPI, type TransferLogResponse, type TransferHistoryStatsResponse } from '@/utils/remoteConnectionAPI';
+import { Input } from '@/components/ui/input';
 
-interface TransferHistoryPageProps {
-  sessionIds: string[];
-}
+type FilterStatus = 'ALL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
-type FilterState = 'ALL' | TransferState;
-type FilterDirection = 'ALL' | 'UPLOAD' | 'DOWNLOAD';
+const PAGE_SIZE = 20;
 
-// Returns the short filename from a remote path
-function fileName(remotePath: string): string {
-  return remotePath.split('/').filter(Boolean).pop() ?? remotePath;
-}
-
-// Formats bytes as a human-readable string
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -30,113 +21,117 @@ function formatRelativeTime(isoString: string): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-const STATE_BADGE: Record<TransferState, { label: string; classes: string }> = {
-  PENDING:     { label: 'Pending',     classes: 'bg-slate-800 text-slate-400 border border-slate-700' },
-  IN_PROGRESS: { label: 'Transferring',classes: 'bg-blue-900/40 text-[#7C6DFA] border border-blue-700/40' },
-  COMPLETED:   { label: 'Done',        classes: 'bg-green-900/40 text-[#4ade80] border border-green-700/40' },
-  FAILED:      { label: 'Failed',      classes: 'bg-red-900/40 text-red-400 border border-red-700/40' },
-  CANCELLED:   { label: 'Cancelled',   classes: 'bg-slate-800/60 text-slate-500 border border-[#1E1E2E]' },
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
+}
+
+const STATUS_BADGE: Record<string, { label: string; classes: string }> = {
+  COMPLETED: { label: 'Done',      classes: 'bg-green-900/40 text-[#4ade80] border border-green-700/40' },
+  FAILED:    { label: 'Failed',    classes: 'bg-red-900/40 text-red-400 border border-red-700/40' },
+  CANCELLED: { label: 'Cancelled', classes: 'bg-slate-800/60 text-slate-500 border border-[#1E1E2E]' },
 };
 
-function StateBadge({ state }: { state: TransferState }) {
-  const { label, classes } = STATE_BADGE[state];
+function StatusBadge({ status }: { status: string }) {
+  const b = STATUS_BADGE[status] ?? { label: status, classes: 'bg-slate-800 text-slate-400' };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${classes}`}>
-      {label}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${b.classes}`}>
+      {b.label}
     </span>
   );
 }
 
-export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
-  const { transfersBySession, setTransfers } = useTransferStore();
-  const [loading, setLoading] = useState(sessionIds.length > 0);
-  const [filterState, setFilterState] = useState<FilterState>('ALL');
-  const [filterDirection, setFilterDirection] = useState<FilterDirection>('ALL');
+/** source === "client" means the user uploaded; otherwise it was a download. */
+function isUploadRow(source: string): boolean {
+  return source === 'client';
+}
+
+export function TransferHistoryPage() {
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<TransferLogResponse[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL');
+  const [searchSession, setSearchSession] = useState('');
+  const [searchUsername, setSearchUsername] = useState('');
+  const [debouncedSession, setDebouncedSession] = useState('');
+  const [debouncedUsername, setDebouncedUsername] = useState('');
   const [transferStats, setTransferStats] = useState<TransferHistoryStatsResponse | null>(null);
 
-  // Fetch all transfers for all known sessions
-  const refreshAll = useCallback(async () => {
-    if (sessionIds.length === 0) return;
-    await Promise.all(
-      sessionIds.map(id =>
-        remoteConnectionAPI
-          .getTransfers(id)
-          .then(list => setTransfers(id, list))
-          .catch(() => { /* non-critical */ })
-      )
-    );
-    setLoading(false);
-  }, [sessionIds, setTransfers]);
+  const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usernameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    void refreshAll();
-  }, [refreshAll]);
+  const handleSessionInput = (v: string) => {
+    setSearchSession(v);
+    if (sessionTimer.current) clearTimeout(sessionTimer.current);
+    sessionTimer.current = setTimeout(() => setDebouncedSession(v), 300);
+  };
 
+  const handleUsernameInput = (v: string) => {
+    setSearchUsername(v);
+    if (usernameTimer.current) clearTimeout(usernameTimer.current);
+    usernameTimer.current = setTimeout(() => setDebouncedUsername(v), 300);
+  };
+
+  const load = useCallback(async (p: number) => {
+    setLoading(true);
+    try {
+      const resp = await remoteConnectionAPI.listTransferHistory(
+        p,
+        PAGE_SIZE,
+        debouncedSession || undefined,
+        debouncedUsername || undefined,
+        filterStatus !== 'ALL' ? filterStatus : undefined,
+      );
+      setItems(resp.items);
+      setTotal(resp.total);
+      setHasMore(resp.hasMore);
+    } catch {
+      setItems([]);
+      setTotal(0);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSession, debouncedUsername, filterStatus]);
+
+  // Reset to page 0 when filters change
+  useEffect(() => { setPage(0); }, [debouncedSession, debouncedUsername, filterStatus]);
+
+  useEffect(() => { void load(page); }, [load, page]);
+
+  // Stats SSE stream
   useEffect(() => {
     let stop: (() => void) | null = null;
+    void remoteConnectionAPI.getTransferHistoryStats().then(s => setTransferStats(s)).catch(() => {});
     void remoteConnectionAPI
-      .getTransferHistoryStats()
-      .then((s) => setTransferStats(s))
-      .catch(() => {});
-    void remoteConnectionAPI
-      .streamTransferHistoryStats(
-        30_000,
-        (s) => setTransferStats(s),
-        () => {},
-      )
-      .then((s) => { stop = s; });
+      .streamTransferHistoryStats(30_000, s => setTransferStats(s), () => {})
+      .then(s => { stop = s; });
     return () => { stop?.(); };
   }, []);
 
-  // Flatten + sort newest first
-  const allTransfers: (TransferStatusResponse & { sessionId: string })[] =
-    Object.entries(transfersBySession)
-      .flatMap(([sessionId, list]) =>
-        list.map(t => ({ ...t, sessionId }))
-      )
-      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
-
-  const filtered = allTransfers.filter(t => {
-    if (filterState !== 'ALL' && t.state !== filterState) return false;
-    if (filterDirection !== 'ALL' && t.direction !== filterDirection) return false;
-    return true;
-  });
-
-  const activeCount = allTransfers.filter(
-    t => t.state === 'PENDING' || t.state === 'IN_PROGRESS',
-  ).length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="h-full flex flex-col overflow-hidden p-6">
-      {/* Page header */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-6 shrink-0">
         <div>
           <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Transfer History</h2>
           <p className="text-xs font-mono text-slate-500 mt-0.5">
-            All uploads and downloads across active sessions.
+            All uploads and downloads across all connections.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {activeCount > 0 && (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 border border-blue-700/40 rounded text-xs font-mono text-[#7C6DFA]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#7C6DFA] animate-pulse" />
-              {activeCount} active
-            </span>
-          )}
-          <button
-            onClick={() => { setLoading(true); void refreshAll(); }}
-            disabled={loading}
-            title="Refresh all transfers"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#13131E] border border-[#1E1E2E] rounded text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#171724] transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <span
-              className={`material-symbols-rounded text-sm ${loading ? 'animate-spin' : ''}`}
-            >
-              refresh
-            </span>
-            Refresh
-          </button>
-        </div>
+        <button
+          onClick={() => void load(page)}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#13131E] border border-[#1E1E2E] rounded text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#171724] transition-colors cursor-pointer disabled:opacity-50"
+        >
+          <span className={`material-symbols-rounded text-sm ${loading ? 'animate-spin' : ''}`}>refresh</span>
+          Refresh
+        </button>
       </div>
 
       {/* Stats cards */}
@@ -148,8 +143,7 @@ export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
           <StatsCard
             label="Transferred"
             value={transferStats.totalBytesTransferred != null ? formatBytes(transferStats.totalBytesTransferred) : '—'}
-            icon="storage"
-            accent="#7C6DFA"
+            icon="storage" accent="#7C6DFA"
           />
           <StatsCard
             label="Avg Speed"
@@ -159,81 +153,116 @@ export function TransferHistoryPage({ sessionIds }: TransferHistoryPageProps) {
         </div>
       )}
 
-      {/* Filter bar */}
+      {/* Search + Filter bar */}
       <div className="flex items-center gap-3 mb-4 shrink-0 flex-wrap">
-        <span className="text-xs font-mono text-slate-500">Filter:</span>
-
-        {/* State filter */}
-        <div className="flex items-center bg-[#13131E] border border-[#1E1E2E] rounded overflow-hidden">
-          {(['ALL', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED'] as FilterState[]).map(s => (
-            <button
-              key={s}
-              onClick={() => setFilterState(s)}
-              className={`px-2.5 py-1 text-[10px] font-mono cursor-pointer transition-colors ${
-                filterState === s
-                  ? 'bg-[#7C6DFA] text-white'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-              }`}
-            >
-              {s === 'IN_PROGRESS' ? 'Active' : s === 'ALL' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()}
+        {/* Session ID search */}
+        <div className="flex items-center gap-1.5 bg-[#13131E] border border-[#1E1E2E] rounded px-2.5 py-1">
+          <span className="material-symbols-rounded text-[13px] text-slate-500">tag</span>
+          <Input
+            type="text"
+            value={searchSession}
+            onChange={e => handleSessionInput(e.target.value)}
+            placeholder="Session ID"
+            className="bg-transparent border-0 shadow-none h-auto py-0 rounded-none focus:border-0 focus:shadow-none text-[11px] font-mono text-slate-300 placeholder:text-slate-600 w-40"
+          />
+          {searchSession && (
+            <button onClick={() => handleSessionInput('')} className="text-slate-600 hover:text-slate-400 cursor-pointer">
+              <span className="material-symbols-rounded text-[13px]">close</span>
             </button>
-          ))}
+          )}
         </div>
 
-        {/* Direction filter */}
+        {/* Username search */}
+        <div className="flex items-center gap-1.5 bg-[#13131E] border border-[#1E1E2E] rounded px-2.5 py-1">
+          <span className="material-symbols-rounded text-[13px] text-slate-500">person</span>
+          <Input
+            type="text"
+            value={searchUsername}
+            onChange={e => handleUsernameInput(e.target.value)}
+            placeholder="Username"
+            className="bg-transparent border-0 shadow-none h-auto py-0 rounded-none focus:border-0 focus:shadow-none text-[11px] font-mono text-slate-300 placeholder:text-slate-600 w-28"
+          />
+          {searchUsername && (
+            <button onClick={() => handleUsernameInput('')} className="text-slate-600 hover:text-slate-400 cursor-pointer">
+              <span className="material-symbols-rounded text-[13px]">close</span>
+            </button>
+          )}
+        </div>
+
+        {/* Status filter */}
         <div className="flex items-center bg-[#13131E] border border-[#1E1E2E] rounded overflow-hidden">
-          {(['ALL', 'UPLOAD', 'DOWNLOAD'] as FilterDirection[]).map(d => (
+          {(['ALL', 'COMPLETED', 'FAILED', 'CANCELLED'] as FilterStatus[]).map(s => (
             <button
-              key={d}
-              onClick={() => setFilterDirection(d)}
+              key={s}
+              onClick={() => setFilterStatus(s)}
               className={`px-2.5 py-1 text-[10px] font-mono cursor-pointer transition-colors ${
-                filterDirection === d
-                  ? 'bg-[#7C6DFA] text-white'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                filterStatus === s ? 'bg-[#7C6DFA] text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
               }`}
             >
-              {d === 'ALL' ? 'All' : d.charAt(0) + d.slice(1).toLowerCase()}s
+              {s === 'ALL' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()}
             </button>
           ))}
         </div>
 
         <span className="text-[10px] font-mono text-slate-600 ml-auto">
-          {filtered.length} {filtered.length === 1 ? 'transfer' : 'transfers'}
+          {total} {total === 1 ? 'transfer' : 'transfers'}
         </span>
       </div>
 
-      {/* Transfer table */}
-      {sessionIds.length === 0 ? (
-        <EmptyState message="No active sessions. Connect to a remote host to start transferring files." />
-      ) : loading && allTransfers.length === 0 ? (
+      {/* Table */}
+      {loading && items.length === 0 ? (
         <div className="flex items-center justify-center gap-3 py-16 text-slate-500">
           <span className="material-symbols-rounded text-lg animate-spin">hourglass_bottom</span>
-          <span className="text-xs font-mono">Loading transfers...</span>
+          <span className="text-xs font-mono">Loading...</span>
         </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState message="No transfers match the current filter." />
+      ) : items.length === 0 ? (
+        <EmptyState message="No transfer history found." />
       ) : (
-        <div className="flex-1 overflow-y-auto custom-scrollbar rounded-lg border border-[#1E1E2E]">
+        <div className="flex-1 overflow-y-auto custom-scrollbar rounded-lg border border-[#1E1E2E] min-h-0">
           {/* Table header */}
-          <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 px-4 py-2 bg-[#13131E] border-b border-[#1E1E2E] shrink-0 sticky top-0 z-10">
+          <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 px-4 py-2 bg-[#13131E] border-b border-[#1E1E2E] sticky top-0 z-10">
             <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-5" />
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">File</span>
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-32 text-right">Size</span>
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-32 text-right">Progress</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">File / Session</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-28 text-right">Size</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-24 text-right">Speed</span>
             <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-24 text-right">Status</span>
             <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider w-20 text-right">Time</span>
           </div>
 
-          {filtered.map(t => (
-            <TransferHistoryRow key={`${t.sessionId}-${t.transferId}`} transfer={t} />
-          ))}
+          {items.map(t => <HistoryRow key={t.id} item={t} />)}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-4 shrink-0">
+          <button
+            disabled={page === 0 || loading}
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            className="flex items-center gap-1 px-3 py-1.5 bg-[#13131E] border border-[#1E1E2E] rounded text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#171724] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          >
+            <span className="material-symbols-rounded text-sm">chevron_left</span>
+            Prev
+          </button>
+          <span className="text-[11px] font-mono text-slate-500">
+            Page {page + 1} of {totalPages}
+          </span>
+          <button
+            disabled={!hasMore || loading}
+            onClick={() => setPage(p => p + 1)}
+            className="flex items-center gap-1 px-3 py-1.5 bg-[#13131E] border border-[#1E1E2E] rounded text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#171724] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          >
+            Next
+            <span className="material-symbols-rounded text-sm">chevron_right</span>
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// ── Empty state ────────────────────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────
+
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-20 opacity-40">
@@ -243,64 +272,50 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-// ── Transfer history row ───────────────────────────────────────────────────
-interface TransferHistoryRowProps {
-  transfer: TransferStatusResponse;
-}
-
-function TransferHistoryRow({ transfer: t }: TransferHistoryRowProps) {
-  const pct = Math.min(100, Math.max(0, t.progressPercent ?? 0));
-  const isActive = t.state === 'PENDING' || t.state === 'IN_PROGRESS';
+function HistoryRow({ item: t }: { item: TransferLogResponse }) {
+  const upload = isUploadRow(t.source);
 
   return (
     <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/[0.02] transition-colors">
-      {/* Direction */}
-      <span
-        className={`material-symbols-rounded text-sm ${
-          t.direction === 'UPLOAD' ? 'text-[#7C6DFA]' : 'text-[#4ade80]'
-        }`}
-      >
-        {t.direction === 'UPLOAD' ? 'upload' : 'download'}
+      {/* Direction icon */}
+      <span className={`material-symbols-rounded text-sm ${upload ? 'text-[#7C6DFA]' : 'text-[#4ade80]'}`}>
+        {upload ? 'upload' : 'download'}
       </span>
 
-      {/* File name + path */}
+      {/* File + session meta */}
       <div className="flex flex-col min-w-0">
-        <span className="text-xs font-mono text-slate-200 truncate" title={t.remotePath}>
-          {fileName(t.remotePath)}
+        <span className="text-xs font-mono text-slate-200 truncate" title={t.filename}>
+          {t.filename}
         </span>
-        <span className="text-[10px] font-mono text-slate-600 truncate" title={t.remotePath}>
-          {t.remotePath}
+        <span className="text-[10px] font-mono text-slate-600 truncate" title={t.source + ' → ' + t.destination}>
+          {upload ? t.destination : t.source}
         </span>
+        {(t.username || t.sessionId) && (
+          <span className="text-[10px] font-mono text-slate-700 truncate mt-0.5">
+            {t.username && <span className="text-slate-500">{t.username}</span>}
+            {t.username && t.sessionId && <span className="mx-1 opacity-40">·</span>}
+            {t.sessionId && <span title={t.sessionId}>{t.sessionId.slice(0, 8)}…</span>}
+          </span>
+        )}
       </div>
 
       {/* Size */}
-      <div className="w-32 text-right">
-        {t.totalBytes > 0 ? (
-          <span className="text-[10px] font-mono text-slate-400">
-            {isActive
-              ? `${formatBytes(t.bytesTransferred)} / ${formatBytes(t.totalBytes)}`
-              : formatBytes(t.totalBytes)}
-          </span>
+      <div className="w-28 text-right">
+        {t.sizeBytes != null ? (
+          <span className="text-[10px] font-mono text-slate-400">{formatBytes(t.sizeBytes)}</span>
         ) : (
           <span className="text-[10px] font-mono text-slate-600">—</span>
         )}
       </div>
 
-      {/* Progress bar */}
-      <div className="w-32">
-        {t.state !== 'CANCELLED' ? (
-          <div className="h-1.5 bg-[#1E1E2E] rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-300 ${
-                t.state === 'COMPLETED'
-                  ? 'bg-[#4ade80]'
-                  : t.state === 'FAILED'
-                  ? 'bg-red-500'
-                  : 'bg-[#7C6DFA]'
-              }`}
-              style={{ width: `${t.state === 'COMPLETED' ? 100 : pct}%` }}
-            />
-          </div>
+      {/* Speed / duration */}
+      <div className="w-24 text-right">
+        {t.avgSpeedBps != null ? (
+          <span className="text-[10px] font-mono text-slate-400">
+            {formatBytes(t.avgSpeedBps)}/s
+          </span>
+        ) : t.durationMs != null ? (
+          <span className="text-[10px] font-mono text-slate-500">{formatDuration(t.durationMs)}</span>
         ) : (
           <span className="text-[10px] font-mono text-slate-600">—</span>
         )}
@@ -308,14 +323,12 @@ function TransferHistoryRow({ transfer: t }: TransferHistoryRowProps) {
 
       {/* Status badge */}
       <div className="w-24 flex justify-end">
-        <StateBadge state={t.state} />
+        <StatusBadge status={t.status} />
       </div>
 
       {/* Time */}
       <div className="w-20 text-right">
-        <span className="text-[10px] font-mono text-slate-500">
-          {formatRelativeTime(t.startedAt)}
-        </span>
+        <span className="text-[10px] font-mono text-slate-500">{formatRelativeTime(t.createdAt)}</span>
       </div>
     </div>
   );

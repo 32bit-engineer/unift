@@ -1,6 +1,21 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/forms";
 
+/* ─── Global input focus reset ─────────────────────────────────────── */
+/* Removes the white halo ring that @tailwindcss/forms adds on focus.   */
+/* Our <Input> component applies its own focused border/shadow instead.  */
+@layer base {
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  select:focus,
+  select:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+}
+
 /*
  * Obsidian Flux Design System
  *

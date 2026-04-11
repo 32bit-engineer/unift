@@ -1,8 +1,8 @@
 package com.weekend.architect.unift.remote.service;
 
 import com.weekend.architect.unift.remote.dto.TransferHistoryStatsResponse;
+import com.weekend.architect.unift.remote.dto.TransferLogPageResponse;
 import com.weekend.architect.unift.remote.dto.TransferLogResponse;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -15,14 +15,17 @@ import java.util.UUID;
 public interface TransferHistoryService {
 
     /**
-     * Returns a paginated list of transfer log entries for the authenticated user.
+     * Returns a paginated, filterable view of transfer log entries for the authenticated user.
      *
-     * @param userId authenticated user
-     * @param page 0-based page index
-     * @param size page size (capped at 100 internally)
-     * @return list ordered newest-first
+     * @param userId    authenticated user
+     * @param page      0-based page index
+     * @param size      page size (capped at 100 internally)
+     * @param sessionId optional filter — only entries for this session ID
+     * @param username  optional filter — substring match on SSH username
+     * @param status    optional filter — exact status (COMPLETED, FAILED, CANCELLED)
      */
-    List<TransferLogResponse> listHistory(UUID userId, int page, int size);
+    TransferLogPageResponse listHistory(
+            UUID userId, int page, int size, String sessionId, String username, String status);
 
     /**
      * Returns a single transfer log entry.

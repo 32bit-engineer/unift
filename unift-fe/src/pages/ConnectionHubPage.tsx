@@ -4,6 +4,7 @@
 // Filters: All | SSH | K8s
 import { useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import { Input } from '@/components/ui/input';
 import type { SavedHostResponse, SavedHostRequest, SshAuthType } from '@/utils/remoteConnectionAPI';
 import type { SavedHost } from '@/components/layout';
 
@@ -445,13 +446,12 @@ function EditHostModal({
             <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
               Label <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>(optional)</span>
             </label>
-            <input
+            <Input
               type="text"
               value={label}
               placeholder="e.g. Production Server"
               onChange={e => setLabel(e.target.value)}
-              className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-              style={inputStyle}
+              className="w-full text-xs font-mono"
             />
           </div>
 
@@ -461,26 +461,24 @@ function EditHostModal({
               <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                 Hostname
               </label>
-              <input
+              <Input
                 type="text"
                 value={hostname}
                 onChange={e => setHostname(e.target.value)}
-                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-                style={inputStyle}
+                className="w-full text-xs font-mono"
               />
             </div>
             <div>
               <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                 Port
               </label>
-              <input
+              <Input
                 type="number"
                 value={port}
                 onChange={e => setPort(e.target.value)}
                 min={1}
                 max={65535}
-                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-                style={inputStyle}
+                className="w-full text-xs font-mono"
               />
             </div>
           </div>
@@ -490,12 +488,11 @@ function EditHostModal({
             <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
               Username
             </label>
-            <input
+            <Input
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-              style={inputStyle}
+              className="w-full text-xs font-mono"
             />
           </div>
 
@@ -528,13 +525,12 @@ function EditHostModal({
               <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                 Password <span style={{ color: '#f87171', fontSize: '10px' }}>required</span>
               </label>
-              <input
+              <Input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Enter password"
-                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-                style={inputStyle}
+                className="w-full text-xs font-mono"
               />
             </div>
           ) : (
@@ -557,13 +553,12 @@ function EditHostModal({
                   <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                     Passphrase
                   </label>
-                  <input
+                  <Input
                     type="password"
                     value={passphrase}
                     onChange={e => setPassphrase(e.target.value)}
                     placeholder="Key passphrase (if encrypted)"
-                    className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-                    style={inputStyle}
+                    className="w-full text-xs font-mono"
                   />
                 </div>
               )}
@@ -597,13 +592,12 @@ function EditHostModal({
               <label className="label block mb-1.5" style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                 Expected Fingerprint <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>(optional)</span>
               </label>
-              <input
+              <Input
                 type="text"
                 value={expectedFingerprint}
                 placeholder="SHA256:abc123..."
                 onChange={e => setExpectedFingerprint(e.target.value)}
-                className="w-full rounded px-3 py-2 text-xs font-mono outline-none"
-                style={inputStyle}
+                className="w-full text-xs font-mono"
               />
             </div>
           )}

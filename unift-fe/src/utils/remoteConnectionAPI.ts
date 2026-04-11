@@ -200,6 +200,10 @@ export interface AnalyticsHistoryResponse {
 /** Persistent audit record for a completed, failed, or cancelled file transfer. */
 export interface TransferLogResponse {
   id: string;
+  /** Session that initiated this transfer. Null for legacy rows. */
+  sessionId?: string;
+  /** SSH username used for the session. Null for legacy rows. */
+  username?: string;
   filename: string;
   source: string;
   destination: string;
@@ -209,6 +213,15 @@ export interface TransferLogResponse {
   status: 'COMPLETED' | 'FAILED' | 'CANCELLED';
   errorMessage?: string;
   createdAt: string;
+}
+
+/** Paginated wrapper returned by GET /api/transfers/history */
+export interface TransferLogPageResponse {
+  page: number;
+  size: number;
+  total: number;
+  hasMore: boolean;
+  items: TransferLogResponse[];
 }
 
 /** Aggregate statistics from the user's transfer history. */
@@ -1204,10 +1217,13 @@ export const remoteConnectionAPI = {
   // Transfer History API
 
   /** Paginated transfer history for the authenticated user (newest first). */
-  listTransferHistory: (page = 0, size = 20) =>
-    apiClient.get<TransferLogResponse[]>(
-      `${TRANSFER_HISTORY_BASE}?page=${page}&size=${size}`,
-    ),
+  listTransferHistory: (page = 0, size = 20, sessionId?: string, username?: string, status?: string) => {
+    const q = new URLSearchParams({ page: String(page), size: String(size) });
+    if (sessionId) q.set('sessionId', sessionId);
+    if (username)  q.set('username',  username);
+    if (status)    q.set('status',    status);
+    return apiClient.get<TransferLogPageResponse>(`${TRANSFER_HISTORY_BASE}?${q.toString()}`);
+  },
 
   /** Aggregate transfer statistics for the authenticated user. */
   getTransferHistoryStats: () =>

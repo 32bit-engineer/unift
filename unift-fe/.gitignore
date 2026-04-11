@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,28 +7,40 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
 *.local
 
-# Editor directories and files
+# Editor directories
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# AI tool config
 .claude/
 .gemini/
+.cursor/
+.qwen/
 
+# Python venv (used by some agent scripts)
+.venv/
+venv/
+__pycache__/
+
+# Designs (kept in root gitignore, just in case)
 designs/
 
-# .dockerignore
+# Secrets
 .env
 .env.*
-node_modules
-dist
+!.env.example

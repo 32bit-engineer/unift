@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
+import { Input } from '@/components/ui/input';
 import type { DockerContainer } from '@/utils/remoteConnectionAPI';
 
 interface DockerLogsPageProps {
@@ -73,17 +74,11 @@ function LogToolbar({
 
         <div className="flex items-center gap-1.5">
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Tail:</span>
-          <input
+          <Input
             type="number"
             value={tail}
             onChange={e => onTailChange(Math.max(1, parseInt(e.target.value) || DEFAULT_TAIL))}
-            className="rounded-md px-2 py-1 text-xs w-16"
-            style={{
-              background: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
-              border: '1px solid var(--color-border-muted)',
-              outline: 'none',
-            }}
+            className="w-16 h-7 px-2 text-xs"
             min={1}
             max={10000}
           />
@@ -128,18 +123,12 @@ function LogToolbar({
           >
             search
           </span>
-          <input
+          <Input
             type="text"
             placeholder="Filter log lines..."
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
-            className="w-full rounded-md pl-7 pr-2 py-1 text-xs"
-            style={{
-              background: 'var(--color-surface)',
-              color: 'var(--color-text-primary)',
-              border: '1px solid var(--color-border-muted)',
-              outline: 'none',
-            }}
+            className="w-full pl-7 h-7 text-xs"
           />
         </div>
         <button

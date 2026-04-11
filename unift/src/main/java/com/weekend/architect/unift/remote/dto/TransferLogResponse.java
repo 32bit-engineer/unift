@@ -13,6 +13,13 @@ import lombok.Value;
 public class TransferLogResponse {
 
     UUID id;
+
+    /** Session that initiated this transfer. {@code null} for legacy rows. */
+    String sessionId;
+
+    /** SSH username used for the session. {@code null} for legacy rows. */
+    String username;
+
     String filename;
     String source;
     String destination;

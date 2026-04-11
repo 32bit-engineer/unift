@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
 import { useEscapeKey } from '@/hooks/useEscapeKey';
+import { Input } from '@/components/ui/input';
 import type { DockerNetwork } from '@/utils/remoteConnectionAPI';
 
 interface DockerNetworksPageProps {
@@ -115,20 +116,12 @@ export function DockerNetworksPage({ sessionId }: DockerNetworksPageProps) {
           >
             search
           </span>
-          <input
+          <Input
             type="text"
             placeholder="Search networks..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 rounded-md"
-            style={{
-              fontSize: '12px',
-              background: 'var(--color-bg-base)',
-              color: 'var(--color-text-primary)',
-              border: '1px solid var(--color-border-muted)',
-              outline: 'none',
-              fontFamily: 'var(--font-sans)',
-            }}
+            className="w-full pl-8"
           />
         </div>
         <button
@@ -336,16 +329,12 @@ function CreateNetworkModal({
         </div>
         <div className="p-5 flex flex-col gap-4">
           <ModalField label="Network Name">
-            <input
+            <Input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="my-network"
-              className="w-full px-3 py-2 rounded-md"
-              style={{
-                fontSize: '12px', background: 'var(--color-surface)',
-                color: 'var(--color-text-primary)', border: '1px solid var(--color-border-muted)', outline: 'none',
-              }}
+              className="w-full"
             />
           </ModalField>
           <ModalField label="Driver">
