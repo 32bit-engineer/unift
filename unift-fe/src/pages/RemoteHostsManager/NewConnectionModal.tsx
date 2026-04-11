@@ -28,7 +28,6 @@ export function NewConnectionModal({
   error,
   testResult,
   onClose,
-  onProtocolChange,
   onAuthTypeChange,
   onFormChange,
   onTestConnection,
