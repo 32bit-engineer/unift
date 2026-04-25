@@ -7,8 +7,10 @@ import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
@@ -48,6 +50,47 @@ public interface RemoteConnectionService {
 
     /** Returns all active sessions owned by the given user. */
     List<ConnectResponse> listSessions(UUID ownerId);
+
+    /**
+     * Returns the set of workspace types currently active for a session.
+     *
+     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException if not found
+     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not owned by user
+     */
+    Set<String> listWorkspaces(String sessionId, UUID ownerId);
+
+    /**
+     * Activates a workspace type for a session.
+     *
+     * @param type workspace type to activate (ssh, docker, kubernetes)
+     * @return the updated set of active workspaces
+     * @throws IllegalArgumentException if the type is not a valid workspace type
+     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException if not found
+     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not owned by user
+     */
+    Set<String> activateWorkspace(String sessionId, UUID ownerId, String type);
+
+    /**
+     * Deactivates a workspace type for a session, evicting any associated client pools.
+     * The {@code ssh} workspace cannot be deactivated.
+     *
+     * @param type workspace type to deactivate (docker, kubernetes)
+     * @return the updated set of active workspaces
+     * @throws IllegalArgumentException if the type is not valid or is "ssh"
+     * @throws com.weekend.architect.unift.remote.exception.SessionNotFoundException if not found
+     * @throws com.weekend.architect.unift.remote.exception.SessionAccessDeniedException if not owned by user
+     */
+    Set<String> deactivateWorkspace(String sessionId, UUID ownerId, String type);
+
+    /**
+     * Opens an SSE stream that pushes transfer status updates at the given interval.
+     *
+     * @param sessionId session whose transfers to stream
+     * @param ownerId   authenticated user (ownership check)
+     * @param intervalMs polling interval in milliseconds (clamped to allowed range internally)
+     * @return a configured {@link SseEmitter} that the controller can return directly
+     */
+    SseEmitter streamTransfers(String sessionId, UUID ownerId, int intervalMs);
 
     /**
      * Lists all entries at the given remote path.

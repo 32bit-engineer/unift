@@ -243,7 +243,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
               Active Containers
             </h2>
             <div className="flex items-center gap-2">
-              <span style={{ fontSize: '10px', color: 'var(--color-text-muted)' }} className="uppercase tracking-[0.1em]">
+              <span style={{ fontSize: '10px', color: 'var(--color-text-muted)' }} className="uppercase tracking-widest">
                 Sort by:
               </span>
               <select
@@ -304,7 +304,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
         </div>
 
         {/* Right Sidebar — Activity + Volume */}
-        <div className="w-80 flex-shrink-0 flex flex-col gap-4">
+        <div className="w-80 shrink-0 flex flex-col gap-4">
           {/* Docker Info Card */}
           <div
             className="rounded-lg p-4"
@@ -312,7 +312,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
           >
             <div className="flex items-center justify-between mb-3">
               <span
-                className="font-semibold uppercase tracking-[0.1em]"
+                className="font-semibold uppercase tracking-widest"
                 style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
               >
                 Docker Engine
@@ -339,7 +339,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <span
-              className="font-semibold uppercase tracking-[0.1em]"
+              className="font-semibold uppercase tracking-widest"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
               Resource Summary
@@ -366,7 +366,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <span
-              className="font-semibold uppercase tracking-[0.1em] block mb-3"
+              className="font-semibold uppercase tracking-widest block mb-3"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
               Quick Actions
@@ -401,7 +401,7 @@ export function DockerDashboardPage({ sessionId }: DockerDashboardPageProps) {
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <span
-              className="font-semibold uppercase tracking-[0.1em] block mb-2"
+              className="font-semibold uppercase tracking-widest block mb-2"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
               Live Updates
@@ -443,7 +443,7 @@ function StatCard({
       style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
     >
       <div
-        className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+        className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
         style={{ background: iconBg }}
       >
         <span
@@ -455,7 +455,7 @@ function StatCard({
       </div>
       <div>
         <p
-          className="uppercase tracking-[0.1em] font-semibold"
+          className="uppercase tracking-widest font-semibold"
           style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
         >
           {label}
@@ -477,7 +477,7 @@ function CpuCard({ percent, containerCount }: { percent: number; containerCount:
     >
       <div className="flex items-center justify-between">
         <span
-          className="uppercase tracking-[0.1em] font-semibold"
+          className="uppercase tracking-widest font-semibold"
           style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
         >
           CPU Usage
@@ -511,7 +511,7 @@ function MemoryCard({ used, limit }: { used: number; limit: number }) {
     >
       <div className="flex items-center justify-between">
         <span
-          className="uppercase tracking-[0.1em] font-semibold"
+          className="uppercase tracking-widest font-semibold"
           style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
         >
           Memory
@@ -563,7 +563,7 @@ function ContainerCard({
     >
       {/* Icon */}
       <div
-        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
         style={{ background: 'rgba(124,109,250,0.08)' }}
       >
         <span
@@ -595,9 +595,9 @@ function ContainerCard({
       </div>
 
       {/* CPU */}
-      <div className="text-right flex-shrink-0 w-16">
+      <div className="text-right shrink-0 w-16">
         <p
-          className="uppercase tracking-[0.1em] font-semibold"
+          className="uppercase tracking-widest font-semibold"
           style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
         >
           CPU
@@ -611,9 +611,9 @@ function ContainerCard({
       </div>
 
       {/* Memory */}
-      <div className="text-right flex-shrink-0 w-16">
+      <div className="text-right shrink-0 w-16">
         <p
-          className="uppercase tracking-[0.1em] font-semibold"
+          className="uppercase tracking-widest font-semibold"
           style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
         >
           Memory
@@ -627,7 +627,7 @@ function ContainerCard({
       </div>
 
       {/* Quick Actions */}
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         <MiniActionButton
           icon="stop"
           title="Stop"
@@ -771,7 +771,7 @@ function StreamStatusRow({ label, interval }: { label: string; interval: string 
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-1.5">
         <span
-          className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 animate-pulse"
+          className="inline-block w-1.5 h-1.5 rounded-full shrink-0 animate-pulse"
           style={{ background: '#4ade80' }}
         />
         <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{label}</span>

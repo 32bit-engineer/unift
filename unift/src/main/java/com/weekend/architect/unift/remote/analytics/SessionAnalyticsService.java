@@ -4,6 +4,7 @@ import com.weekend.architect.unift.remote.analytics.dto.AnalyticsHistoryResponse
 import com.weekend.architect.unift.remote.analytics.dto.SessionAnalyticsResponse;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /** Contract for assembling a full analytics snapshot for one active session. */
 public interface SessionAnalyticsService {
@@ -40,4 +41,14 @@ public interface SessionAnalyticsService {
      */
     AnalyticsHistoryResponse getAnalyticsHistory(
             String sessionId, UUID requestingUserId, OffsetDateTime from, OffsetDateTime to, int limit);
+
+    /**
+     * Opens an SSE stream that pushes analytics snapshots continuously at the given interval.
+     *
+     * @param sessionId  the session to stream analytics for
+     * @param ownerId    authenticated user (ownership check)
+     * @param intervalMs polling interval in milliseconds (clamped to allowed range internally)
+     * @return a configured {@link SseEmitter} that the controller can return directly
+     */
+    SseEmitter streamAnalytics(String sessionId, UUID ownerId, int intervalMs);
 }

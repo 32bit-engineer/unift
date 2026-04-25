@@ -25,18 +25,23 @@ import java.net.InetAddress;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.weekend.architect.unift.remote.StreamConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Default implementation of {@link SessionAnalyticsService}.
@@ -475,6 +480,52 @@ public class SessionAnalyticsServiceImpl implements SessionAnalyticsService {
                 .hasMore(more)
                 .snapshots(snapshots)
                 .build();
+    }
+
+    @Override
+    public SseEmitter streamAnalytics(String sessionId, UUID ownerId, int intervalMs) {
+        int clamped = Math.max(
+                StreamConstants.MIN_STREAM_INTERVAL_MS,
+                Math.min(StreamConstants.MAX_STREAM_INTERVAL_MS, intervalMs));
+
+        SseEmitter emitter = new SseEmitter(StreamConstants.STREAM_TIMEOUT_MS);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        executorService.submit(() -> {
+            while (open.get()) {
+                try {
+                    SessionAnalyticsResponse payload = getAnalytics(sessionId, ownerId);
+                    emitter.send(SseEmitter.event().name("analytics").data(payload));
+                    Thread.sleep(clamped);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Analytics stream failed")));
+                    } catch (IOException | IllegalStateException ignored) {
+                        // ignore nested emitter failures while unwinding stream
+                    }
+                    open.set(false);
+                    emitter.completeWithError(ex);
+                    return;
+                }
+            }
+        });
+
+        return emitter;
     }
 
     private void assertOwnership(RemoteConnection conn, UUID ownerId) {

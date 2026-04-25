@@ -244,7 +244,7 @@ function UploadSessionRow({
   return (
     <>
       <div
-        className="grid gap-3 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/[0.02] transition-colors cursor-pointer"
+        className="grid gap-3 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/2 transition-colors cursor-pointer"
         style={{ gridTemplateColumns: '1fr 90px 100px 80px 110px 80px 36px' }}
         onClick={onToggleExpand}
       >

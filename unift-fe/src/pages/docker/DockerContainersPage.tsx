@@ -251,7 +251,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
               {statusCounts.running}
             </p>
             <p
-              className="uppercase tracking-[0.1em] font-semibold"
+              className="uppercase tracking-widest font-semibold"
               style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
             >
               Running
@@ -262,7 +262,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
               {statusCounts.paused}
             </p>
             <p
-              className="uppercase tracking-[0.1em] font-semibold"
+              className="uppercase tracking-widest font-semibold"
               style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
             >
               Paused
@@ -273,7 +273,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
               {statusCounts.critical}
             </p>
             <p
-              className="uppercase tracking-[0.1em] font-semibold"
+              className="uppercase tracking-widest font-semibold"
               style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
             >
               Critical
@@ -372,7 +372,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
                 {['Container Name', 'Image Source', 'Status', 'Ports / Network', 'Uptime', 'Actions'].map(h => (
                   <th
                     key={h}
-                    className="text-left px-4 py-3 font-semibold uppercase tracking-[0.1em]"
+                    className="text-left px-4 py-3 font-semibold uppercase tracking-widest"
                     style={{ fontSize: '10px', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border-muted)' }}
                   >
                     {h}
@@ -430,7 +430,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          className="w-2 h-2 rounded-full shrink-0"
                           style={{ background: st.dot }}
                         />
                         <span
@@ -572,7 +572,7 @@ export function DockerContainersPage({ sessionId }: DockerContainersPageProps) {
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-4 pb-4">
             <p
-              className="uppercase tracking-[0.1em] font-semibold"
+              className="uppercase tracking-widest font-semibold"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
               Showing {filteredContainers.length} of {total} containers
@@ -896,7 +896,7 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+          className="flex items-center justify-between px-5 py-3 shrink-0"
           style={{ borderBottom: '1px solid var(--color-border-muted)' }}
         >
           <div className="flex items-center gap-2">
@@ -927,7 +927,7 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
 
         {/* Tabs */}
         <div
-          className="flex items-center gap-1 px-5 pt-3 pb-0 flex-shrink-0"
+          className="flex items-center gap-1 px-5 pt-3 pb-0 shrink-0"
           style={{ borderBottom: '1px solid var(--color-border-muted)' }}
         >
           {tabs.map(t => (
@@ -1014,7 +1014,7 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
               <InspectRow label="Network Mode" value={detail.networkMode} />
               {Object.entries(detail.networks).map(([name, net]) => (
                 <div key={name} className="col-span-2">
-                  <p className="uppercase tracking-[0.1em] font-semibold mb-2" style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>
+                  <p className="uppercase tracking-widest font-semibold mb-2" style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>
                     {name}
                   </p>
                   <InspectGrid compact>
@@ -1036,7 +1036,7 @@ function InspectModal({ detail, onClose }: { detail: ContainerDetail; onClose: (
                   className="flex items-start gap-3 px-3 py-2 rounded"
                   style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
                 >
-                  <span className="font-mono flex-shrink-0" style={{ fontSize: '10px', color: 'var(--color-primary)' }}>{k}</span>
+                  <span className="font-mono shrink-0" style={{ fontSize: '10px', color: 'var(--color-primary)' }}>{k}</span>
                   <span className="font-mono break-all" style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{v}</span>
                 </div>
               ))}
@@ -1192,7 +1192,7 @@ function ModalField({ label, children }: { label: string; children: React.ReactN
   return (
     <div>
       <label
-        className="block mb-1.5 font-semibold uppercase tracking-[0.1em]"
+        className="block mb-1.5 font-semibold uppercase tracking-widest"
         style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
       >
         {label}
@@ -1216,7 +1216,7 @@ function InspectRow({ label, value, mono = false }: { label: string; value: stri
       className="flex flex-col gap-1 px-3 py-2.5 rounded"
       style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
     >
-      <span className="uppercase tracking-[0.1em] font-semibold" style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>
+      <span className="uppercase tracking-widest font-semibold" style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>
         {label}
       </span>
       <span
@@ -1269,7 +1269,7 @@ function ExecModal({
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-5 py-2.5 flex-shrink-0"
+          className="flex items-center justify-between px-5 py-2.5 shrink-0"
           style={{ borderBottom: '1px solid var(--color-border-muted)', background: 'var(--color-bg-base)' }}
         >
           <div className="flex items-center gap-2">
@@ -1386,7 +1386,7 @@ function StatCard({
     >
       <div className="flex items-center justify-between mb-2">
         <span
-          className="uppercase tracking-[0.1em] font-semibold"
+          className="uppercase tracking-widest font-semibold"
           style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}
         >
           {label}

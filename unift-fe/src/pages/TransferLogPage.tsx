@@ -4,6 +4,7 @@ import {
   type TransferLogResponse,
   type TransferHistoryStatsResponse,
 } from '@/utils/remoteConnectionAPI';
+import { TRANSFER_PAGE_SIZE } from '@/config/pagination';
 
 type StatusFilter = 'ALL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
@@ -86,7 +87,7 @@ function StatsCard({
 }
 
 /* Pagination constants */
-const PAGE_SIZE = 20;
+const PAGE_SIZE = TRANSFER_PAGE_SIZE;
 
 export function TransferLogPage() {
   const [entries, setEntries]         = useState<TransferLogResponse[]>([]);
@@ -317,7 +318,7 @@ function TransferLogRow({ entry, deleting, onDelete }: TransferLogRowProps) {
 
   return (
     <div
-      className="grid gap-3 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/[0.02] transition-colors"
+      className="grid gap-3 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/2 transition-colors"
       style={{ gridTemplateColumns: '1fr 80px 100px 90px 80px 90px 32px' }}
     >
       {/* File name + paths */}

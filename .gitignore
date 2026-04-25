@@ -130,3 +130,6 @@ HELP.md
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
 target/
+
+
+.cursor/

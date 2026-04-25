@@ -1,5 +1,8 @@
 package com.weekend.architect.unift.remote.repository;
 
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_ID;
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_USER_ID;
+
 import com.weekend.architect.unift.remote.enums.UploadSessionStatus;
 import com.weekend.architect.unift.remote.model.UploadSession;
 import java.sql.Array;
@@ -30,14 +33,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class UploadSessionRepository {
 
-    private static final String PARAM_ID = "id";
-    private static final String PARAM_USER_ID = "userId";
-
     private final NamedParameterJdbcTemplate jdbc;
-
-    // -------------------------------------------------------------------------
-    // Row mapper
-    // -------------------------------------------------------------------------
 
     private UploadSession mapRow(ResultSet rs, int rowNum) throws SQLException {
         return UploadSession.builder()
@@ -71,10 +67,6 @@ public class UploadSessionRepository {
     private static OffsetDateTime toOffsetDateTime(Timestamp ts) {
         return ts == null ? null : ts.toInstant().atOffset(ZoneOffset.UTC);
     }
-
-    // -------------------------------------------------------------------------
-    // Write operations
-    // -------------------------------------------------------------------------
 
     /**
      * Inserts a new upload session.
@@ -170,10 +162,6 @@ public class UploadSessionRepository {
                 sql, new MapSqlParameterSource().addValue(PARAM_ID, sessionId).addValue(PARAM_USER_ID, userId));
         return rows > 0;
     }
-
-    // -------------------------------------------------------------------------
-    // Read operations
-    // -------------------------------------------------------------------------
 
     /** Finds a session by ID, enforcing user ownership. */
     public Optional<UploadSession> findById(UUID sessionId, UUID userId) {

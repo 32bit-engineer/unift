@@ -1,5 +1,7 @@
 package com.weekend.architect.unift.remote.repository;
 
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_ID;
+
 import com.weekend.architect.unift.remote.model.RemoteSession;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -22,8 +24,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class SessionLogRepository {
-
-    private static final String PARAM_ID = "id";
 
     private final NamedParameterJdbcTemplate jdbc;
 

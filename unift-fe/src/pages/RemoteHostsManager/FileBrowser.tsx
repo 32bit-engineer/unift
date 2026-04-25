@@ -612,7 +612,7 @@ export function FileBrowser({ host, onClose, onSessionExpired, onOpenTerminal }:
           {pathStack.length > 1 && (
             <button
               onClick={navigateBack}
-              className="flex items-center gap-3 w-full px-4 py-2 border-b border-[#1E1E2E]/60 hover:bg-white/[0.02] transition-colors cursor-pointer text-left shrink-0"
+              className="flex items-center gap-3 w-full px-4 py-2 border-b border-[#1E1E2E]/60 hover:bg-white/2 transition-colors cursor-pointer text-left shrink-0"
             >
               <span className="w-3.5 shrink-0" />
               <Icon name="arrow_upward" className="text-[#4A5275] text-sm shrink-0" />

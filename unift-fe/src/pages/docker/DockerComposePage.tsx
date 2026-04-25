@@ -123,14 +123,14 @@ export function DockerComposePage({ sessionId }: DockerComposePageProps) {
 
       <div className="flex-1 flex gap-4 px-6 pb-5 min-h-0">
         {/* Left: Projects List */}
-        <div className="w-80 flex-shrink-0 flex flex-col gap-3">
+        <div className="w-80 shrink-0 flex flex-col gap-3">
           <div
             className="rounded-lg p-4 flex-1 overflow-auto"
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <div className="flex items-center justify-between mb-3">
               <span
-                className="font-semibold uppercase tracking-[0.1em]"
+                className="font-semibold uppercase tracking-widest"
                 style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
               >
                 Detected Projects
@@ -176,7 +176,7 @@ export function DockerComposePage({ sessionId }: DockerComposePageProps) {
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-center justify-between mb-2">
             <span
-              className="font-semibold uppercase tracking-[0.1em]"
+              className="font-semibold uppercase tracking-widest"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
               Compose YAML

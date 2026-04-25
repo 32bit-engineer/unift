@@ -34,9 +34,9 @@ spring:
       timeout: ${REDIS_TIMEOUT:5000ms}
 
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: ${DB_URL:jdbc:postgresql://weekend-architect-faizmohd12511251-4e7e.c.aivencloud.com:12746/postgres}
+    username: ${DB_USERNAME:avnadmin}
+    password: ${DB_PASSWORD:AVNS_4zS3xT1mgcix5Jb3LYr}
     driver-class-name: org.postgresql.Driver
 
   flyway:
@@ -74,7 +74,7 @@ logging:
 
 jwt:
   # Required — generate with: openssl rand -base64 64
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET:T3BlblNlc3NhbWVTZWNyZXRLZXkyMDI2Rm9yVW5pRlRKV1RBdXRoU2VjdXJpdHk=}
   access-token-expiration-ms: ${JWT_ACCESS_TOKEN_EXPIRATION_MS:604800000}      # 15 minutes
   refresh-token-expiration-ms: ${JWT_REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
 
@@ -85,14 +85,14 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
-    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:false}
+    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:true}
 
 unift:
   # AES-256-GCM key for encrypting SSH credentials at rest.
   # Required — generate with: openssl rand -base64 32
   # Must be set via UNIFT_ENCRYPTION_KEY environment variable.
   encryption:
-    key: ${UNIFT_ENCRYPTION_KEY}
+    key: ${UNIFT_ENCRYPTION_KEY:BIgne4XbvCWidrvV67B6RsIu/B25H51gUJqqrJYYrfI=}
 
   remote:
     session-ttl-minutes: ${UNIFT_SESSION_TTL_MINUTES:30}

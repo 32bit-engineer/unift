@@ -2,19 +2,12 @@ package com.weekend.architect.unift.remote.controller;
 
 import static com.weekend.architect.unift.common.FileUtils.encodeFilenameRFC6266;
 
-import com.weekend.architect.unift.remote.core.RemoteConnection;
-import com.weekend.architect.unift.remote.docker.DockerClientPool;
-import com.weekend.architect.unift.remote.docker.DockerLogStreamRegistry;
 import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
 import com.weekend.architect.unift.remote.dto.RenameRequest;
 import com.weekend.architect.unift.remote.dto.TestConnectionResponse;
 import com.weekend.architect.unift.remote.dto.TransferStatusResponse;
-import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
-import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
-import com.weekend.architect.unift.remote.kubernetes.K8sLogStreamRegistry;
-import com.weekend.architect.unift.remote.registry.SessionRegistry;
 import com.weekend.architect.unift.remote.service.RemoteConnectionService;
 import com.weekend.architect.unift.security.UniFtUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,14 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -69,21 +58,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @SecurityRequirement(name = "BearerAuth")
 public class RemoteConnectionController {
 
-    private static final long TRANSFER_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
-    private static final int MIN_STREAM_INTERVAL_MS = 500;
-    private static final int MAX_STREAM_INTERVAL_MS = 60000;
-
     private final RemoteConnectionService service;
-    private final SessionRegistry sessionRegistry;
-    private final DockerClientPool dockerClientPool;
-    private final DockerLogStreamRegistry dockerLogStreamRegistry;
-    private final K8sClientPool k8sClientPool;
-    private final K8sLogStreamRegistry k8sLogStreamRegistry;
-
-    @Qualifier("virtualThreadExecutor")
-    private final ExecutorService virtualThreadExecutor;
-
-    private static final Set<String> VALID_WORKSPACE_TYPES = Set.of("ssh", "docker", "kubernetes");
 
     @PostMapping("/test-connection")
     @Operation(
@@ -184,9 +159,7 @@ public class RemoteConnectionController {
             description = "Returns the set of workspace types currently active for the session.")
     public ResponseEntity<Set<String>> listWorkspaces(
             @PathVariable String sessionId, @AuthenticationPrincipal UniFtUserDetails principal) {
-        var conn = sessionRegistry.require(sessionId);
-        assertOwnership(conn, principal.user().getId());
-        return ResponseEntity.ok(conn.getSession().getActiveWorkspaces());
+        return ResponseEntity.ok(service.listWorkspaces(sessionId, principal.user().getId()));
     }
 
     @PostMapping("/sessions/{sessionId}/workspaces/{type}")
@@ -203,14 +176,7 @@ public class RemoteConnectionController {
             @PathVariable String sessionId,
             @PathVariable String type,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        if (!VALID_WORKSPACE_TYPES.contains(type)) {
-            return ResponseEntity.badRequest().build();
-        }
-        var conn = sessionRegistry.require(sessionId);
-        assertOwnership(conn, principal.user().getId());
-        conn.getSession().activateWorkspace(type);
-        log.info("Activated workspace '{}' for session {}", type, sessionId);
-        return ResponseEntity.ok(conn.getSession().getActiveWorkspaces());
+        return ResponseEntity.ok(service.activateWorkspace(sessionId, principal.user().getId(), type));
     }
 
     @DeleteMapping("/sessions/{sessionId}/workspaces/{type}")
@@ -229,24 +195,7 @@ public class RemoteConnectionController {
             @PathVariable String sessionId,
             @PathVariable String type,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        if (!VALID_WORKSPACE_TYPES.contains(type)) {
-            return ResponseEntity.badRequest().build();
-        }
-        if ("ssh".equals(type)) {
-            return ResponseEntity.badRequest().build();
-        }
-        var conn = sessionRegistry.require(sessionId);
-        assertOwnership(conn, principal.user().getId());
-        conn.getSession().deactivateWorkspace(type);
-        if ("docker".equals(type)) {
-            dockerClientPool.evict(sessionId);
-            dockerLogStreamRegistry.closeAllBySession(sessionId);
-        } else if ("kubernetes".equals(type)) {
-            k8sClientPool.evict(sessionId);
-            k8sLogStreamRegistry.closeAllBySession(sessionId);
-        }
-        log.info("Deactivated workspace '{}' for session {}", type, sessionId);
-        return ResponseEntity.ok(conn.getSession().getActiveWorkspaces());
+        return ResponseEntity.ok(service.deactivateWorkspace(sessionId, principal.user().getId(), type));
     }
 
     @GetMapping("/sessions/{sessionId}/files")
@@ -438,47 +387,7 @@ public class RemoteConnectionController {
             @PathVariable String sessionId,
             @RequestParam(defaultValue = "1500") int intervalMs,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        UUID ownerId = principal.user().getId();
-        int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
-
-        SseEmitter emitter = new SseEmitter(TRANSFER_STREAM_TIMEOUT_MS);
-        AtomicBoolean open = new AtomicBoolean(true);
-        emitter.onCompletion(() -> open.set(false));
-        emitter.onError(ex -> open.set(false));
-        emitter.onTimeout(() -> {
-            open.set(false);
-            emitter.complete();
-        });
-
-        virtualThreadExecutor.submit(() -> {
-            while (open.get()) {
-                try {
-                    List<TransferStatusResponse> payload = service.getTransfers(sessionId, ownerId);
-                    emitter.send(SseEmitter.event().name("transfers").data(payload));
-                    Thread.sleep(clampedIntervalMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    open.set(false);
-                    emitter.complete();
-                    return;
-                } catch (Exception ex) {
-                    try {
-                        emitter.send(SseEmitter.event()
-                                .name("error")
-                                .data(Map.of(
-                                        "message",
-                                        ex.getMessage() != null ? ex.getMessage() : "Transfer stream failed")));
-                    } catch (Exception ignored) {
-                        // Ignore nested emitter failures while unwinding stream.
-                    }
-                    open.set(false);
-                    emitter.completeWithError(ex);
-                    return;
-                }
-            }
-        });
-
-        return emitter;
+        return service.streamTransfers(sessionId, principal.user().getId(), intervalMs);
     }
 
     @GetMapping("/sessions/{sessionId}/transfers/{transferId}")
@@ -522,9 +431,4 @@ public class RemoteConnectionController {
         return ResponseEntity.noContent().build();
     }
 
-    private void assertOwnership(RemoteConnection conn, UUID requestingUser) {
-        if (!requestingUser.equals(conn.getSession().getOwnerId())) {
-            throw new SessionAccessDeniedException(conn.getSessionId());
-        }
-    }
 }

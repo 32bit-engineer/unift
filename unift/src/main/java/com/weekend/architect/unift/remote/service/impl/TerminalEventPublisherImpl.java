@@ -25,13 +25,6 @@ public class TerminalEventPublisherImpl implements TerminalEventPublisher {
 
     static final String TOPIC = "unift.terminal.events";
 
-    // private final KafkaTemplate<String, TerminalEvent> kafkaTemplate;
-
-    /**
-     * I/O-bound — Kafka send is a network call. Virtual threads unmount while waiting for broker
-     * acknowledgement, so the carrier thread is never parked. Lifecycle is managed by {@link
-     * com.weekend.architect.unift.common.PreTermination}.
-     */
     private final ExecutorService virtualThreadExecutor;
 
     public TerminalEventPublisherImpl(@Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
@@ -59,7 +52,6 @@ public class TerminalEventPublisherImpl implements TerminalEventPublisher {
         // network I/O.
         virtualThreadExecutor.submit(() -> {
             try {
-                // kafkaTemplate.send(TOPIC, partitionKey, event);
                 log.debug(
                         "[terminal-events] Published {} for owner {}",
                         event.getClass().getSimpleName(),

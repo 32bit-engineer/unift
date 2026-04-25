@@ -156,14 +156,7 @@ public class SavedHostController {
             @PathVariable UUID id,
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal UniFtUserDetails principal) {
-        String preference = body.get("preference");
-        if (preference == null || !VALID_WORKSPACE_PREFERENCES.contains(preference)) {
-            return ResponseEntity.badRequest().build();
-        }
-        service.updateWorkspacePreference(principal.user().getId(), id, preference);
+        service.updateWorkspacePreference(principal.user().getId(), id, body.get("preference"));
         return ResponseEntity.noContent().build();
     }
-
-    private static final java.util.Set<String> VALID_WORKSPACE_PREFERENCES =
-            java.util.Set.of("ssh", "docker", "kubernetes");
 }

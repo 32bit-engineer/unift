@@ -113,7 +113,7 @@ function Sparkline({
           className="pointer-events-none absolute -top-16 z-10 min-w-[132px] rounded-md border border-[#2B2B40] bg-[#10101A]/96 px-2.5 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.42)]"
           style={{ left: `${hoveredX}%`, transform: 'translateX(-50%)' }}
         >
-          <p className="text-[9px] font-mono uppercase tracking-[0.1em] text-[#9090B0]">{formatChartTime(hoveredPoint.timestamp)}</p>
+          <p className="text-[9px] font-mono uppercase tracking-widest text-[#9090B0]">{formatChartTime(hoveredPoint.timestamp)}</p>
           <div className="mt-1 flex items-center justify-between gap-3">
             <span className="text-[10px] font-mono text-[#9090B0]">{color === 'violet' ? 'Download' : 'Upload'}</span>
             <span className="text-[10px] font-mono text-[#EEEEF8]">
@@ -203,7 +203,7 @@ function TrafficAreaChart({ data }: { data: SessionAnalyticsResponse['trafficAna
           className="pointer-events-none absolute top-2 z-10 min-w-[148px] rounded-lg border border-[#2B2B40] bg-[#10101A]/96 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
           style={{ left: `${(hoveredX / 600) * 100}%`, transform: 'translateX(-50%)' }}
         >
-          <p className="text-[9px] font-mono uppercase tracking-[0.1em] text-[#9090B0]">{formatChartTime(hoveredPoint.timestamp)}</p>
+          <p className="text-[9px] font-mono uppercase tracking-widest text-[#9090B0]">{formatChartTime(hoveredPoint.timestamp)}</p>
           <div className="mt-1 flex items-center justify-between gap-3">
             <span className="text-[10px] font-mono text-[#9090B0]">Download</span>
             <span className="text-[10px] font-mono text-[#EEEEF8]">{formatBps(hoveredPoint.downloadBytesPerSec)}</span>

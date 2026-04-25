@@ -96,7 +96,7 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
       {events.map((evt, i) => (
         <div key={i} className="flex gap-3 py-2 border-b" style={{ borderColor: 'var(--color-border-muted)' }}>
           <span
-            className="material-symbols-rounded mt-0.5 flex-shrink-0"
+            className="material-symbols-rounded mt-0.5 shrink-0"
             style={{ fontSize: 16, color: 'var(--color-primary)' }}
           >
             {evt.icon}
@@ -104,7 +104,7 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>{evt.label}</span>
-              <span className="text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+              <span className="text-xs shrink-0" style={{ color: 'var(--color-text-muted)' }}>
                 {new Date(evt.time).toLocaleTimeString()}
               </span>
             </div>

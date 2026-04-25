@@ -1,5 +1,8 @@
 package com.weekend.architect.unift.remote.repository;
 
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_ID;
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_USER_ID;
+
 import com.weekend.architect.unift.remote.enums.ProtocolType;
 import com.weekend.architect.unift.remote.enums.SshAuthType;
 import com.weekend.architect.unift.remote.model.SavedHost;
@@ -19,9 +22,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class SavedHostRepository {
-
-    private static final String PARAM_ID = "id";
-    private static final String PARAM_USER_ID = "userId";
 
     private final NamedParameterJdbcTemplate jdbc;
 

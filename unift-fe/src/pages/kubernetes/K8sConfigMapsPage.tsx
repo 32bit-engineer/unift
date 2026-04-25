@@ -6,7 +6,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
-import type { K8sConfigMap, K8sNamespace } from '@/utils/remoteConnectionAPI';
+import type { K8sConfigMap } from '@/utils/remoteConnectionAPI';
+import { useK8sNamespaces } from '@/hooks/useK8sNamespaces';
+import { K8S_PAGE_SIZE } from '@/config/pagination';
 import { K8sYamlModal } from './K8sYamlModal';
 import type { YamlModalTarget } from './K8sYamlModal';
 
@@ -14,25 +16,18 @@ interface K8sConfigMapsPageProps {
   sessionId: string;
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = K8S_PAGE_SIZE;
 
 export function K8sConfigMapsPage({ sessionId }: K8sConfigMapsPageProps) {
   const [configMaps, setConfigMaps] = useState<K8sConfigMap[]>([]);
   const [total, setTotal] = useState(0);
-  const [namespaces, setNamespaces] = useState<K8sNamespace[]>([]);
+  const namespaces = useK8sNamespaces(sessionId);
   const [selectedNs, setSelectedNs] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [yamlModal, setYamlModal] = useState<YamlModalTarget | null>(null);
-
-  const fetchNamespaces = useCallback(async () => {
-    try {
-      const nsList = await remoteConnectionAPI.listK8sNamespaces(sessionId);
-      setNamespaces(nsList);
-    } catch { /* silent */ }
-  }, [sessionId]);
 
   const fetchConfigMaps = useCallback(async () => {
     try {
@@ -48,7 +43,6 @@ export function K8sConfigMapsPage({ sessionId }: K8sConfigMapsPageProps) {
     }
   }, [sessionId, selectedNs]);
 
-  useEffect(() => { fetchNamespaces(); }, [fetchNamespaces]);
   useEffect(() => { fetchConfigMaps(); setPage(1); }, [fetchConfigMaps]);
 
   const filtered = useMemo(() => {

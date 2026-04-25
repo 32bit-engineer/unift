@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { remoteConnectionAPI, type TransferLogResponse, type TransferHistoryStatsResponse } from '@/utils/remoteConnectionAPI';
 import { Input } from '@/components/ui/input';
+import { TRANSFER_PAGE_SIZE } from '@/config/pagination';
 
 type FilterStatus = 'ALL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = TRANSFER_PAGE_SIZE;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -276,7 +277,7 @@ function HistoryRow({ item: t }: { item: TransferLogResponse }) {
   const upload = isUploadRow(t.source);
 
   return (
-    <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/[0.02] transition-colors">
+    <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-2.5 border-b border-[#1E1E2E]/50 hover:bg-white/2 transition-colors">
       {/* Direction icon */}
       <span className={`material-symbols-rounded text-sm ${upload ? 'text-[#7C6DFA]' : 'text-[#4ade80]'}`}>
         {upload ? 'upload' : 'download'}

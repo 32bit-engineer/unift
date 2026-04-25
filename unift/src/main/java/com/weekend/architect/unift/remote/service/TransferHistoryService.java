@@ -4,6 +4,7 @@ import com.weekend.architect.unift.remote.dto.TransferHistoryStatsResponse;
 import com.weekend.architect.unift.remote.dto.TransferLogPageResponse;
 import com.weekend.architect.unift.remote.dto.TransferLogResponse;
 import java.util.UUID;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Service contract for querying the persistent transfer-history log.
@@ -43,4 +44,13 @@ public interface TransferHistoryService {
      * @throws IllegalArgumentException if not found or not owned by the user
      */
     void deleteEntry(UUID id, UUID userId);
+
+    /**
+     * Opens an SSE stream that pushes aggregate transfer statistics at the given interval.
+     *
+     * @param userId     authenticated user
+     * @param intervalMs polling interval in milliseconds (clamped to allowed range internally)
+     * @return a configured {@link SseEmitter} that the controller can return directly
+     */
+    SseEmitter streamStats(UUID userId, int intervalMs);
 }

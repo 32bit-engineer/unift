@@ -16,6 +16,7 @@ import com.weekend.architect.unift.remote.service.SavedHostService;
 import com.weekend.architect.unift.security.CredentialEncryptionService;
 import com.weekend.architect.unift.utils.UuidUtils;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,8 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class SavedHostServiceImpl implements SavedHostService {
+
+    private static final Set<String> VALID_WORKSPACE_PREFERENCES = Set.of("ssh", "docker", "kubernetes");
 
     private final SavedHostRepository hostRepo;
     private final CredentialEncryptionService encryption;
@@ -135,6 +138,10 @@ public class SavedHostServiceImpl implements SavedHostService {
 
     @Override
     public void updateWorkspacePreference(UUID ownerId, UUID hostId, String preference) {
+        if (preference == null || !VALID_WORKSPACE_PREFERENCES.contains(preference)) {
+            throw new IllegalArgumentException(
+                    "Invalid workspace preference '" + preference + "'. Must be one of: ssh, docker, kubernetes");
+        }
         requireOwned(ownerId, hostId);
         boolean updated = hostRepo.updateWorkspacePreference(hostId, ownerId, preference);
         if (!updated) {

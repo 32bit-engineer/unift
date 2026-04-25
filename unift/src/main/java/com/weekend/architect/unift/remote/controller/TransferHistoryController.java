@@ -14,13 +14,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import java.io.IOException;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -40,6 +36,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * delete) access to that log.
  */
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/transfers/history")
 @Slf4j
 @Tag(
@@ -50,18 +47,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @SecurityRequirement(name = "BearerAuth")
 public class TransferHistoryController {
 
-    private static final long STATS_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
-    private static final int MIN_STREAM_INTERVAL_MS = 1000;
-    private static final int MAX_STREAM_INTERVAL_MS = 60000;
 
     private final TransferHistoryService service;
-    private final ExecutorService virtualThreadExecutor;
-
-    TransferHistoryController(
-            TransferHistoryService service, @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
-        this.service = service;
-        this.virtualThreadExecutor = virtualThreadExecutor;
-    }
 
     @GetMapping
     @Operation(
@@ -118,51 +105,7 @@ public class TransferHistoryController {
     @Operation(summary = "Stream aggregate transfer statistics via SSE")
     public SseEmitter streamStats(
             @RequestParam(defaultValue = "10000") int intervalMs, @AuthenticationPrincipal UniFtUserDetails principal) {
-        UUID userId = principal.user().getId();
-        int clampedIntervalMs = Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
-
-        SseEmitter emitter = new SseEmitter(STATS_STREAM_TIMEOUT_MS);
-        AtomicBoolean open = new AtomicBoolean(true);
-        emitter.onCompletion(() -> open.set(false));
-        emitter.onError(_ -> open.set(false));
-        emitter.onTimeout(() -> {
-            open.set(false);
-            emitter.complete();
-        });
-
-        // Todo: move this logic to service class
-        virtualThreadExecutor.submit(() -> {
-            while (open.get()) {
-                try {
-                    TransferHistoryStatsResponse payload = service.getStats(userId);
-                    emitter.send(SseEmitter.event().name("stats").data(payload));
-                    Thread.sleep(clampedIntervalMs);
-                } catch (InterruptedException _) {
-                    Thread.currentThread().interrupt();
-                    open.set(false);
-                    emitter.complete();
-                    return;
-                } catch (IOException | IllegalStateException _) {
-                    open.set(false);
-                    return;
-                } catch (Exception ex) {
-                    try {
-                        emitter.send(SseEmitter.event()
-                                .name("error")
-                                .data(Map.of(
-                                        "message",
-                                        ex.getMessage() != null ? ex.getMessage() : "Transfer stats stream failed")));
-                    } catch (IOException | IllegalStateException _) {
-                        // ignored
-                    }
-                    open.set(false);
-                    emitter.complete();
-                    return;
-                }
-            }
-        });
-
-        return emitter;
+        return service.streamStats(principal.user().getId(), intervalMs);
     }
 
     @GetMapping("/{id}")

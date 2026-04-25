@@ -151,7 +151,7 @@ export function DockerNetworksPage({ sessionId }: DockerNetworksPageProps) {
                 {['Network Name', 'Driver', 'Scope', 'Internal', 'Containers', 'Subnet', 'Actions'].map(h => (
                   <th
                     key={h}
-                    className="text-left px-4 py-3 font-semibold uppercase tracking-[0.1em]"
+                    className="text-left px-4 py-3 font-semibold uppercase tracking-widest"
                     style={{ fontSize: '10px', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border-muted)' }}
                   >
                     {h}
@@ -186,7 +186,7 @@ export function DockerNetworksPage({ sessionId }: DockerNetworksPageProps) {
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <span
-                        className="material-symbols-rounded flex-shrink-0"
+                        className="material-symbols-rounded shrink-0"
                         style={{ fontSize: '16px', color: 'var(--color-primary)', fontVariationSettings: "'FILL' 0, 'wght' 300" }}
                       >
                         hub
@@ -250,7 +250,7 @@ export function DockerNetworksPage({ sessionId }: DockerNetworksPageProps) {
         {!loading && filtered.length > 0 && (
           <div className="mt-3 pb-4">
             <p
-              className="uppercase tracking-[0.1em] font-semibold"
+              className="uppercase tracking-widest font-semibold"
               style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
             >
               Showing {filtered.length} of {networks.length} networks
@@ -377,7 +377,7 @@ function ModalField({ label, children }: { label: string; children: React.ReactN
   return (
     <div>
       <label
-        className="block mb-1.5 font-semibold uppercase tracking-[0.1em]"
+        className="block mb-1.5 font-semibold uppercase tracking-widest"
         style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}
       >
         {label}

@@ -194,7 +194,7 @@ Open [http://localhost](http://localhost), register an account, and add your fir
 
 | Layer | Technology |
 |---|---|
-| Backend | Spring Boot 3, Java 21 |
+| Backend | Spring Boot 4, Java 21 |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS v4 |
 | Database | PostgreSQL 16 |
 | Cache / pub-sub | Redis 7 |

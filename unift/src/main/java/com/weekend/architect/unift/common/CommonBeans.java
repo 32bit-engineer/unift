@@ -16,9 +16,6 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class CommonBeans {
 
-    //    @Value("${spring.kafka.bootstrap-servers}")
-    //    private String bootstrapServers;
-
     @Bean
     public ObjectMapper getObjectMapper() {
         return JsonMapper.builder()
@@ -28,21 +25,6 @@ public class CommonBeans {
                 .registerModule(new JavaTimeModule())
                 .registerModule(new AfterburnerModule());
     }
-    //
-    //    @Bean
-    //    public ProducerFactory<String, Object> producerFactory() {
-    //        Map<String, Object> config = new HashMap<>();
-    //        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-    //        config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-    //        config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JacksonJsonSerializer.class);
-    //        config.put(JacksonJsonSerializer.ADD_TYPE_INFO_HEADERS, false);
-    //        return new DefaultKafkaProducerFactory<>(config);
-    //    }
-
-    //    @Bean
-    //    public KafkaTemplate<String, Object> kafkaTemplate() {
-    //        return new KafkaTemplate<>(producerFactory());
-    //    }
 
     @Bean(name = "virtualThreadExecutor")
     public ExecutorService virtualThreadExecutorService() {

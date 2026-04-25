@@ -1,5 +1,6 @@
 package com.weekend.architect.unift.remote.docker;
 
+import com.weekend.architect.unift.remote.StreamConstants;
 import com.weekend.architect.unift.remote.exception.RemoteConnectionException;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -12,9 +13,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class DockerRequestValidator {
-
-    private static final int MIN_STREAM_INTERVAL_MS = 1000;
-    private static final int MAX_STREAM_INTERVAL_MS = 60000;
 
     /** Validates that the session ID is not null or blank. */
     public void validateSessionId(String sessionId) {
@@ -62,7 +60,7 @@ public class DockerRequestValidator {
 
     /** Validates and clamps the SSE stream interval to the allowed range. */
     public int validateAndClampInterval(int intervalMs) {
-        return Math.max(MIN_STREAM_INTERVAL_MS, Math.min(MAX_STREAM_INTERVAL_MS, intervalMs));
+        return Math.max(StreamConstants.MIN_STREAM_INTERVAL_MS, Math.min(StreamConstants.MAX_STREAM_INTERVAL_MS, intervalMs));
     }
 
     /** Validates the {@link DockerModels.PullImageRequest} DTO fields. */

@@ -9,7 +9,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
-import type { K8sDeployment, K8sNamespace, K8sRolloutHistory } from '@/utils/remoteConnectionAPI';
+import type { K8sDeployment, K8sRolloutHistory } from '@/utils/remoteConnectionAPI';
+import { useK8sNamespaces } from '@/hooks/useK8sNamespaces';
+import { K8S_PAGE_SIZE } from '@/config/pagination';
 import { K8sYamlModal } from './K8sYamlModal';
 import type { YamlModalTarget } from './K8sYamlModal';
 
@@ -17,12 +19,12 @@ interface K8sDeploymentsPageProps {
   sessionId: string;
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = K8S_PAGE_SIZE;
 
 export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   const [deployments, setDeployments] = useState<K8sDeployment[]>([]);
   const [total, setTotal] = useState(0);
-  const [namespaces, setNamespaces] = useState<K8sNamespace[]>([]);
+  const namespaces = useK8sNamespaces(sessionId);
   const [selectedNs, setSelectedNs] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,13 +37,6 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
   const [rolloutHistory, setRolloutHistory] = useState<K8sRolloutHistory | null>(null);
   const [rolloutLoading, setRolloutLoading] = useState(false);
   const [rolloutError, setRolloutError] = useState<string | null>(null);
-
-  const fetchNamespaces = useCallback(async () => {
-    try {
-      const nsList = await remoteConnectionAPI.listK8sNamespaces(sessionId);
-      setNamespaces(nsList);
-    } catch { /* silent */ }
-  }, [sessionId]);
 
   const fetchDeployments = useCallback(async () => {
     try {
@@ -57,7 +52,6 @@ export function K8sDeploymentsPage({ sessionId }: K8sDeploymentsPageProps) {
     }
   }, [sessionId, selectedNs]);
 
-  useEffect(() => { fetchNamespaces(); }, [fetchNamespaces]);
   useEffect(() => { fetchDeployments(); setPage(1); }, [fetchDeployments]);
 
   const stats = useMemo(() => {

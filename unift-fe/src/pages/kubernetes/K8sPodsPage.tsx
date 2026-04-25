@@ -9,7 +9,9 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { remoteConnectionAPI } from '@/utils/remoteConnectionAPI';
-import type { K8sPod, K8sNamespace, K8sContainerStatus } from '@/utils/remoteConnectionAPI';
+import type { K8sPod, K8sContainerStatus } from '@/utils/remoteConnectionAPI';
+import { useK8sNamespaces } from '@/hooks/useK8sNamespaces';
+import { K8S_PAGE_SIZE } from '@/config/pagination';
 import { K8sYamlModal } from './K8sYamlModal';
 import type { YamlModalTarget } from './K8sYamlModal';
 
@@ -17,12 +19,12 @@ interface K8sPodsPageProps {
   sessionId: string;
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = K8S_PAGE_SIZE;
 
 export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
   const [pods, setPods] = useState<K8sPod[]>([]);
   const [total, setTotal] = useState(0);
-  const [namespaces, setNamespaces] = useState<K8sNamespace[]>([]);
+  const namespaces = useK8sNamespaces(sessionId);
   const [selectedNs, setSelectedNs] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -35,15 +37,6 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [yamlModal, setYamlModal] = useState<YamlModalTarget | null>(null);
-
-  const fetchNamespaces = useCallback(async () => {
-    try {
-      const nsList = await remoteConnectionAPI.listK8sNamespaces(sessionId);
-      setNamespaces(nsList);
-    } catch {
-      // silently fall back — ns dropdown just stays empty
-    }
-  }, [sessionId]);
 
   const fetchPods = useCallback(async () => {
     try {
@@ -58,10 +51,6 @@ export function K8sPodsPage({ sessionId }: K8sPodsPageProps) {
       setLoading(false);
     }
   }, [sessionId, selectedNs]);
-
-  useEffect(() => {
-    fetchNamespaces();
-  }, [fetchNamespaces]);
 
   useEffect(() => {
     fetchPods();

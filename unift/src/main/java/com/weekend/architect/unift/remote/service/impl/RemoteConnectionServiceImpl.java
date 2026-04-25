@@ -10,6 +10,8 @@ import com.weekend.architect.unift.remote.credentials.RemoteCredentials;
 import com.weekend.architect.unift.remote.credentials.SshKeyCredentials;
 import com.weekend.architect.unift.remote.credentials.SshKeyPassphraseCredentials;
 import com.weekend.architect.unift.remote.credentials.SshPasswordCredentials;
+import com.weekend.architect.unift.remote.docker.DockerClientPool;
+import com.weekend.architect.unift.remote.docker.DockerLogStreamRegistry;
 import com.weekend.architect.unift.remote.dto.ConnectRequest;
 import com.weekend.architect.unift.remote.dto.ConnectResponse;
 import com.weekend.architect.unift.remote.dto.DirectoryListingResponse;
@@ -25,6 +27,8 @@ import com.weekend.architect.unift.remote.exception.MaxSessionsExceededException
 import com.weekend.architect.unift.remote.exception.SessionAccessDeniedException;
 import com.weekend.architect.unift.remote.exception.TransferException;
 import com.weekend.architect.unift.remote.factory.ConnectionFactory;
+import com.weekend.architect.unift.remote.kubernetes.K8sClientPool;
+import com.weekend.architect.unift.remote.kubernetes.K8sLogStreamRegistry;
 import com.weekend.architect.unift.remote.model.RemoteFile;
 import com.weekend.architect.unift.remote.model.RemoteSession;
 import com.weekend.architect.unift.remote.model.RemoteTransfer;
@@ -34,26 +38,33 @@ import com.weekend.architect.unift.remote.registry.TransferRegistry;
 import com.weekend.architect.unift.remote.repository.SessionLogRepository;
 import com.weekend.architect.unift.remote.repository.TransferLogRepository;
 import com.weekend.architect.unift.remote.service.RemoteConnectionService;
+import com.weekend.architect.unift.remote.StreamConstants;
 import com.weekend.architect.unift.utils.UuidUtils;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RemoteConnectionServiceImpl implements RemoteConnectionService {
+
+    private static final Set<String> VALID_WORKSPACE_TYPES = Set.of("ssh", "docker", "kubernetes");
 
     private final SessionRegistry sessionRegistry;
     private final RemoteConnectionProperties props;
@@ -62,6 +73,38 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
     private final ConnectionFactory connectionFactory;
     private final SessionLogRepository sessionLogRepository;
     private final TransferLogRepository transferLogRepository;
+    private final DockerClientPool dockerClientPool;
+    private final DockerLogStreamRegistry dockerLogStreamRegistry;
+    private final K8sClientPool k8sClientPool;
+    private final K8sLogStreamRegistry k8sLogStreamRegistry;
+    private final ExecutorService virtualThreadExecutor;
+
+    public RemoteConnectionServiceImpl(
+            SessionRegistry sessionRegistry,
+            RemoteConnectionProperties props,
+            SessionMetricsStore metricsStore,
+            TransferRegistry transferRegistry,
+            ConnectionFactory connectionFactory,
+            SessionLogRepository sessionLogRepository,
+            TransferLogRepository transferLogRepository,
+            DockerClientPool dockerClientPool,
+            DockerLogStreamRegistry dockerLogStreamRegistry,
+            K8sClientPool k8sClientPool,
+            K8sLogStreamRegistry k8sLogStreamRegistry,
+            @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
+        this.sessionRegistry = sessionRegistry;
+        this.props = props;
+        this.metricsStore = metricsStore;
+        this.transferRegistry = transferRegistry;
+        this.connectionFactory = connectionFactory;
+        this.sessionLogRepository = sessionLogRepository;
+        this.transferLogRepository = transferLogRepository;
+        this.dockerClientPool = dockerClientPool;
+        this.dockerLogStreamRegistry = dockerLogStreamRegistry;
+        this.k8sClientPool = k8sClientPool;
+        this.k8sLogStreamRegistry = k8sLogStreamRegistry;
+        this.virtualThreadExecutor = virtualThreadExecutor;
+    }
 
     @Override
     public ConnectResponse openSession(UUID ownerId, ConnectRequest request) {
@@ -695,6 +738,93 @@ public class RemoteConnectionServiceImpl implements RemoteConnectionService {
                 .remoteOs(s.getRemoteOs())
                 .activeWorkspaces(s.getActiveWorkspaces())
                 .build();
+    }
+
+    @Override
+    public Set<String> listWorkspaces(String sessionId, UUID ownerId) {
+        var conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, ownerId);
+        return conn.getSession().getActiveWorkspaces();
+    }
+
+    @Override
+    public Set<String> activateWorkspace(String sessionId, UUID ownerId, String type) {
+        if (!VALID_WORKSPACE_TYPES.contains(type)) {
+            throw new IllegalArgumentException("Invalid workspace type: " + type);
+        }
+        var conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, ownerId);
+        conn.getSession().activateWorkspace(type);
+        log.info("Activated workspace '{}' for session {}", type, sessionId);
+        return conn.getSession().getActiveWorkspaces();
+    }
+
+    @Override
+    public Set<String> deactivateWorkspace(String sessionId, UUID ownerId, String type) {
+        if (!VALID_WORKSPACE_TYPES.contains(type)) {
+            throw new IllegalArgumentException("Invalid workspace type: " + type);
+        }
+        if ("ssh".equals(type)) {
+            throw new IllegalArgumentException("Cannot deactivate the SSH workspace");
+        }
+        var conn = sessionRegistry.require(sessionId);
+        assertOwnership(conn, ownerId);
+        conn.getSession().deactivateWorkspace(type);
+        if ("docker".equals(type)) {
+            dockerClientPool.evict(sessionId);
+            dockerLogStreamRegistry.closeAllBySession(sessionId);
+        } else if ("kubernetes".equals(type)) {
+            k8sClientPool.evict(sessionId);
+            k8sLogStreamRegistry.closeAllBySession(sessionId);
+        }
+        log.info("Deactivated workspace '{}' for session {}", type, sessionId);
+        return conn.getSession().getActiveWorkspaces();
+    }
+
+    @Override
+    public SseEmitter streamTransfers(String sessionId, UUID ownerId, int intervalMs) {
+        int clamped = Math.max(
+                StreamConstants.MIN_TRANSFER_STREAM_INTERVAL_MS,
+                Math.min(StreamConstants.MAX_STREAM_INTERVAL_MS, intervalMs));
+
+        SseEmitter emitter = new SseEmitter(StreamConstants.STREAM_TIMEOUT_MS);
+        AtomicBoolean open = new AtomicBoolean(true);
+        emitter.onCompletion(() -> open.set(false));
+        emitter.onError(ex -> open.set(false));
+        emitter.onTimeout(() -> {
+            open.set(false);
+            emitter.complete();
+        });
+
+        virtualThreadExecutor.submit(() -> {
+            while (open.get()) {
+                try {
+                    List<TransferStatusResponse> payload = getTransfers(sessionId, ownerId);
+                    emitter.send(SseEmitter.event().name("transfers").data(payload));
+                    Thread.sleep(clamped);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    open.set(false);
+                    emitter.complete();
+                    return;
+                } catch (Exception ex) {
+                    try {
+                        emitter.send(SseEmitter.event()
+                                .name("error")
+                                .data(Map.of(
+                                        "message",
+                                        ex.getMessage() != null ? ex.getMessage() : "Transfer stream failed")));
+                    } catch (Exception ignored) {
+                        // ignore nested emitter failures while unwinding stream
+                    }
+                    open.set(false);
+                    emitter.completeWithError(ex);
+                    return;
+                }
+            }
+        });
+
+        return emitter;
     }
 
     private RemoteFileDto toFileDto(RemoteFile f) {

@@ -1,10 +1,8 @@
 package com.weekend.architect.unift.remote.kubernetes;
 
-import com.weekend.architect.unift.remote.core.PortForwardable;
 import com.weekend.architect.unift.remote.core.RemoteShell;
 import com.weekend.architect.unift.remote.kubernetes.K8sExecTokenResolver.ResolvedToken;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import java.io.IOException;
@@ -26,28 +24,25 @@ import org.springframework.stereotype.Component;
  * <h6>Exec credential support (EKS / GKE / AKS)</h6>
  *
  * <p>Managed-cluster kubeconfigs use an {@code exec} section that spawns a local CLI ({@code aws
- * eks get-token}, {@code gke-gcloud-auth-plugin}, …) to obtain a short-lived bearer token. Fabric8
- * would try to run this command on the UniFT server where neither the CLI nor cloud credentials are
- * present, resulting in 401 Unauthorized.
+ * eks get-token}, {@code gke-gcloud-auth-plugin}, {@code kubelogin}, …) to obtain a short-lived
+ * bearer token. Fabric8 would try to run this command on the UniFT server where neither the CLI
+ * nor cloud credentials are present, resulting in 401 Unauthorized.
  *
  * <p>This pool delegates to {@link K8sExecTokenResolver} to execute the credential provider on the
  * <em>remote SSH server</em>, then patches the kubeconfig YAML to replace the {@code exec} section
- * with the resolved static token before Fabric8 ever sees it. Token refresh happens automatically —
- * on every {@link #resolveForSession} call the expiry is checked; if fewer than 2 minutes remain
- * the entry is evicted and rebuilt (re-running the exec command on SSH).
+ * with the resolved static token before Fabric8 ever sees it.
  *
  * <h6>Network reachability</h6>
  *
- * <ol>
- *   <li><b>Direct</b> — API server URL in the kubeconfig is reachable from the UniFT host.
- *   <li><b>SSH tunnel</b> — API server only reachable from within the SSH server; a JSch local
- *       port-forward is opened and the master URL is rewritten.
- * </ol>
+ * <p>The K8s API server URL from the kubeconfig must be directly reachable from the UniFT host.
+ * If the endpoint is not reachable, client creation is rejected immediately — no SSH tunnel
+ * fallback is attempted. This keeps the failure surface small and the error message explicit.
  *
- * <h6>Future direct-kubeconfig path</h6>
+ * <h6>Cloud agnosticism</h6>
  *
- * <p>Call {@link #registerDirect(String, String)} when a user uploads a kubeconfig directly (no
- * SSH). Same pool, same {@code K8sServiceImpl}.
+ * <p>Any valid kubeconfig works — EKS, AKS, GKE, Oracle OKE, self-hosted clusters, or any
+ * distribution that can produce a kubeconfig (k3s, kind, kubeadm, …). The only requirement is
+ * that the API server endpoint in the kubeconfig is reachable from the UniFT host.
  */
 @Slf4j
 @Component
@@ -56,7 +51,8 @@ public class K8sClientPool {
 
     private static final int PROBE_TIMEOUT_MS = 3_000;
 
-    private static final String READ_KUBECONFIG_CMD = "cat \"${KUBECONFIG:-$HOME/.kube/config}\" 2>/dev/null"
+    private static final String READ_KUBECONFIG_CMD =
+            "cat \"${KUBECONFIG:-$HOME/.kube/config}\" 2>/dev/null"
             + " || cat /root/.kube/config 2>/dev/null"
             + " || cat /etc/kubernetes/admin.conf 2>/dev/null";
 
@@ -67,8 +63,8 @@ public class K8sClientPool {
     private final K8sExecTokenResolver execTokenResolver;
 
     /**
-     * Returns the cached Fabric8 client for the session, building it on first call. If the exec
-     * bearer token is about to expire it is refreshed transparently.
+     * Returns the cached Fabric8 client for the session, building it on first call.
+     * If the exec bearer token is about to expire it is refreshed transparently.
      */
     public KubernetesClient resolveForSession(String sessionId, RemoteShell shell) {
         K8sClientEntry existing = k8sClientCache.getIfPresent(sessionId);
@@ -87,17 +83,19 @@ public class K8sClientPool {
     }
 
     /**
-     * Registers a Fabric8 client built directly from an uploaded kubeconfig string. Used by the
-     * future "direct kubeconfig" feature — no SSH involved.
+     * Registers a Fabric8 client built directly from an uploaded kubeconfig string.
+     * Used by the future "direct kubeconfig" feature — no SSH involved.
+     * Reachability of the API server is validated before the entry is stored.
      */
     public KubernetesClient registerDirect(String clientKey, String kubeconfig) {
+        assertKubeconfigReachable(kubeconfig);
         K8sClientEntry old = k8sClientCache.getIfPresent(clientKey);
-        k8sClientCache.put(clientKey, buildEntry(clientKey, kubeconfig, null, null));
+        k8sClientCache.put(clientKey, buildEntry(clientKey, kubeconfig, null));
         if (old != null) safeClose(clientKey, old);
         return k8sClientCache.getIfPresent(clientKey).client();
     }
 
-    /** Closes the client + any SSH port-forward for the given key. Safe if absent. */
+    /** Closes the Fabric8 client for the given key. Safe if absent. */
     public void evict(String key) {
         K8sClientEntry entry = k8sClientCache.remove(key);
         if (entry != null) safeClose(key, entry);
@@ -114,13 +112,14 @@ public class K8sClientPool {
             throw new K8sClientInitException("Failed to read kubeconfig from SSH server", e);
         }
         if (rawKubeconfig == null || rawKubeconfig.isBlank()) {
-            throw new K8sClientInitException("No kubeconfig found on remote host. Checked: $KUBECONFIG, ~/.kube/config,"
+            throw new K8sClientInitException(
+                    "No kubeconfig found on remote host. Checked: $KUBECONFIG, ~/.kube/config,"
                     + " /root/.kube/config, /etc/kubernetes/admin.conf");
         }
 
         // 2. Resolve exec credentials on the SSH server if present (EKS, GKE, AKS, …).
         // Fabric8 would try to run the exec command locally (UniFT server), where
-        // the cloud CLI and credentials are not present → 401. We run it remotely.
+        // the cloud CLI and credentials are not present → 401. We run it remotely instead.
         Optional<ResolvedToken> execToken = execTokenResolver.resolve(rawKubeconfig, shell);
         String kubeconfig = execToken
                 .map(t -> execTokenResolver.patchKubeconfigWithToken(rawKubeconfig, t.token()))
@@ -135,66 +134,51 @@ public class K8sClientPool {
             throw new K8sClientInitException("Invalid kubeconfig content", e);
         }
 
+        // 4. Fail fast if the API server is not directly reachable from the UniFT host.
+        // No port-forward fallback — an unreachable endpoint means every subsequent
+        // Fabric8 call would also fail, so we surface the error here with a clear message.
         String masterUrl = base.getMasterUrl();
         URI uri = URI.create(masterUrl);
         String apiHost = uri.getHost();
         int apiPort = uri.getPort() == -1 ? 443 : uri.getPort();
 
-        // 4. Direct reachability vs. SSH port-forward tunnel
-        K8sTunnel tunnel = null;
-        if (isReachable(apiHost, apiPort)) {
-            log.info("[k8s-pool] API server {} is directly reachable for session {}", masterUrl, sessionId);
-        } else if (shell instanceof PortForwardable forwardable) {
-            log.info(
-                    "[k8s-pool] API server {} not directly reachable — opening SSH tunnel for" + " session {}",
-                    masterUrl,
-                    sessionId);
-            try {
-                int localPort = forwardable.forwardLocalPort(apiHost, apiPort);
-                tunnel = new K8sTunnel(forwardable, localPort);
-                log.info(
-                        "[k8s-pool] SSH tunnel localhost:{} → {}:{} established for session {}",
-                        localPort,
-                        apiHost,
-                        apiPort,
-                        sessionId);
-            } catch (Exception e) {
-                throw new K8sClientInitException("Failed to set up SSH tunnel to k8s API server", e);
-            }
-        } else {
-            throw new K8sClientInitException("K8s API server "
-                    + masterUrl
-                    + " is not reachable from UniFT and the connection does not support"
-                    + " port forwarding");
+        if (!isReachable(apiHost, apiPort)) {
+            throw new K8sClientInitException(
+                    "K8s API server " + masterUrl + " is not reachable from the UniFT host. "
+                    + "Ensure the cluster endpoint is accessible before connecting.");
         }
+        log.info("[k8s-pool] API server {} is directly reachable for session {}", masterUrl, sessionId);
 
-        return buildEntry(sessionId, kubeconfig, tunnel, tokenExpiresAt);
+        return buildEntry(sessionId, kubeconfig, tokenExpiresAt);
     }
 
-    private K8sClientEntry buildEntry(
-            String key, String kubeconfig, @Nullable K8sTunnel tunnel, @Nullable Instant tokenExpiresAt) {
+    private K8sClientEntry buildEntry(String key, String kubeconfig, @Nullable Instant tokenExpiresAt) {
         try {
             Config config = Config.fromKubeconfig(kubeconfig);
-            if (tunnel != null) {
-                config = new ConfigBuilder(config)
-                        .withMasterUrl("https://127.0.0.1:" + tunnel.localPort())
-                        .withCaCertData(config.getCaCertData()) // retain CA from kubeconfig for
-                        // chain validation
-                        .withDisableHostnameVerification(true) // tunnel endpoint is 127.0.0.1; CN won't match —
-                        // disable
-                        // hostname check only
-                        .build();
-            }
-            KubernetesClient client =
-                    new KubernetesClientBuilder().withConfig(config).build();
+            KubernetesClient client = new KubernetesClientBuilder().withConfig(config).build();
             log.info(
                     "[k8s-pool] Fabric8 client created for key {}, token expires at {}",
                     key,
                     tokenExpiresAt != null ? tokenExpiresAt : "never");
-            return new K8sClientEntry(client, tunnel, tokenExpiresAt);
+            return new K8sClientEntry(client, tokenExpiresAt);
         } catch (Exception e) {
-            if (tunnel != null) tunnel.close();
             throw new K8sClientInitException("Failed to create Fabric8 KubernetesClient", e);
+        }
+    }
+
+    private void assertKubeconfigReachable(String kubeconfig) {
+        Config base;
+        try {
+            base = Config.fromKubeconfig(kubeconfig);
+        } catch (Exception e) {
+            throw new K8sClientInitException("Invalid kubeconfig content", e);
+        }
+        URI uri = URI.create(base.getMasterUrl());
+        String host = uri.getHost();
+        int port = uri.getPort() == -1 ? 443 : uri.getPort();
+        if (!isReachable(host, port)) {
+            throw new K8sClientInitException(
+                    "K8s API server " + base.getMasterUrl() + " is not reachable from the UniFT host.");
         }
     }
 
@@ -228,12 +212,11 @@ public class K8sClientPool {
 
     record K8sClientEntry(
             KubernetesClient client,
-            @Nullable K8sTunnel tunnel,
             /** Expiry reported by the exec credential provider; null = static / no expiry. */
             @Nullable Instant tokenExpiresAt)
             implements AutoCloseable {
 
-        /** Returns true when the exec token has expired or will do so within 2 minutes. */
+        /** Returns true when the exec token has expired or will expire within 2 minutes. */
         boolean isTokenExpiringOrExpired() {
             if (tokenExpiresAt == null) return false;
             return Instant.now().plusSeconds(120).isAfter(tokenExpiresAt);
@@ -243,17 +226,9 @@ public class K8sClientPool {
         public void close() {
             try {
                 client.close();
-            } catch (Exception _) {
-                // ignored
+            } catch (Exception ignored) {
+                // best-effort close
             }
-            if (tunnel != null) tunnel.close();
-        }
-    }
-
-    record K8sTunnel(PortForwardable connection, int localPort) implements AutoCloseable {
-        @Override
-        public void close() {
-            connection.cancelPortForward(localPort);
         }
     }
 

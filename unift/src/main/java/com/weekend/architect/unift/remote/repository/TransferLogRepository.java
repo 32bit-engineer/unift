@@ -1,5 +1,8 @@
 package com.weekend.architect.unift.remote.repository;
 
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_ID;
+import static com.weekend.architect.unift.remote.repository.RepositoryConstants.PARAM_USER_ID;
+
 import com.weekend.architect.unift.remote.dto.TransferHistoryStatsResponse;
 import com.weekend.architect.unift.remote.model.TransferLog;
 import java.sql.ResultSet;
@@ -29,14 +32,7 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class TransferLogRepository {
 
-    private static final String PARAM_ID = "id";
-    private static final String PARAM_USER_ID = "userId";
-
     private final NamedParameterJdbcTemplate jdbc;
-
-    // -------------------------------------------------------------------------
-    // Row mapper
-    // -------------------------------------------------------------------------
 
     private TransferLog mapRow(ResultSet rs, int rowNum) throws SQLException {
         String rawUserId = rs.getString("user_id");
@@ -65,10 +61,6 @@ public class TransferLogRepository {
     private static OffsetDateTime toOffsetDateTime(Timestamp ts) {
         return ts == null ? null : ts.toInstant().atOffset(ZoneOffset.UTC);
     }
-
-    // -------------------------------------------------------------------------
-    // Write operations
-    // -------------------------------------------------------------------------
 
     /**
      * Inserts a new transfer log entry.
@@ -114,10 +106,6 @@ public class TransferLogRepository {
                 sql, new MapSqlParameterSource().addValue(PARAM_ID, id).addValue(PARAM_USER_ID, userId));
         return rows > 0;
     }
-
-    // -------------------------------------------------------------------------
-    // Read operations
-    // -------------------------------------------------------------------------
 
     /** Finds a single transfer log entry by ID, enforcing user ownership. */
     public Optional<TransferLog> findById(UUID id, UUID userId) {
